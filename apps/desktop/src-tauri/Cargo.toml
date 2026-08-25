@@ -1,0 +1,26 @@
+[package]
+name = "dssh"
+version = "0.1.0"
+description = "Personal modern SSH client"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+# SSH 协议层：交互 shell / SFTP / 端口转发
+russh = "0.54"
+russh-sftp = "2"
+# 系统安全凭据存储（macOS Keychain / Windows Credential Manager）
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

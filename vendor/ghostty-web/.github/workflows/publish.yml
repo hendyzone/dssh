@@ -1,0 +1,120 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_run:
+    workflows: ['ci']
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or branch to publish (e.g. v0.7.0 or main)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: publish package
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.15.2
+
+      - name: Detect npm token
+        id: npm
+        run: |
+          if [[ -n "${NPM_TOKEN}" ]]; then
+            echo "has_token=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_token=false" >> $GITHUB_OUTPUT
+            echo "NPM_TOKEN not configured; npm publish step will be skipped."
+          fi
+
+      - name: Configure npm registry
+        if: steps.npm.outputs.has_token == 'true'
+        run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+
+      - name: Build WASM
+        run: ./scripts/build-wasm.sh
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Check formatting
+        run: bun run fmt
+
+      - name: Run linter
+        run: bun run lint
+
+      - name: Check types
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun test
+
+      - name: Build library
+        run: bun run build
+
+      - name: Detect trigger type
+        id: detect
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+            echo "trigger_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+            echo "trigger_name=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate version
+        id: version
+        run: |
+          if [[ "${{ steps.detect.outputs.is_tag }}" == "true" ]]; then
+            NPM_VERSION="${GITHUB_REF#refs/tags/v}"
+            NPM_TAG="latest"
+          else
+            LATEST_TAG=$(git describe --tags --abbrev=0)
+            BASE_VERSION="${LATEST_TAG#v}"
+            GIT_COMMIT=$(git rev-parse --short HEAD)
+            COMMITS_SINCE_TAG=$(git rev-list --count HEAD ^$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD) 2>/dev/null || echo "0")
+            NPM_VERSION="${BASE_VERSION}-next.${COMMITS_SINCE_TAG}.g${GIT_COMMIT}"
+            NPM_TAG="next"
+          fi
+
+          echo "version=${NPM_VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${NPM_TAG}" >> $GITHUB_OUTPUT
+          jq --arg v "${NPM_VERSION}" '.version = $v' package.json > /tmp/package.json && mv /tmp/package.json package.json
+
+      - name: Publish to npm
+        if: steps.npm.outputs.has_token == 'true'
+        run: bun publish --access public --tag ${{ steps.version.outputs.tag }}
+
+      - name: Create GitHub Release
+        if: steps.detect.outputs.is_tag == 'true'
+        run: gh release create "${{ steps.detect.outputs.trigger_name }}" --title "${{ steps.detect.outputs.trigger_name }}" --generate-notes --verify-tag

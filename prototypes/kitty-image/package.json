@@ -1,0 +1,28 @@
+{
+  "name": "dssh-proto-kitty-image",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:server\" \"npm:client\"",
+    "client": "vite",
+    "server": "node server/index.mjs",
+    "gen-image": "node server/gen-test-png.mjs"
+  },
+  "dependencies": {
+    "ghostty-web": "file:../../vendor/ghostty-web",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "node-pty": "^1.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.0",
+    "ws": "^8.18.0"
+  }
+}
