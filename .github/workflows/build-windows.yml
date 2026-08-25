@@ -3,6 +3,7 @@ name: build-windows
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -25,9 +26,13 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: apps/desktop
+          # 推 tag（v*）时自动创建 draft release 并上传安装包（release 资产不占 artifact 配额）
+          tagName: v__VERSION__
+          releaseDraft: true
 
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
+        continue-on-error: true # artifact 配额满时不阻塞构建
         with:
           name: dssh-windows
           path: |
