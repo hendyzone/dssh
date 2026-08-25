@@ -33,6 +33,7 @@ jobs:
           projectPath: apps/desktop
           # 推 tag（v*）时自动创建 draft release 并上传安装包（release 资产不占 artifact 配额）
           tagName: v__VERSION__
+          releaseName: "dssh v__VERSION__"
           releaseDraft: true
 
       - name: Upload Windows installers
