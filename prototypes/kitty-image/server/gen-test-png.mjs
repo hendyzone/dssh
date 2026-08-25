@@ -1,8 +1,8 @@
 // 生成一张 128x128 渐变测试 PNG（零依赖，手写 PNG 编码）
-import { deflateSync } from 'node:zlib';
-import { writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { deflateSync } from "node:zlib";
+import { writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 const W = 128;
 const H = 128;
@@ -22,7 +22,7 @@ const crc32 = (buf) => {
 const chunk = (type, data) => {
   const len = Buffer.alloc(4);
   len.writeUInt32BE(data.length);
-  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
   const crc = Buffer.alloc(4);
   crc.writeUInt32BE(crc32(body));
   return Buffer.concat([len, body, crc]);
@@ -52,11 +52,11 @@ for (let y = 0; y < H; y++) {
 
 const png = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  chunk('IHDR', ihdr),
-  chunk('IDAT', deflateSync(raw, { level: 9 })),
-  chunk('IEND', Buffer.alloc(0)),
+  chunk("IHDR", ihdr),
+  chunk("IDAT", deflateSync(raw, { level: 9 })),
+  chunk("IEND", Buffer.alloc(0)),
 ]);
 
-const out = join(dirname(fileURLToPath(import.meta.url)), 'test.png');
+const out = join(dirname(fileURLToPath(import.meta.url)), "test.png");
 writeFileSync(out, png);
 console.log(`generated ${out} (${png.length} bytes)`);

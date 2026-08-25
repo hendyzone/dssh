@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { FitAddon, Terminal, init } from 'ghostty-web';
-import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
+import { useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { FitAddon, Terminal, init } from "ghostty-web";
+import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 
 interface Props {
   sessionId: string;
@@ -24,7 +24,7 @@ export default function TerminalView({ sessionId }: Props) {
       term = new Terminal({
         cursorBlink: true,
         fontSize: 14,
-        fontFamily: 'Menlo, Consolas, monospace',
+        fontFamily: "Menlo, Consolas, monospace",
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
@@ -39,7 +39,7 @@ export default function TerminalView({ sessionId }: Props) {
 
       // 终端输入 → 后端
       const dataSub = term.onData((data: string) => {
-        invoke('ssh_write', { sessionId, data });
+        invoke("ssh_write", { sessionId, data });
       });
 
       return () => {
@@ -51,7 +51,7 @@ export default function TerminalView({ sessionId }: Props) {
     return () => {
       disposed = true;
       term?.dispose();
-      invoke('ssh_disconnect', { sessionId });
+      invoke("ssh_disconnect", { sessionId });
     };
   }, [sessionId]);
 

@@ -1,6 +1,9 @@
 node_modules/
-dist/
 target/
 gen/schemas
 *.log
 .DS_Store
+
+# 构建产物（注意：不能用裸 dist/，会误伤 vendor/ghostty-web/dist 预编译产物）
+/apps/desktop/dist/
+/prototypes/kitty-image/dist/

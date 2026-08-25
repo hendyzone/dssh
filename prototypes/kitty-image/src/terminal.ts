@@ -1,6 +1,6 @@
 // ghostty-web 终端封装：初始化 WASM、连接 ws 桥、双向绑定数据流
-import { FitAddon, Terminal, init } from 'ghostty-web';
-import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
+import { FitAddon, Terminal, init } from "ghostty-web";
+import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 
 export interface SessionHandle {
   term: Terminal;
@@ -21,8 +21,8 @@ export async function createSession(
     fontSize: 14,
     fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace',
     theme: {
-      background: '#1a1b26',
-      foreground: '#a9b1d6',
+      background: "#1a1b26",
+      foreground: "#a9b1d6",
     },
   });
   const fit = new FitAddon();
@@ -30,19 +30,21 @@ export async function createSession(
   term.open(container);
   fit.fit();
 
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   ws.onopen = () => {
-    onStatus('已连接');
-    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    onStatus("已连接");
+    ws.send(
+      JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }),
+    );
   };
-  ws.onclose = () => onStatus('已断开');
-  ws.onerror = () => onStatus('连接错误');
+  ws.onclose = () => onStatus("已断开");
+  ws.onerror = () => onStatus("连接错误");
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'data') term.write(msg.data);
+      if (msg.type === "data") term.write(msg.data);
     } catch {
       // 忽略非 JSON 帧
     }
@@ -50,27 +52,29 @@ export async function createSession(
 
   const dataSub = term.onData((data: string) => {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'data', data }));
+      ws.send(JSON.stringify({ type: "data", data }));
     }
   });
 
   const onResize = () => {
     fit.fit();
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      ws.send(
+        JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }),
+      );
     }
   };
-  window.addEventListener('resize', onResize);
+  window.addEventListener("resize", onResize);
 
   return {
     term,
     sendCommand: (cmd) => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'data', data: cmd + '\n' }));
+        ws.send(JSON.stringify({ type: "data", data: cmd + "\n" }));
       }
     },
     dispose: () => {
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener("resize", onResize);
       dataSub.dispose();
       ws.close();
       term.dispose();

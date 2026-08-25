@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import Sidebar from './components/Sidebar';
-import TerminalView from './components/TerminalView';
-import type { ServerEntry } from './types';
+import { useState } from "react";
+import Sidebar from "./components/Sidebar";
+import TerminalView from "./components/TerminalView";
+import type { ServerEntry } from "./types";
 
 // M1 骨架：侧边栏 + 终端区布局。服务器数据后续存本地（tauri store）或配置文件
 export default function App() {

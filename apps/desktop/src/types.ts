@@ -5,5 +5,5 @@ export interface ServerEntry {
   port: number;
   username: string;
   group?: string;
-  authMethod: 'password' | 'publicKey' | 'agent';
+  authMethod: "password" | "publicKey" | "agent";
 }

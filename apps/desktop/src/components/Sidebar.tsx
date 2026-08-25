@@ -1,4 +1,4 @@
-import type { ServerEntry } from '../types';
+import type { ServerEntry } from "../types";
 
 interface Props {
   servers: ServerEntry[];
