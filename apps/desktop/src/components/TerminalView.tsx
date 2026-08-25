@@ -1,59 +1,115 @@
-import { useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { FitAddon, Terminal, init } from "ghostty-web";
-import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
+import { useEffect, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { FitAddon, Terminal, init } from 'ghostty-web';
+import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
+import type { SessionInfo } from '../types';
 
 interface Props {
-  sessionId: string;
+  session: SessionInfo;
+  active: boolean;
 }
 
-// M1 骨架：ghostty-web 终端组件，经 Tauri commands 与 Rust SSH 层交互
+// ghostty-web 终端组件，经 Tauri commands 与 Rust SSH 层（russh）交互
 // 注意：固定使用 Canvas 渲染器（WebGL 路径暂不支持 Kitty graphics）
-export default function TerminalView({ sessionId }: Props) {
+export default function TerminalView({ session, active }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+
+  // 标签重新激活时重新 fit（display:none 时尺寸为 0）
+  useEffect(() => {
+    if (active) fitRef.current?.fit();
+  }, [active]);
 
   useEffect(() => {
     let disposed = false;
     let term: Terminal | null = null;
+    let backendId: string | null = null;
+    const cleanups: Array<() => void> = [];
 
     (async () => {
       await init(wasmUrl);
       if (disposed || !containerRef.current) return;
 
-      term = new Terminal({
+      const t = new Terminal({
         cursorBlink: true,
         fontSize: 14,
-        fontFamily: "Menlo, Consolas, monospace",
+        fontFamily: 'Menlo, Consolas, "Cascadia Mono", monospace',
+        theme: { background: '#1a1b26', foreground: '#a9b1d6' },
       });
+      term = t;
       const fit = new FitAddon();
-      term.loadAddon(fit);
-      term.open(containerRef.current);
+      fitRef.current = fit;
+      t.loadAddon(fit);
+      t.open(containerRef.current);
       fit.fit();
 
-      // 后端输出 → 终端
-      const unlisten = await listen<string>(`ssh://${sessionId}/data`, (e) => {
-        term?.write(e.payload);
-      });
-      void unlisten;
+      t.write(`\x1b[36m⟫ 正在连接 ${session.server.username}@${session.server.host}:${session.server.port} …\x1b[0m\r\n\r\n`);
 
-      // 终端输入 → 后端
-      const dataSub = term.onData((data: string) => {
-        invoke("ssh_write", { sessionId, data });
+      // 先注册输入转发，再连接（连接失败时也能看到终端里的报错）
+      const dataSub = t.onData((data: string) => {
+        if (backendId) {
+          invoke('ssh_write', { sessionId: backendId, data }).catch(() => {});
+        }
       });
+      cleanups.push(() => dataSub.dispose());
+      const resizeSub = t.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+        if (backendId) {
+          invoke('ssh_resize', { sessionId: backendId, cols, rows }).catch(() => {});
+        }
+      });
+      cleanups.push(() => resizeSub.dispose());
 
-      return () => {
-        unlisten();
-        dataSub.dispose();
-      };
+      const { server } = session;
+      try {
+        backendId = await invoke<string>('ssh_connect', {
+          params: {
+            host: server.host,
+            port: server.port,
+            username: server.username,
+            authMethod: server.authMethod,
+            secret: server.authMethod === 'password' ? (server.password ?? '') : (server.keyPath ?? ''),
+            passphrase: server.passphrase ?? null,
+            cols: t.cols,
+            rows: t.rows,
+          },
+        });
+      } catch (e) {
+        t.write(`\x1b[31m✗ ${String(e)}\x1b[0m\r\n`);
+        return;
+      }
+      if (disposed) {
+        invoke('ssh_disconnect', { sessionId: backendId }).catch(() => {});
+        return;
+      }
+
+      cleanups.push(
+        await listen<string>(`ssh://${backendId}/data`, (e) => {
+          t.write(e.payload);
+        }),
+      );
+      cleanups.push(
+        await listen<number>(`ssh://${backendId}/exit`, (e) => {
+          const msg = e.payload >= 0 ? `进程退出 (exit=${e.payload})` : '连接已断开';
+          t.write(`\r\n\x1b[33m⟫ ${msg}\x1b[0m\r\n`);
+        }),
+      );
     })();
+
+    const onWindowResize = () => fitRef.current?.fit();
+    window.addEventListener('resize', onWindowResize);
 
     return () => {
       disposed = true;
+      window.removeEventListener('resize', onWindowResize);
+      cleanups.forEach((fn) => fn());
+      if (backendId) {
+        invoke('ssh_disconnect', { sessionId: backendId }).catch(() => {});
+      }
+      fitRef.current = null;
       term?.dispose();
-      invoke("ssh_disconnect", { sessionId });
     };
-  }, [sessionId]);
+  }, [session]);
 
   return <div ref={containerRef} className="terminal-view" />;
 }

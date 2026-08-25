@@ -1,0 +1,17 @@
+{
+  "nextId": 5,
+  "tasks": [
+    {
+      "id": "4",
+      "subject": "实现新建连接 UI 和真实 SSH 连接",
+      "description": "前端：侧边栏加\"+\"按钮弹出新建服务器表单（名称/地址/端口/用户/密码或密钥路径），服务器列表存 localStorage，点击服务器创建终端标签页；后端：ssh.rs 桩替换为真实 russh 实现（密码/密钥认证、pty、shell、读写、resize、断开）。本地 cargo check + npm run build 验证后推送并出 v0.1.1 Windows 包。",
+      "status": "pending",
+      "activeForm": "实现新建连接与真实 SSH",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787690354837,
+      "updatedAt": 1787690354837
+    }
+  ]
+}
