@@ -57,7 +57,9 @@ export default function TerminalView({ session, active }: Props) {
           textarea?.focus();
         };
         root.addEventListener("mousedown", focusHandler);
-        cleanups.push(() => root.removeEventListener("mousedown", focusHandler));
+        cleanups.push(() =>
+          root.removeEventListener("mousedown", focusHandler),
+        );
         textarea?.focus();
       }
 

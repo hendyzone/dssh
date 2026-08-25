@@ -1,4 +1,4 @@
-name: build-windows
+name: build
 
 permissions:
   contents: write # 创建 release 并上传资产需要
@@ -11,7 +11,12 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest 即 Apple Silicon（aarch64）；如需 Intel Mac 再加 macos-13
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,16 +36,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
-          # 推 tag（v*）时自动创建 draft release 并上传安装包（release 资产不占 artifact 配额）
+          # 推 tag（v*）或匹配到既有 draft release 时上传安装包（release 资产不占 artifact 配额）
           tagName: v__VERSION__
           releaseName: "dssh v__VERSION__"
           releaseDraft: true
 
-      - name: Upload Windows installers
+      - name: Upload installers (artifact)
         uses: actions/upload-artifact@v4
         continue-on-error: true # artifact 配额满时不阻塞构建
         with:
-          name: dssh-windows
+          name: dssh-${{ matrix.os }}
           path: |
             apps/desktop/src-tauri/target/release/bundle/**/*.msi
             apps/desktop/src-tauri/target/release/bundle/**/*.exe
+            apps/desktop/src-tauri/target/release/bundle/**/*.dmg
+            apps/desktop/src-tauri/target/release/bundle/**/*.app.tar.gz
