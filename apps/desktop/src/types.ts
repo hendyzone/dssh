@@ -5,7 +5,7 @@ export interface ServerEntry {
   port: number;
   username: string;
   group?: string;
-  authMethod: 'password' | 'publicKey';
+  authMethod: "password" | "publicKey";
   /** 密码（authMethod=password）。临时方案：localStorage 明文，M2 迁移到系统 keyring */
   password?: string;
   /** 私钥路径（authMethod=publicKey） */

@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { FitAddon, Terminal, init } from 'ghostty-web';
-import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
-import type { SessionInfo } from '../types';
+import { useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { FitAddon, Terminal, init } from "ghostty-web";
+import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
+import type { SessionInfo } from "../types";
 
 interface Props {
   session: SessionInfo;
@@ -35,7 +35,7 @@ export default function TerminalView({ session, active }: Props) {
         cursorBlink: true,
         fontSize: 14,
         fontFamily: 'Menlo, Consolas, "Cascadia Mono", monospace',
-        theme: { background: '#1a1b26', foreground: '#a9b1d6' },
+        theme: { background: "#1a1b26", foreground: "#a9b1d6" },
       });
       term = t;
       const fit = new FitAddon();
@@ -44,31 +44,57 @@ export default function TerminalView({ session, active }: Props) {
       t.open(containerRef.current);
       fit.fit();
 
-      t.write(`\x1b[36m⟫ 正在连接 ${session.server.username}@${session.server.host}:${session.server.port} …\x1b[0m\r\n\r\n`);
+      // IME 修复（WebView2/Windows）：ghostty-web 会给容器加 contenteditable，
+      // 而 WebView2 对 contentEditable 元素的 IME 组合提交有 bug（吃掉中文输入）。
+      // 移除 contenteditable，并把容器上的点击统一引导到隐藏 textarea 获得焦点。
+      // 参考: MicrosoftEdge/WebView2Feedback#5625
+      {
+        const root = containerRef.current;
+        root.removeAttribute("contenteditable");
+        const textarea = root.querySelector("textarea");
+        const focusHandler = (e: MouseEvent) => {
+          e.preventDefault();
+          textarea?.focus();
+        };
+        root.addEventListener("mousedown", focusHandler);
+        cleanups.push(() => root.removeEventListener("mousedown", focusHandler));
+        textarea?.focus();
+      }
+
+      t.write(
+        `\x1b[36m⟫ 正在连接 ${session.server.username}@${session.server.host}:${session.server.port} …\x1b[0m\r\n\r\n`,
+      );
 
       // 先注册输入转发，再连接（连接失败时也能看到终端里的报错）
       const dataSub = t.onData((data: string) => {
         if (backendId) {
-          invoke('ssh_write', { sessionId: backendId, data }).catch(() => {});
+          invoke("ssh_write", { sessionId: backendId, data }).catch(() => {});
         }
       });
       cleanups.push(() => dataSub.dispose());
-      const resizeSub = t.onResize(({ cols, rows }: { cols: number; rows: number }) => {
-        if (backendId) {
-          invoke('ssh_resize', { sessionId: backendId, cols, rows }).catch(() => {});
-        }
-      });
+      const resizeSub = t.onResize(
+        ({ cols, rows }: { cols: number; rows: number }) => {
+          if (backendId) {
+            invoke("ssh_resize", { sessionId: backendId, cols, rows }).catch(
+              () => {},
+            );
+          }
+        },
+      );
       cleanups.push(() => resizeSub.dispose());
 
       const { server } = session;
       try {
-        backendId = await invoke<string>('ssh_connect', {
+        backendId = await invoke<string>("ssh_connect", {
           params: {
             host: server.host,
             port: server.port,
             username: server.username,
             authMethod: server.authMethod,
-            secret: server.authMethod === 'password' ? (server.password ?? '') : (server.keyPath ?? ''),
+            secret:
+              server.authMethod === "password"
+                ? (server.password ?? "")
+                : (server.keyPath ?? ""),
             passphrase: server.passphrase ?? null,
             cols: t.cols,
             rows: t.rows,
@@ -79,7 +105,7 @@ export default function TerminalView({ session, active }: Props) {
         return;
       }
       if (disposed) {
-        invoke('ssh_disconnect', { sessionId: backendId }).catch(() => {});
+        invoke("ssh_disconnect", { sessionId: backendId }).catch(() => {});
         return;
       }
 
@@ -90,21 +116,22 @@ export default function TerminalView({ session, active }: Props) {
       );
       cleanups.push(
         await listen<number>(`ssh://${backendId}/exit`, (e) => {
-          const msg = e.payload >= 0 ? `进程退出 (exit=${e.payload})` : '连接已断开';
+          const msg =
+            e.payload >= 0 ? `进程退出 (exit=${e.payload})` : "连接已断开";
           t.write(`\r\n\x1b[33m⟫ ${msg}\x1b[0m\r\n`);
         }),
       );
     })();
 
     const onWindowResize = () => fitRef.current?.fit();
-    window.addEventListener('resize', onWindowResize);
+    window.addEventListener("resize", onWindowResize);
 
     return () => {
       disposed = true;
-      window.removeEventListener('resize', onWindowResize);
+      window.removeEventListener("resize", onWindowResize);
       cleanups.forEach((fn) => fn());
       if (backendId) {
-        invoke('ssh_disconnect', { sessionId: backendId }).catch(() => {});
+        invoke("ssh_disconnect", { sessionId: backendId }).catch(() => {});
       }
       fitRef.current = null;
       term?.dispose();

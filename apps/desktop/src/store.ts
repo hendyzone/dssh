@@ -1,6 +1,6 @@
-import type { ServerEntry } from './types';
+import type { ServerEntry } from "./types";
 
-const KEY = 'dssh.servers';
+const KEY = "dssh.servers";
 
 // 临时持久化方案：localStorage。M2 迁移到 tauri store + keyring
 export function loadServers(): ServerEntry[] {

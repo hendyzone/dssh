@@ -2,6 +2,14 @@
 import { FitAddon, Terminal, init } from "ghostty-web";
 import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 
+// 测试钩子：记录所有发送到 pty 的输入（自动化 IME 测试断言用）
+declare global {
+  interface Window {
+    __sent: string[];
+  }
+}
+window.__sent = [];
+
 export interface SessionHandle {
   term: Terminal;
   sendCommand: (cmd: string) => void;
@@ -30,6 +38,16 @@ export async function createSession(
   term.open(container);
   fit.fit();
 
+  // IME 修复（WebView2/Windows）：移除 contenteditable（WebView2 对其 IME 有 bug），
+  // 点击容器统一聚焦到隐藏 textarea。与 apps/desktop TerminalView 保持一致。
+  container.removeAttribute("contenteditable");
+  const textarea = container.querySelector("textarea");
+  container.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    textarea?.focus();
+  });
+  textarea?.focus();
+
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
@@ -51,6 +69,7 @@ export async function createSession(
   };
 
   const dataSub = term.onData((data: string) => {
+    window.__sent.push(data);
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "data", data }));
     }
@@ -70,7 +89,7 @@ export async function createSession(
     term,
     sendCommand: (cmd) => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "data", data: cmd + "\n" }));
+        ws.send(JSON.stringify({ type: "data", data: `${cmd}\n` }));
       }
     },
     dispose: () => {
