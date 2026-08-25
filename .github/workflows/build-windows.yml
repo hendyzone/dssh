@@ -3,7 +3,7 @@ name: build-windows
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
@@ -24,6 +24,8 @@ jobs:
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
           # 推 tag（v*）时自动创建 draft release 并上传安装包（release 资产不占 artifact 配额）
