@@ -1,5 +1,8 @@
 name: build-windows
 
+permissions:
+  contents: write # 创建 release 并上传资产需要
+
 on:
   push:
     branches: [main]
