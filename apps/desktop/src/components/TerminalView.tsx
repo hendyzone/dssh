@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FitAddon, Terminal, init } from "ghostty-web";
 import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
+import { findImageAtPoint } from "../lib/kittyPreview";
 import type { SessionInfo } from "../types";
 
 interface Props {
@@ -61,6 +62,23 @@ export default function TerminalView({ session, active }: Props) {
           root.removeEventListener("mousedown", focusHandler),
         );
         textarea?.focus();
+
+        // 双击图片 → 单独窗口预览（单击仍留给文本选择）
+        const canvas = root.querySelector("canvas");
+        if (canvas) {
+          const dblHandler = (e: MouseEvent) => {
+            const img = findImageAtPoint(t, canvas, e.clientX, e.clientY);
+            if (img) {
+              invoke("open_image_preview", {
+                dataUrl: img.dataUrl,
+                width: img.width,
+                height: img.height,
+              }).catch(() => {});
+            }
+          };
+          canvas.addEventListener("dblclick", dblHandler);
+          cleanups.push(() => canvas.removeEventListener("dblclick", dblHandler));
+        }
       }
 
       t.write(

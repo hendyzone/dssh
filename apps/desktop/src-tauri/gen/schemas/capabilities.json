@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"默认能力集","local":true,"windows":["main"],"permissions":["core:default","core:event:default"]}}
+{"default":{"identifier":"default","description":"默认能力集","local":true,"windows":["main","preview-*"],"permissions":["core:default","core:event:default"]}}

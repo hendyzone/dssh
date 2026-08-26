@@ -262,3 +262,31 @@ body {
   background: #292e42;
   color: #a9b1d6;
 }
+
+/* ---- 图片预览窗 ---- */
+.preview-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #16161e;
+  overflow: auto;
+  padding: 16px;
+  gap: 8px;
+}
+
+.preview-page img {
+  max-width: 100%;
+  max-height: calc(100vh - 60px);
+  border-radius: 4px;
+}
+
+.preview-hint {
+  font-size: 12px;
+  color: #565f89;
+}
+
+.preview-error {
+  color: #f7768e;
+}
