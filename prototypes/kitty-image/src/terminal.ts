@@ -6,6 +6,7 @@ import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 declare global {
   interface Window {
     __sent: string[];
+    __term: Terminal;
   }
 }
 window.__sent = [];
@@ -37,6 +38,7 @@ export async function createSession(
   term.loadAddon(fit);
   term.open(container);
   fit.fit();
+  window.__term = term; // 测试钩子
 
   // IME 修复（WebView2/Windows）：移除 contenteditable（WebView2 对其 IME 有 bug），
   // 点击容器统一聚焦到隐藏 textarea。与 apps/desktop TerminalView 保持一致。

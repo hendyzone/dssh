@@ -181,7 +181,16 @@ pub async fn ssh_connect(
         .await?;
     // 真彩色支持声明（部分服务器拒绝 set_env，忽略错误）
     let _ = channel.set_env(false, "COLORTERM", "truecolor").await;
-    channel.request_shell(false).await?;
+    // 用 exec 代替 request_shell：通过 env 前缀注入终端能力声明，
+    // 不受服务端 sshd AcceptEnv 白名单限制。
+    // TERM_PROGRAM=ghostty 声明本终端支持 Kitty graphics protocol
+    //（pi 等现代工具依据该变量决定是否内联显示图片）。
+    channel
+        .exec(
+            false,
+            "env TERM_PROGRAM=ghostty COLORTERM=truecolor ${SHELL:-/bin/bash} -l",
+        )
+        .await?;
 
     let (mut read_half, write_half) = channel.split();
 

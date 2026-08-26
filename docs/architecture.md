@@ -31,11 +31,14 @@
   - 保留 xterm.js 兼容 API（`Terminal` / `FitAddon` / `onData` / `write`）
   - WebGL 渲染器暂不支持 Kitty graphics → **固定使用 Canvas 渲染器**
 
-**待验证风险**（M0 demo 的核心目的）：
+**M0 验证结果**（Playwright + CDP 自动化实测，见 `prototypes/kitty-image/test/`）：
 
-1. Kitty graphics 的**能力探测查询**（APC query）能否正确应答——pi 据此决定是否发送图片；若 WASM 层不应答，需在集成层拦截查询序列并代答
-2. 经 SSH 传输后图片序列的完整性
-3. 长时间会话渲染稳定性
+1. ✅ Kitty graphics 查询（`a=q`）能被 WASM 正确应答（`Gi=31;OK`）
+2. ✅ 图片序列经 pty→ws→write 链路完整传输并渲染到 Canvas（截图确认）
+3. ✅ **pi 实测内联显示图片成功**——关键发现：pi 仅靠环境变量探测终端能力（`detectCapabilities`），不主动发查询；需声明 `TERM_PROGRAM=ghostty` 且**不得有 TMUX 变量**（pi 在 tmux 下禁用图片）。后端通过 `exec env TERM_PROGRAM=ghostty ... $SHELL -l` 注入，绕过 sshd AcceptEnv 限制
+4. ✅ IME 中文输入在 Chromium 正常；WebView2 需移除容器 contenteditable（上游 bug WebView2Feedback#5625）
+5. ⚠️ Kitty keyboard protocol 未实现（input-handler 无 CSI u 编码）→ pi 的 Shift+Enter 等按键不可用，待补
+6. 待观察：长时间会话渲染稳定性
 
 ### 桌面壳：Tauri v2（而非 Electron）
 

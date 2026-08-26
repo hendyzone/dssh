@@ -10,12 +10,22 @@ wss.on("connection", (ws) => {
   console.log("[bridge] client connected");
 
   const shell = process.env.SHELL || "/bin/bash";
+  const ptyEnv = {
+    ...process.env,
+    TERM: "xterm-256color",
+    COLORTERM: "truecolor",
+    // 声明终端身份：pi 等工具据 TERM_PROGRAM=ghostty 判定支持 Kitty graphics
+    TERM_PROGRAM: "ghostty",
+  };
+  // 剔除 tmux 标记：pi 检测到 TMUX 会直接禁用图片能力
+  delete ptyEnv.TMUX;
+  delete ptyEnv.TMUX_PANE;
   const term = pty.spawn(shell, ["-l"], {
     name: "xterm-256color",
     cols: 120,
     rows: 32,
     cwd: process.env.HOME,
-    env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor" },
+    env: ptyEnv,
   });
 
   term.onData((data) => {
