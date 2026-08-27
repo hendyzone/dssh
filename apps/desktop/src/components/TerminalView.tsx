@@ -32,17 +32,15 @@ export default function TerminalView({
     if (active) fitRef.current?.fit();
   }, [active]);
 
-  // 设置变更热更新（主题/字号/字体）
+  // 设置变更热更新（主题/字号/字体）。注意必须逐键赋值：
+  // ghostty-web 的 options 是 Proxy，整体替换会绕过 change 处理不触发重绘
   useEffect(() => {
     const t = termRef.current;
     if (!t) return;
     const theme = getTheme(settings.themeId).term;
-    t.options = {
-      ...t.options,
-      theme,
-      fontSize: settings.fontSize,
-      fontFamily: settings.fontFamily,
-    };
+    t.options.theme = theme;
+    t.options.fontSize = settings.fontSize;
+    t.options.fontFamily = settings.fontFamily;
     fitRef.current?.fit();
   }, [settings]);
 

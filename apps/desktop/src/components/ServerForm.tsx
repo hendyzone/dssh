@@ -158,7 +158,7 @@ export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
           <button type="button" className="btn-secondary" onClick={onCancel}>
             取消
           </button>
-          <button type="submit" disabled={!valid}>
+          <button type="submit" className="btn-primary" disabled={!valid}>
             {editing ? "保存" : "保存并连接"}
           </button>
         </div>

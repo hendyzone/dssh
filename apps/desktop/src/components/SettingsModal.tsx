@@ -53,7 +53,7 @@ export default function SettingsModal({ settings, onChange, onClose }: Props) {
           />
         </label>
         <div className="form-actions">
-          <button type="button" onClick={onClose}>
+          <button type="button" className="btn-primary" onClick={onClose}>
             完成
           </button>
         </div>

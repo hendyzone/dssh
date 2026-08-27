@@ -1,5 +1,15 @@
 import { useMemo, useState } from "react";
+import logoUrl from "../assets/logo.png";
 import type { ServerEntry } from "../types";
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconClose,
+  IconEdit,
+  IconPlus,
+  IconSearch,
+  IconSettings,
+} from "./Icons";
 
 interface Props {
   servers: ServerEntry[];
@@ -44,7 +54,6 @@ export default function Sidebar({
       list.push(s);
       map.set(g, list);
     }
-    // 组名排序，未分组排最后
     return [...map.entries()].sort(([a], [b]) =>
       a === UNGROUPED ? 1 : b === UNGROUPED ? -1 : a.localeCompare(b),
     );
@@ -53,17 +62,25 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <span>服务器</span>
+        <div className="sidebar-brand">
+          <img src={logoUrl} alt="" />
+          dssh
+        </div>
         <div className="sidebar-actions">
-          <button className="btn-add" onClick={onOpenSettings} title="设置">
-            ⚙
+          <button className="icon-btn" onClick={onOpenSettings} title="设置">
+            <IconSettings />
           </button>
-          <button className="btn-add" onClick={onAdd} title="新建连接">
-            ＋
+          <button
+            className="icon-btn accent"
+            onClick={onAdd}
+            title="新建连接"
+          >
+            <IconPlus />
           </button>
         </div>
       </div>
       <div className="sidebar-search">
+        <IconSearch size={14} />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -88,9 +105,11 @@ export default function Sidebar({
                   setCollapsed((c) => ({ ...c, [group]: !c[group] }))
                 }
               >
-                <span className="group-arrow">
-                  {collapsed[group] ? "▸" : "▾"}
-                </span>
+                {collapsed[group] ? (
+                  <IconChevronRight size={12} />
+                ) : (
+                  <IconChevronDown size={12} />
+                )}
                 <span>{group}</span>
                 <span className="group-count">{list.length}</span>
               </div>
@@ -102,23 +121,26 @@ export default function Sidebar({
                       className="server-item"
                       onClick={() => onConnect(s)}
                     >
-                      <div className="server-name">{s.name}</div>
-                      <div className="server-addr">
-                        {s.username}@{s.host}:{s.port}
+                      <span className="server-status" />
+                      <div className="server-item-meta">
+                        <div className="server-name">{s.name}</div>
+                        <div className="server-addr">
+                          {s.username}@{s.host}:{s.port}
+                        </div>
                       </div>
                       <div className="server-item-actions">
                         <button
-                          className="btn-icon"
+                          className="icon-btn"
                           title="编辑"
                           onClick={(e) => {
                             e.stopPropagation();
                             onEdit(s);
                           }}
                         >
-                          ✎
+                          <IconEdit size={13} />
                         </button>
                         <button
-                          className="btn-icon danger"
+                          className="icon-btn danger"
                           title="删除"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -126,7 +148,7 @@ export default function Sidebar({
                               onDelete(s.id);
                           }}
                         >
-                          ×
+                          <IconClose size={13} />
                         </button>
                       </div>
                     </li>

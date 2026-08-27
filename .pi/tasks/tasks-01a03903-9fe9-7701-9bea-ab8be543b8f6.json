@@ -1,0 +1,17 @@
+{
+  "nextId": 12,
+  "tasks": [
+    {
+      "id": "11",
+      "subject": "UI 视觉重设计（iTerm2/现代风格）",
+      "description": "全面美化：设计系统 tokens（圆角/阴影/间距）、SVG 图标替换 emoji、侧边栏卡片化、现代化标签栏、毛玻璃模态框、欢迎页（用新 logo）、监控条美化、过渡动画。保持 4 套主题变量可用。",
+      "status": "in_progress",
+      "activeForm": "重设计 UI 视觉体系",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787809654106,
+      "updatedAt": 1787809922478
+    }
+  ]
+}

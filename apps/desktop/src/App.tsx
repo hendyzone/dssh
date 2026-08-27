@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
+import logoUrl from "./assets/logo.png";
 import ForwardPanel from "./components/ForwardPanel";
+import {
+  IconClose,
+  IconFolder,
+  IconForward,
+  IconSplitH,
+  IconSplitV,
+} from "./components/Icons";
 import MonitorBar from "./components/MonitorBar";
 import ServerForm from "./components/ServerForm";
 import SettingsModal from "./components/SettingsModal";
@@ -190,29 +198,38 @@ export default function App() {
                   className={`tab ${t.id === activeTabId ? "active" : ""}`}
                   onClick={() => setActiveTabId(t.id)}
                 >
-                  <span>
-                    {t.panes[0].server.name}
-                    {dupSuffix}
-                    {t.panes.length > 1 ? ` ⊞${t.panes.length}` : ""}
-                  </span>
-                  <button
-                    className="tab-close"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(t.id);
-                    }}
-                  >
-                    ×
-                  </button>
+                <span className="tab-dot" />
+                <span>
+                  {t.panes[0].server.name}
+                  {dupSuffix}
+                  {t.panes.length > 1 ? ` ⊞${t.panes.length}` : ""}
+                </span>
+                <button
+                  className="tab-close"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(t.id);
+                  }}
+                >
+                  <IconClose size={12} />
+                </button>
                 </div>
               );
             })}
           </div>
         )}
         {tabs.length === 0 ? (
-          <div className="empty-state">
+          <div className="welcome">
+            <img src={logoUrl} alt="dssh" />
             <h2>dssh</h2>
-            <p>点左侧 ＋ 新建一台服务器开始</p>
+            <p>
+              稳定、好看的现代 SSH 客户端
+              <br />
+              支持终端内图片显示 · SFTP · 端口转发
+            </p>
+            <button className="btn-primary" onClick={() => setFormTarget(undefined)}>
+              ＋ 新建服务器
+            </button>
           </div>
         ) : (
           tabs.map((t) => {
@@ -227,32 +244,33 @@ export default function App() {
               >
                 <div className="session-toolbar">
                   <button
-                    className={`tool-btn ${panel === "sftp" ? "on" : ""}`}
+                    className={`icon-btn ${panel === "sftp" ? "on" : ""}`}
                     title="SFTP 文件面板"
                     onClick={() => togglePanel(t.id, "sftp")}
                   >
-                    📁
+                    <IconFolder />
                   </button>
                   <button
-                    className={`tool-btn ${panel === "forward" ? "on" : ""}`}
+                    className={`icon-btn ${panel === "forward" ? "on" : ""}`}
                     title="端口转发"
                     onClick={() => togglePanel(t.id, "forward")}
                   >
-                    ⇄
+                    <IconForward />
                   </button>
+                  <span className="toolbar-sep" />
                   <button
-                    className="tool-btn"
-                    title="水平分屏"
+                    className="icon-btn"
+                    title="左右分屏"
                     onClick={() => splitTab(t.id, "row")}
                   >
-                    ◫
+                    <IconSplitH />
                   </button>
                   <button
-                    className="tool-btn"
-                    title="垂直分屏"
+                    className="icon-btn"
+                    title="上下分屏"
                     onClick={() => splitTab(t.id, "column")}
                   >
-                    ⬓
+                    <IconSplitV />
                   </button>
                 </div>
                 <div className="session-content">

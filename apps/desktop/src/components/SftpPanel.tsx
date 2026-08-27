@@ -28,19 +28,19 @@ const panelStyle: CSSProperties = {
   minHeight: 240,
   display: "flex",
   flexDirection: "column",
-  background: "#1a1b26",
-  color: "#a9b1d6",
-  borderLeft: "1px solid #292e42",
+  background: "var(--ui-panelAlt)",
+  color: "var(--ui-fg)",
+  borderLeft: "1px solid var(--ui-border)",
   fontFamily: "system-ui, sans-serif",
   fontSize: 13,
 };
 
 const buttonStyle: CSSProperties = {
-  border: "1px solid #3b4261",
+  border: "1px solid var(--ui-border)",
   borderRadius: 4,
   padding: "4px 7px",
-  background: "#24283b",
-  color: "#a9b1d6",
+  background: "var(--ui-panel)",
+  color: "var(--ui-fg)",
   cursor: "pointer",
   fontSize: 12,
 };
@@ -245,10 +245,10 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
           alignItems: "center",
           gap: 6,
           padding: "10px 10px 7px",
-          borderBottom: "1px solid #292e42",
+          borderBottom: "1px solid var(--ui-border)",
         }}
       >
-        <strong style={{ color: "#c0caf5", marginRight: "auto" }}>SFTP</strong>
+        <strong style={{ color: "var(--ui-fg)", marginRight: "auto" }}>SFTP</strong>
         <button
           type="button"
           style={buttonStyle}
@@ -288,7 +288,7 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
         {breadcrumbs.map((crumb, index) => (
           <span key={crumb.path}>
             {index > 0 && (
-              <span style={{ color: "#565f89", margin: "0 3px" }}>/</span>
+              <span style={{ color: "var(--ui-muted)", margin: "0 3px" }}>/</span>
             )}
             <button
               type="button"
@@ -297,7 +297,7 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
                 border: 0,
                 padding: 0,
                 background: "transparent",
-                color: index === breadcrumbs.length - 1 ? "#7aa2f7" : "#a9b1d6",
+                color: index === breadcrumbs.length - 1 ? "var(--ui-accent)" : "var(--ui-fg)",
                 cursor: "pointer",
               }}
             >
@@ -314,7 +314,7 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
             padding: "7px 8px",
             borderRadius: 4,
             background: "#3b1f2b",
-            color: "#f7768e",
+            color: "var(--ui-danger)",
             overflowWrap: "anywhere",
           }}
         >
@@ -341,8 +341,8 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
             margin: "0 8px 6px",
             padding: "7px 8px",
             borderRadius: 4,
-            background: "#292e42",
-            color: "#7aa2f7",
+            background: "var(--ui-border)",
+            color: "var(--ui-accent)",
           }}
         >
           正在上传 {uploading.length} 个文件…
@@ -351,9 +351,9 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
 
       <div style={{ flex: 1, overflowY: "auto", padding: "0 5px 8px" }}>
         {loading ? (
-          <div style={{ padding: 14, color: "#565f89" }}>正在读取目录…</div>
+          <div style={{ padding: 14, color: "var(--ui-muted)" }}>正在读取目录…</div>
         ) : entries.length === 0 ? (
-          <div style={{ padding: 14, color: "#565f89" }}>目录为空</div>
+          <div style={{ padding: 14, color: "var(--ui-muted)" }}>目录为空</div>
         ) : (
           entries.map((entry) => (
             <div
@@ -372,7 +372,7 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
                 padding: "4px 5px",
                 borderRadius: 4,
                 background:
-                  selectedPath === entry.path ? "#292e42" : "transparent",
+                  selectedPath === entry.path ? "var(--ui-border)" : "transparent",
                 cursor: "default",
               }}
             >
@@ -386,12 +386,12 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
-                    color: entry.isDir ? "#c0caf5" : "#a9b1d6",
+                    color: entry.isDir ? "var(--ui-fg)" : "var(--ui-fg)",
                   }}
                 >
                   {entry.name}
                 </div>
-                <div style={{ color: "#565f89", fontSize: 11 }}>
+                <div style={{ color: "var(--ui-muted)", fontSize: 11 }}>
                   {formatSize(entry.size, entry.isDir)} ·{" "}
                   {formatTime(entry.mtime)}
                 </div>
@@ -426,7 +426,7 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
                   style={{
                     ...buttonStyle,
                     padding: "3px 5px",
-                    color: "#f7768e",
+                    color: "var(--ui-danger)",
                   }}
                   title="删除"
                   onClick={(event) => {
@@ -444,8 +444,8 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
       <div
         style={{
           padding: "6px 10px",
-          borderTop: "1px solid #292e42",
-          color: "#565f89",
+          borderTop: "1px solid var(--ui-border)",
+          color: "var(--ui-muted)",
           fontSize: 11,
         }}
       >

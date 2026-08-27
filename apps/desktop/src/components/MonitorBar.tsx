@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { IconMonitor } from "./Icons";
 
 interface Stats {
   cpuPct: number | null;
@@ -39,7 +40,7 @@ export default function MonitorBar({
     return (
       <div className="monitor-bar">
         <button className="monitor-toggle" onClick={() => setEnabled(true)}>
-          📊 开启监控
+          <IconMonitor size={13} /> 开启监控
         </button>
       </div>
     );
@@ -48,7 +49,7 @@ export default function MonitorBar({
   return (
     <div className="monitor-bar">
       <button className="monitor-toggle on" onClick={() => setEnabled(false)}>
-        📊
+        <IconMonitor size={13} />
       </button>
       {stats ? (
         <>

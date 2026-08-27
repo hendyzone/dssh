@@ -21,12 +21,12 @@ type ForwardStatus = {
 type Props = { sessionId: string; onClose: () => void };
 
 const colors = {
-  panel: "#1a1b26",
-  text: "#a9b1d6",
-  accent: "#7aa2f7",
-  muted: "#565f89",
-  border: "#292e42",
-  input: "#24283b",
+  panel: "var(--ui-panelAlt)",
+  text: "var(--ui-fg)",
+  accent: "var(--ui-accent)",
+  muted: "var(--ui-muted)",
+  border: "var(--ui-border)",
+  input: "var(--ui-panel)",
 };
 
 const typeInfo: Record<
@@ -171,7 +171,7 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
                     <span
                       style={{
                         ...styles.dot,
-                        background: item.running ? "#9ece6a" : "#f7768e",
+                        background: item.running ? "#9ece6a" : "var(--ui-danger)",
                       }}
                     />
                     {item.running ? "运行中" : "已停止"}
@@ -302,7 +302,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: 21,
     height: 21,
     borderRadius: 4,
-    color: "#1a1b26",
+    color: "var(--ui-panelAlt)",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
@@ -384,14 +384,14 @@ const styles: Record<string, React.CSSProperties> = {
     border: 0,
     borderRadius: 3,
     background: colors.accent,
-    color: "#1a1b26",
+    color: "var(--ui-panelAlt)",
     padding: "8px 10px",
     cursor: "pointer",
     fontWeight: 600,
     fontSize: 12,
   },
   error: {
-    color: "#f7768e",
+    color: "var(--ui-danger)",
     fontSize: 11,
     marginTop: 7,
     wordBreak: "break-word",
