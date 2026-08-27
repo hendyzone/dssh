@@ -57,13 +57,7 @@ export default function App() {
   // ---- 连接 / 标签页 ----
 
   const connect = (server: ServerEntry) => {
-    const existing = tabs.find((t) =>
-      t.panes.some((p) => p.server.id === server.id),
-    );
-    if (existing) {
-      setActiveTabId(existing.id);
-      return;
-    }
+    // 每点一次开一个新连接（同一服务器可开任意多个标签）
     const pane: SessionInfo = { id: crypto.randomUUID(), server };
     const tab: TabInfo = {
       id: crypto.randomUUID(),
@@ -181,27 +175,38 @@ export default function App() {
       <main className="main-area">
         {tabs.length > 0 && (
           <div className="tab-bar">
-            {tabs.map((t) => (
-              <div
-                key={t.id}
-                className={`tab ${t.id === activeTabId ? "active" : ""}`}
-                onClick={() => setActiveTabId(t.id)}
-              >
-                <span>
-                  {t.panes[0].server.name}
-                  {t.panes.length > 1 ? ` ⊞${t.panes.length}` : ""}
-                </span>
-                <button
-                  className="tab-close"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeTab(t.id);
-                  }}
+            {tabs.map((t) => {
+              // 同服务器的多个标签加 #n 序号区分
+              const sameServer = tabs.filter(
+                (x) => x.panes[0].server.id === t.panes[0].server.id,
+              );
+              const dupSuffix =
+                sameServer.length > 1
+                  ? ` #${sameServer.findIndex((x) => x.id === t.id) + 1}`
+                  : "";
+              return (
+                <div
+                  key={t.id}
+                  className={`tab ${t.id === activeTabId ? "active" : ""}`}
+                  onClick={() => setActiveTabId(t.id)}
                 >
-                  ×
-                </button>
-              </div>
-            ))}
+                  <span>
+                    {t.panes[0].server.name}
+                    {dupSuffix}
+                    {t.panes.length > 1 ? ` ⊞${t.panes.length}` : ""}
+                  </span>
+                  <button
+                    className="tab-close"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(t.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
         {tabs.length === 0 ? (
