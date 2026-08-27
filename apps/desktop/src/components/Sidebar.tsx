@@ -70,11 +70,7 @@ export default function Sidebar({
           <button className="icon-btn" onClick={onOpenSettings} title="设置">
             <IconSettings />
           </button>
-          <button
-            className="icon-btn accent"
-            onClick={onAdd}
-            title="新建连接"
-          >
+          <button className="icon-btn accent" onClick={onAdd} title="新建连接">
             <IconPlus />
           </button>
         </div>

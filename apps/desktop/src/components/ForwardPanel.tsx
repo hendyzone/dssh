@@ -171,7 +171,9 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
                     <span
                       style={{
                         ...styles.dot,
-                        background: item.running ? "#9ece6a" : "var(--ui-danger)",
+                        background: item.running
+                          ? "#9ece6a"
+                          : "var(--ui-danger)",
                       }}
                     />
                     {item.running ? "运行中" : "已停止"}

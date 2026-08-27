@@ -6,11 +6,7 @@ interface IconProps {
   style?: CSSProperties;
 }
 
-function svg(
-  paths: string,
-  { size = 16, style }: IconProps,
-  filled = false,
-) {
+function svg(paths: string, { size = 16, style }: IconProps, filled = false) {
   return (
     <svg
       width={size}
@@ -29,8 +25,7 @@ function svg(
   );
 }
 
-export const IconPlus = (p: IconProps) =>
-  svg("M12 5v14M5 12h14", p);
+export const IconPlus = (p: IconProps) => svg("M12 5v14M5 12h14", p);
 export const IconSearch = (p: IconProps) =>
   svg("M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3", p);
 export const IconSettings = (p: IconProps) => (
@@ -62,9 +57,11 @@ export const IconFolder = (p: IconProps) =>
 export const IconForward = (p: IconProps) =>
   svg("M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4", p);
 export const IconMonitor = (p: IconProps) =>
-  svg("M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2", p);
-export const IconTerminal = (p: IconProps) =>
-  svg("M4 17l6-6-6-6M12 19h8", p);
+  svg(
+    "M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2",
+    p,
+  );
+export const IconTerminal = (p: IconProps) => svg("M4 17l6-6-6-6M12 19h8", p);
 /** 水平分屏（左右） */
 export const IconSplitH = (p: IconProps) => (
   <svg

@@ -248,7 +248,9 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
           borderBottom: "1px solid var(--ui-border)",
         }}
       >
-        <strong style={{ color: "var(--ui-fg)", marginRight: "auto" }}>SFTP</strong>
+        <strong style={{ color: "var(--ui-fg)", marginRight: "auto" }}>
+          SFTP
+        </strong>
         <button
           type="button"
           style={buttonStyle}
@@ -288,7 +290,9 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
         {breadcrumbs.map((crumb, index) => (
           <span key={crumb.path}>
             {index > 0 && (
-              <span style={{ color: "var(--ui-muted)", margin: "0 3px" }}>/</span>
+              <span style={{ color: "var(--ui-muted)", margin: "0 3px" }}>
+                /
+              </span>
             )}
             <button
               type="button"
@@ -297,7 +301,10 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
                 border: 0,
                 padding: 0,
                 background: "transparent",
-                color: index === breadcrumbs.length - 1 ? "var(--ui-accent)" : "var(--ui-fg)",
+                color:
+                  index === breadcrumbs.length - 1
+                    ? "var(--ui-accent)"
+                    : "var(--ui-fg)",
                 cursor: "pointer",
               }}
             >
@@ -351,7 +358,9 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
 
       <div style={{ flex: 1, overflowY: "auto", padding: "0 5px 8px" }}>
         {loading ? (
-          <div style={{ padding: 14, color: "var(--ui-muted)" }}>正在读取目录…</div>
+          <div style={{ padding: 14, color: "var(--ui-muted)" }}>
+            正在读取目录…
+          </div>
         ) : entries.length === 0 ? (
           <div style={{ padding: 14, color: "var(--ui-muted)" }}>目录为空</div>
         ) : (
@@ -372,7 +381,9 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
                 padding: "4px 5px",
                 borderRadius: 4,
                 background:
-                  selectedPath === entry.path ? "var(--ui-border)" : "transparent",
+                  selectedPath === entry.path
+                    ? "var(--ui-border)"
+                    : "transparent",
                 cursor: "default",
               }}
             >

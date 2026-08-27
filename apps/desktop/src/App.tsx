@@ -198,21 +198,21 @@ export default function App() {
                   className={`tab ${t.id === activeTabId ? "active" : ""}`}
                   onClick={() => setActiveTabId(t.id)}
                 >
-                <span className="tab-dot" />
-                <span>
-                  {t.panes[0].server.name}
-                  {dupSuffix}
-                  {t.panes.length > 1 ? ` ⊞${t.panes.length}` : ""}
-                </span>
-                <button
-                  className="tab-close"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeTab(t.id);
-                  }}
-                >
-                  <IconClose size={12} />
-                </button>
+                  <span className="tab-dot" />
+                  <span>
+                    {t.panes[0].server.name}
+                    {dupSuffix}
+                    {t.panes.length > 1 ? ` ⊞${t.panes.length}` : ""}
+                  </span>
+                  <button
+                    className="tab-close"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(t.id);
+                    }}
+                  >
+                    <IconClose size={12} />
+                  </button>
                 </div>
               );
             })}
@@ -227,7 +227,10 @@ export default function App() {
               <br />
               支持终端内图片显示 · SFTP · 端口转发
             </p>
-            <button className="btn-primary" onClick={() => setFormTarget(undefined)}>
+            <button
+              className="btn-primary"
+              onClick={() => setFormTarget(undefined)}
+            >
               ＋ 新建服务器
             </button>
           </div>
