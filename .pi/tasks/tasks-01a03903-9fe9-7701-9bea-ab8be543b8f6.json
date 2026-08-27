@@ -1,17 +1,99 @@
 {
-  "nextId": 5,
+  "nextId": 11,
   "tasks": [
     {
       "id": "4",
       "subject": "实现新建连接 UI 和真实 SSH 连接",
       "description": "前端：侧边栏加\"+\"按钮弹出新建服务器表单（名称/地址/端口/用户/密码或密钥路径），服务器列表存 localStorage，点击服务器创建终端标签页；后端：ssh.rs 桩替换为真实 russh 实现（密码/密钥认证、pty、shell、读写、resize、断开）。本地 cargo check + npm run build 验证后推送并出 v0.1.1 Windows 包。",
-      "status": "pending",
+      "status": "completed",
       "activeForm": "实现新建连接与真实 SSH",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1787690354837,
-      "updatedAt": 1787690354837
+      "updatedAt": 1787761934573
+    },
+    {
+      "id": "5",
+      "subject": "后端：会话共享 + 服务器存储 + keyring",
+      "description": "ssh.rs 重构：Session 共享 russh Handle（供 SFTP/转发/监控复用）；新增 servers.rs：服务器条目 JSON 持久化到 app_config_dir，密码/passphrase 存系统 keyring（keyring crate），条目里只存引用。提供 servers_load/servers_save 等 Tauri commands。",
+      "status": "completed",
+      "activeForm": "重构后端会话与服务器存储",
+      "metadata": {},
+      "blocks": [
+        "6",
+        "7",
+        "9"
+      ],
+      "blockedBy": [],
+      "createdAt": 1787761730876,
+      "updatedAt": 1787762420410
+    },
+    {
+      "id": "6",
+      "subject": "SFTP 文件管理面板",
+      "description": "后端 sftp.rs：基于 russh-sftp 的 list_dir/download/upload/mkdir/delete/rename；前端：会话内可开关的文件面板（面包屑路径、文件列表、双击进目录、上传/下载/新建/删除/刷新）。",
+      "status": "pending",
+      "activeForm": "实现 SFTP 面板",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [
+        "5"
+      ],
+      "createdAt": 1787761730877,
+      "updatedAt": 1787761832276
+    },
+    {
+      "id": "7",
+      "subject": "端口转发管理",
+      "description": "后端 forward.rs：local（direct-tcpip 监听本地端口转发）/remote（tcpip-forward）/dynamic（本地 SOCKS5）；前端：转发规则管理面板（增删、启停、状态）。规则随会话生命周期。",
+      "status": "pending",
+      "activeForm": "实现端口转发",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [
+        "5"
+      ],
+      "createdAt": 1787761730877,
+      "updatedAt": 1787761832276
+    },
+    {
+      "id": "8",
+      "subject": "主题系统 + 服务器管理 UI 完善",
+      "description": "主题系统：内置 4-6 套配色（Tokyo Night 默认、暗色/浅色变体），CSS 变量驱动 UI + ghostty-web theme；设置面板（主题、字号、字体）。服务器管理：编辑已有条目、分组、搜索过滤。",
+      "status": "completed",
+      "activeForm": "实现主题与服务器管理 UI",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787761730878,
+      "updatedAt": 1787762918674
+    },
+    {
+      "id": "9",
+      "subject": "监控面板 + 终端分屏",
+      "description": "监控：后端 monitor.rs 定时通过 SSH exec 采集 /proc/stat、/proc/meminfo、df，事件推前端小面板（CPU%/MEM%/磁盘）。分屏：活动会话可水平/垂直拆分新窗格（同服务器新会话），简单二分布局。",
+      "status": "in_progress",
+      "activeForm": "实现监控面板与分屏",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [
+        "5"
+      ],
+      "createdAt": 1787761730878,
+      "updatedAt": 1787762918675
+    },
+    {
+      "id": "10",
+      "subject": "v0.2.0 构建验证与发版",
+      "description": "本地 npm build + cargo check 全绿；demo 里可加验证的尽量加；提交、tag v0.2.0、CI 双平台构建、确认 release 资产。",
+      "status": "pending",
+      "activeForm": "构建验证与发版",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787761730878,
+      "updatedAt": 1787761730878
     }
   ]
 }

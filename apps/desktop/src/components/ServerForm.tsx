@@ -2,21 +2,30 @@ import { useState } from "react";
 import type { ServerEntry } from "../types";
 
 interface Props {
-  onSubmit: (s: ServerEntry) => void;
+  /** 编辑模式：传入已有条目；不传为新建 */
+  initial?: ServerEntry;
+  /** record 已含 id；password/passphrase 仅在用户输入了新值时非空（空=保持不变） */
+  onSubmit: (
+    record: ServerEntry,
+    password?: string,
+    passphrase?: string,
+  ) => void;
   onCancel: () => void;
 }
 
-// 新建服务器表单（M1 简化版：分组/标签后续版本再加）
-export default function ServerForm({ onSubmit, onCancel }: Props) {
-  const [name, setName] = useState("");
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState("22");
-  const [username, setUsername] = useState("root");
+/** 新建/编辑服务器表单。密钥进系统 keyring，表单不回显 */
+export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
+  const editing = !!initial;
+  const [name, setName] = useState(initial?.name ?? "");
+  const [host, setHost] = useState(initial?.host ?? "");
+  const [port, setPort] = useState(String(initial?.port ?? 22));
+  const [username, setUsername] = useState(initial?.username ?? "root");
+  const [group, setGroup] = useState(initial?.group ?? "");
   const [authMethod, setAuthMethod] = useState<"password" | "publicKey">(
-    "password",
+    initial?.authMethod ?? "password",
   );
   const [password, setPassword] = useState("");
-  const [keyPath, setKeyPath] = useState("");
+  const [keyPath, setKeyPath] = useState(initial?.keyPath ?? "");
   const [passphrase, setPassphrase] = useState("");
 
   const valid =
@@ -25,18 +34,23 @@ export default function ServerForm({ onSubmit, onCancel }: Props) {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    onSubmit({
-      id: crypto.randomUUID(),
-      name: name.trim() || `${username}@${host}`,
-      host: host.trim(),
-      port: Number(port),
-      username: username.trim(),
-      authMethod,
-      password: authMethod === "password" ? password : undefined,
-      keyPath: authMethod === "publicKey" ? keyPath.trim() : undefined,
-      passphrase:
-        authMethod === "publicKey" && passphrase ? passphrase : undefined,
-    });
+    onSubmit(
+      {
+        id: initial?.id ?? crypto.randomUUID(),
+        name: name.trim() || `${username}@${host}`,
+        host: host.trim(),
+        port: Number(port),
+        username: username.trim(),
+        group: group.trim() || undefined,
+        authMethod,
+        keyPath: authMethod === "publicKey" ? keyPath.trim() : undefined,
+        hasPassword: initial?.hasPassword,
+        hasPassphrase: initial?.hasPassphrase,
+      },
+      // 用户留空 → undefined（后端保持 keyring 原值）；输入了 → 新值
+      password || undefined,
+      passphrase || undefined,
+    );
   };
 
   return (
@@ -46,7 +60,7 @@ export default function ServerForm({ onSubmit, onCancel }: Props) {
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
       >
-        <h3>新建服务器</h3>
+        <h3>{editing ? "编辑服务器" : "新建服务器"}</h3>
         <label>
           名称（可空）
           <input
@@ -56,12 +70,20 @@ export default function ServerForm({ onSubmit, onCancel }: Props) {
           />
         </label>
         <label>
+          分组（可空）
+          <input
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+            placeholder="生产环境 / 测试 / 个人…"
+          />
+        </label>
+        <label>
           地址 *
           <input
             value={host}
             onChange={(e) => setHost(e.target.value)}
             placeholder="192.168.1.1 或 example.com"
-            autoFocus
+            autoFocus={!editing}
           />
         </label>
         <div className="form-row">
@@ -102,6 +124,9 @@ export default function ServerForm({ onSubmit, onCancel }: Props) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder={
+                initial?.hasPassword ? "已存钥匙串（留空保持不变）" : undefined
+              }
             />
           </label>
         ) : (
@@ -120,6 +145,11 @@ export default function ServerForm({ onSubmit, onCancel }: Props) {
                 type="password"
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
+                placeholder={
+                  initial?.hasPassphrase
+                    ? "已存钥匙串（留空保持不变）"
+                    : undefined
+                }
               />
             </label>
           </>
@@ -129,7 +159,7 @@ export default function ServerForm({ onSubmit, onCancel }: Props) {
             取消
           </button>
           <button type="submit" disabled={!valid}>
-            保存并连接
+            {editing ? "保存" : "保存并连接"}
           </button>
         </div>
       </form>

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, State, WebviewUrl, WebviewWindowBuilder};
 
 #[derive(Default)]
 pub struct PreviewState {

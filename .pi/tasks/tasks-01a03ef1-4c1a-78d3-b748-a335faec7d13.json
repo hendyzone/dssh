@@ -1,0 +1,41 @@
+{
+  "nextId": 4,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Implement SFTP backend commands",
+      "description": "Read russh-sftp APIs and existing SSH error/state patterns, then implement apps/desktop/src-tauri/src/sftp.rs with async Tauri-compatible SFTP list/download/upload/mkdir/delete/rename commands and local serialized errors.",
+      "status": "completed",
+      "activeForm": "Implementing SFTP backend commands",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787762406194,
+      "updatedAt": 1787762946013
+    },
+    {
+      "id": "2",
+      "subject": "Implement SFTP React panel",
+      "description": "Create apps/desktop/src/components/SftpPanel.tsx with invoke-based file browsing, downloads/uploads via drag-drop listener, CRUD actions, status/error UI, inline dark styling, and onClose prop.",
+      "status": "completed",
+      "activeForm": "Implementing SFTP React panel",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787762411500,
+      "updatedAt": 1787762950147
+    },
+    {
+      "id": "3",
+      "subject": "Verify SFTP implementation",
+      "description": "Run the required cargo check and TypeScript noEmit checks after backend/frontend implementation; report any issues or residual risks.",
+      "status": "completed",
+      "activeForm": "Verifying SFTP implementation",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1787762415402,
+      "updatedAt": 1787762955391
+    }
+  ]
+}

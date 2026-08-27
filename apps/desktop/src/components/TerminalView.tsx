@@ -4,23 +4,47 @@ import { listen } from "@tauri-apps/api/event";
 import { FitAddon, Terminal, init } from "ghostty-web";
 import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 import { findImageAtPoint } from "../lib/kittyPreview";
-import type { SessionInfo } from "../types";
+import { getTheme } from "../themes";
+import type { AppSettings, SessionInfo } from "../types";
 
 interface Props {
   session: SessionInfo;
   active: boolean;
+  settings: AppSettings;
+  /** 后端 SSH 会话建立/销毁时回调（侧面板、监控需要 backendId） */
+  onBackendReady: (paneId: string, backendId: string | null) => void;
 }
 
 // ghostty-web 终端组件，经 Tauri commands 与 Rust SSH 层（russh）交互
 // 注意：固定使用 Canvas 渲染器（WebGL 路径暂不支持 Kitty graphics）
-export default function TerminalView({ session, active }: Props) {
+export default function TerminalView({
+  session,
+  active,
+  settings,
+  onBackendReady,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const termRef = useRef<Terminal | null>(null);
 
   // 标签重新激活时重新 fit（display:none 时尺寸为 0）
   useEffect(() => {
     if (active) fitRef.current?.fit();
   }, [active]);
+
+  // 设置变更热更新（主题/字号/字体）
+  useEffect(() => {
+    const t = termRef.current;
+    if (!t) return;
+    const theme = getTheme(settings.themeId).term;
+    t.options = {
+      ...t.options,
+      theme,
+      fontSize: settings.fontSize,
+      fontFamily: settings.fontFamily,
+    };
+    fitRef.current?.fit();
+  }, [settings]);
 
   useEffect(() => {
     let disposed = false;
@@ -32,13 +56,15 @@ export default function TerminalView({ session, active }: Props) {
       await init(wasmUrl);
       if (disposed || !containerRef.current) return;
 
+      const theme = getTheme(settings.themeId).term;
       const t = new Terminal({
         cursorBlink: true,
-        fontSize: 14,
-        fontFamily: 'Menlo, Consolas, "Cascadia Mono", monospace',
-        theme: { background: "#1a1b26", foreground: "#a9b1d6" },
+        fontSize: settings.fontSize,
+        fontFamily: settings.fontFamily,
+        theme,
       });
       term = t;
+      termRef.current = t;
       const fit = new FitAddon();
       fitRef.current = fit;
       t.loadAddon(fit);
@@ -77,7 +103,9 @@ export default function TerminalView({ session, active }: Props) {
             }
           };
           canvas.addEventListener("dblclick", dblHandler);
-          cleanups.push(() => canvas.removeEventListener("dblclick", dblHandler));
+          cleanups.push(() =>
+            canvas.removeEventListener("dblclick", dblHandler),
+          );
         }
       }
 
@@ -111,11 +139,13 @@ export default function TerminalView({ session, active }: Props) {
             port: server.port,
             username: server.username,
             authMethod: server.authMethod,
+            // 密码不在前端持有：后端按 serverId 从 keyring 取；私钥模式传路径
             secret:
-              server.authMethod === "password"
-                ? (server.password ?? "")
-                : (server.keyPath ?? ""),
-            passphrase: server.passphrase ?? null,
+              server.authMethod === "publicKey"
+                ? (server.keyPath ?? null)
+                : null,
+            passphrase: null,
+            serverId: server.id,
             cols: t.cols,
             rows: t.rows,
           },
@@ -128,6 +158,7 @@ export default function TerminalView({ session, active }: Props) {
         invoke("ssh_disconnect", { sessionId: backendId }).catch(() => {});
         return;
       }
+      onBackendReady(session.id, backendId);
 
       cleanups.push(
         await listen<string>(`ssh://${backendId}/data`, (e) => {
@@ -151,11 +182,15 @@ export default function TerminalView({ session, active }: Props) {
       window.removeEventListener("resize", onWindowResize);
       cleanups.forEach((fn) => fn());
       if (backendId) {
+        onBackendReady(session.id, null);
         invoke("ssh_disconnect", { sessionId: backendId }).catch(() => {});
       }
       fitRef.current = null;
+      termRef.current = null;
       term?.dispose();
     };
+    // settings 有独立的热更新 effect，这里只需会话变化时重建
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   return <div ref={containerRef} className="terminal-view" />;

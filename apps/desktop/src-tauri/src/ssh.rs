@@ -24,6 +24,8 @@ pub struct ConnectParams {
     pub secret: Option<String>,
     /// 私钥 passphrase（可选）
     pub passphrase: Option<String>,
+    /// 关联的服务器条目 id：secret/passphrase 为空时自动从 keyring 取
+    pub server_id: Option<String>,
     pub cols: u32,
     pub rows: u32,
 }
@@ -31,14 +33,52 @@ pub struct ConnectParams {
 type ClientHandle = russh::client::Handle<SshHandler>;
 type WriteHalf = russh::ChannelWriteHalf<russh::client::Msg>;
 
+/// 供 sftp/forward/monitor 等模块共享的连接句柄
+pub type SharedHandle = Arc<ClientHandle>;
+
+/// 会话的连接元数据（remote 转发重建辅助连接时用）
+#[derive(Debug, Clone)]
+pub struct SessionMeta {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth_method: String,
+    /// publicKey 模式的私钥路径（密码在 keyring，不落这里）
+    pub key_path: Option<String>,
+    pub server_id: Option<String>,
+}
+
 pub struct Session {
     write_half: WriteHalf,
-    handle: ClientHandle,
+    handle: SharedHandle,
+    meta: SessionMeta,
 }
 
 #[derive(Default)]
 pub struct SshState {
     sessions: Arc<Mutex<HashMap<String, Session>>>,
+}
+
+impl SshState {
+    /// 取会话的共享连接句柄（russh Handle 的 channel 打开/转发等方法是 &self）
+    pub async fn get_handle(&self, session_id: &str) -> Option<SharedHandle> {
+        self.sessions
+            .lock()
+            .await
+            .get(session_id)
+            .map(|s| s.handle.clone())
+    }
+
+    /// 取会话的连接元数据
+    pub async fn get_meta(&self, session_id: &str) -> Option<SessionMeta> {
+        self.sessions.lock().await.get(session_id).map(|s| s.meta.clone())
+    }
+
+    /// 当前存活会话数
+    #[allow(dead_code)] // 后续会话管理 UI 用
+    pub async fn session_count(&self) -> usize {
+        self.sessions.lock().await.len()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -69,7 +109,7 @@ impl From<russh::keys::Error> for SshError {
 
 /// 主机密钥校验：MVP 阶段全部接受（个人自用场景）
 // TODO(M2): known_hosts 持久化校验 + 首次连接指纹确认弹窗
-struct SshHandler;
+pub(crate) struct SshHandler;
 
 impl russh::client::Handler for SshHandler {
     type Error = russh::Error;
@@ -144,21 +184,35 @@ pub async fn ssh_connect(
     .await
     .map_err(|e| SshError::Other(format!("连接失败（网络/超时）: {e}")))?;
 
-    // ---- 认证 ----
+    // ---- 认证（secret/passphrase 为空且有关联服务器条目时，从 keyring 取） ----
+    let resolved_secret = match &params.secret {
+        Some(s) if !s.is_empty() => params.secret.clone(),
+        _ => params
+            .server_id
+            .as_deref()
+            .and_then(|id| crate::servers::get_secret(id, "password")),
+    };
+    let resolved_passphrase = match &params.passphrase {
+        Some(s) if !s.is_empty() => params.passphrase.clone(),
+        _ => params
+            .server_id
+            .as_deref()
+            .and_then(|id| crate::servers::get_secret(id, "passphrase")),
+    };
+
     let auth_result = match params.auth_method.as_str() {
         "password" => {
-            let password = params.secret.clone().unwrap_or_default();
+            let password = resolved_secret.clone().unwrap_or_default();
             handle
                 .authenticate_password(params.username.clone(), password)
                 .await
                 .map_err(SshError::from)?
         }
         "publicKey" => {
-            let key_path = params
-                .secret
+            let key_path = resolved_secret
                 .clone()
                 .ok_or_else(|| SshError::Other("缺少私钥路径".into()))?;
-            let key = load_secret_key(&key_path, params.passphrase.as_deref())?;
+            let key = load_secret_key(&key_path, resolved_passphrase.as_deref())?;
             handle
                 .authenticate_publickey(
                     params.username.clone(),
@@ -228,7 +282,22 @@ pub async fn ssh_connect(
 
     state.sessions.lock().await.insert(
         session_id.clone(),
-        Session { write_half, handle },
+        Session {
+            write_half,
+            handle: Arc::new(handle),
+            meta: SessionMeta {
+                host: params.host.clone(),
+                port: params.port,
+                username: params.username.clone(),
+                auth_method: params.auth_method.clone(),
+                key_path: if params.auth_method == "publicKey" {
+                    params.secret.clone()
+                } else {
+                    None
+                },
+                server_id: params.server_id.clone(),
+            },
+        },
     );
 
     Ok(session_id)

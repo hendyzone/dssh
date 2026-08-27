@@ -1,6 +1,6 @@
 // Kitty 图片命中测试与像素提取
 // 利用 ghostty-web 公开的 wasmTerm（Kitty placements/像素查询），无需改动 vendor
-import type { Terminal } from 'ghostty-web';
+import type { Terminal } from "ghostty-web";
 
 export interface ImagePreviewData {
   dataUrl: string;
@@ -36,7 +36,9 @@ export function findImageAtPoint(
   clientX: number,
   clientY: number,
 ): ImagePreviewData | null {
-  const renderer = term.renderer as { charWidth?: number; charHeight?: number } | undefined;
+  const renderer = term.renderer as
+    | { charWidth?: number; charHeight?: number }
+    | undefined;
   // SAFETY: ghostty-web 将 wasmTerm 声明为 public（供 link providers 使用），
   // 但其类型未导出完整方法签名；本地接口只声明我们用到的三个公开方法。
   const wasmTerm = (term as unknown as { wasmTerm?: WasmTermLike }).wasmTerm;
@@ -72,14 +74,18 @@ function pixelsToDataUrl(px: {
   if (px.format === 2) {
     // PNG 原始字节，直接转 blob
     const copy = new Uint8Array(px.data); // WASM 内存是借用的，先复制
-    const blob = new Blob([copy], { type: 'image/png' });
-    return { dataUrl: URL.createObjectURL(blob), width: px.width, height: px.height };
+    const blob = new Blob([copy], { type: "image/png" });
+    return {
+      dataUrl: URL.createObjectURL(blob),
+      width: px.width,
+      height: px.height,
+    };
   }
 
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
   canvas.width = px.width;
   canvas.height = px.height;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   const img = ctx.createImageData(px.width, px.height);
 
@@ -98,5 +104,9 @@ function pixelsToDataUrl(px: {
     return null; // GRAY 系暂不处理（罕见）
   }
   ctx.putImageData(img, 0, 0);
-  return { dataUrl: canvas.toDataURL('image/png'), width: px.width, height: px.height };
+  return {
+    dataUrl: canvas.toDataURL("image/png"),
+    width: px.width,
+    height: px.height,
+  };
 }

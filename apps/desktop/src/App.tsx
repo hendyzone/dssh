@@ -1,52 +1,171 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import ForwardPanel from "./components/ForwardPanel";
+import MonitorBar from "./components/MonitorBar";
 import ServerForm from "./components/ServerForm";
+import SettingsModal from "./components/SettingsModal";
+import SftpPanel from "./components/SftpPanel";
 import Sidebar from "./components/Sidebar";
 import TerminalView from "./components/TerminalView";
-import { loadServers, saveServers } from "./store";
-import type { ServerEntry, SessionInfo } from "./types";
+import {
+  deleteServer as deleteServerCmd,
+  loadServers,
+  loadSettings,
+  saveSettings,
+  upsertServer,
+} from "./store";
+import { applyTheme, getTheme } from "./themes";
+import type { AppSettings, ServerEntry, SessionInfo, TabInfo } from "./types";
+
+type SidePanel = "sftp" | "forward" | null;
 
 export default function App() {
-  const [servers, setServers] = useState<ServerEntry[]>(loadServers);
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [servers, setServers] = useState<ServerEntry[]>([]);
+  const [tabs, setTabs] = useState<TabInfo[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  /** 窗格 id → 后端 SSH session_id（连接建立后回填） */
+  const [backendIds, setBackendIds] = useState<Record<string, string | null>>(
+    {},
+  );
+  /** 每个标签页打开的侧面板 */
+  const [sidePanels, setSidePanels] = useState<Record<string, SidePanel>>({});
+  const [formTarget, setFormTarget] = useState<ServerEntry | null | undefined>(
+    null,
+  );
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>(loadSettings);
 
-  const connect = (server: ServerEntry) => {
-    // 同一台服务器复用已有标签
-    const existing = sessions.find((s) => s.server.id === server.id);
-    if (existing) {
-      setActiveId(existing.id);
-      return;
-    }
-    const session: SessionInfo = { id: crypto.randomUUID(), server };
-    setSessions((prev) => [...prev, session]);
-    setActiveId(session.id);
+  useEffect(() => {
+    applyTheme(getTheme(settings.themeId));
+    loadServers()
+      .then(setServers)
+      .catch((e) => console.error("加载服务器列表失败:", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const updateSettings = (next: AppSettings) => {
+    setSettings(next);
+    saveSettings(next);
   };
 
-  const closeSession = (id: string) => {
-    setSessions((prev) => {
-      const next = prev.filter((s) => s.id !== id);
-      if (activeId === id) setActiveId(next[next.length - 1]?.id ?? null);
+  const setBackendId = useCallback(
+    (paneId: string, backendId: string | null) => {
+      setBackendIds((prev) => ({ ...prev, [paneId]: backendId }));
+    },
+    [],
+  );
+
+  // ---- 连接 / 标签页 ----
+
+  const connect = (server: ServerEntry) => {
+    const existing = tabs.find((t) =>
+      t.panes.some((p) => p.server.id === server.id),
+    );
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    const pane: SessionInfo = { id: crypto.randomUUID(), server };
+    const tab: TabInfo = {
+      id: crypto.randomUUID(),
+      panes: [pane],
+      activePane: 0,
+    };
+    setTabs((prev) => [...prev, tab]);
+    setActiveTabId(tab.id);
+  };
+
+  const closeTab = (tabId: string) => {
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.id !== tabId);
+      if (activeTabId === tabId)
+        setActiveTabId(next[next.length - 1]?.id ?? null);
+      return next;
+    });
+    setSidePanels((prev) => {
+      const next = { ...prev };
+      delete next[tabId];
       return next;
     });
   };
 
-  const addServer = (s: ServerEntry) => {
-    const next = [...servers, s];
-    setServers(next);
-    saveServers(next);
-    setShowForm(false);
-    connect(s);
+  // ---- 分屏 ----
+
+  const splitTab = (tabId: string, dir: "row" | "column") => {
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.id !== tabId) return t;
+        if (t.panes.length >= 2) {
+          // 已分屏：切换方向即可
+          return { ...t, splitDir: t.splitDir === dir ? undefined : dir };
+        }
+        const src = t.panes[t.activePane];
+        const pane: SessionInfo = {
+          id: crypto.randomUUID(),
+          server: src.server,
+        };
+        return {
+          ...t,
+          panes: [...t.panes, pane],
+          splitDir: dir,
+          activePane: 1,
+        };
+      }),
+    );
   };
 
-  const deleteServer = (id: string) => {
-    const next = servers.filter((s) => s.id !== id);
-    setServers(next);
-    saveServers(next);
-    // 顺带关掉该服务器的会话
-    sessions
-      .filter((s) => s.server.id === id)
-      .forEach((s) => closeSession(s.id));
+  const focusPane = (tabId: string, index: number) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === tabId ? { ...t, activePane: index } : t)),
+    );
+  };
+
+  const togglePanel = (tabId: string, panel: SidePanel) => {
+    setSidePanels((prev) => ({
+      ...prev,
+      [tabId]: prev[tabId] === panel ? null : panel,
+    }));
+  };
+
+  // ---- 服务器条目 ----
+
+  const submitServer = (
+    record: ServerEntry,
+    password?: string,
+    passphrase?: string,
+  ) => {
+    const wasEdit = servers.some((s) => s.id === record.id);
+    upsertServer(record, password, passphrase)
+      .then((saved) => {
+        setServers((prev) =>
+          wasEdit
+            ? prev.map((s) => (s.id === saved.id ? saved : s))
+            : [...prev, saved],
+        );
+        if (wasEdit) {
+          setTabs((prev) =>
+            prev.map((t) => ({
+              ...t,
+              panes: t.panes.map((p) =>
+                p.server.id === saved.id ? { ...p, server: saved } : p,
+              ),
+            })),
+          );
+        }
+        setFormTarget(null);
+        if (!wasEdit) connect(saved);
+      })
+      .catch((e) => alert(`保存失败: ${e}`));
+  };
+
+  const removeServer = (id: string) => {
+    deleteServerCmd(id)
+      .then(() => {
+        setServers((prev) => prev.filter((s) => s.id !== id));
+        tabs
+          .filter((t) => t.panes.some((p) => p.server.id === id))
+          .forEach((t) => closeTab(t.id));
+      })
+      .catch((e) => alert(`删除失败: ${e}`));
   };
 
   return (
@@ -54,24 +173,29 @@ export default function App() {
       <Sidebar
         servers={servers}
         onConnect={connect}
-        onAdd={() => setShowForm(true)}
-        onDelete={deleteServer}
+        onAdd={() => setFormTarget(undefined)}
+        onEdit={(s) => setFormTarget(s)}
+        onDelete={removeServer}
+        onOpenSettings={() => setShowSettings(true)}
       />
       <main className="main-area">
-        {sessions.length > 0 && (
+        {tabs.length > 0 && (
           <div className="tab-bar">
-            {sessions.map((s) => (
+            {tabs.map((t) => (
               <div
-                key={s.id}
-                className={`tab ${s.id === activeId ? "active" : ""}`}
-                onClick={() => setActiveId(s.id)}
+                key={t.id}
+                className={`tab ${t.id === activeTabId ? "active" : ""}`}
+                onClick={() => setActiveTabId(t.id)}
               >
-                <span>{s.server.name}</span>
+                <span>
+                  {t.panes[0].server.name}
+                  {t.panes.length > 1 ? ` ⊞${t.panes.length}` : ""}
+                </span>
                 <button
                   className="tab-close"
                   onClick={(e) => {
                     e.stopPropagation();
-                    closeSession(s.id);
+                    closeTab(t.id);
                   }}
                 >
                   ×
@@ -80,26 +204,106 @@ export default function App() {
             ))}
           </div>
         )}
-        {sessions.length === 0 ? (
+        {tabs.length === 0 ? (
           <div className="empty-state">
             <h2>dssh</h2>
             <p>点左侧 ＋ 新建一台服务器开始</p>
           </div>
         ) : (
-          // 非活跃标签保持挂载（display:none），会话状态不丢失
-          sessions.map((s) => (
-            <div
-              key={s.id}
-              className="terminal-wrapper"
-              hidden={s.id !== activeId}
-            >
-              <TerminalView session={s} active={s.id === activeId} />
-            </div>
-          ))
+          tabs.map((t) => {
+            const panel = sidePanels[t.id] ?? null;
+            const activePaneBackend =
+              backendIds[t.panes[t.activePane]?.id ?? ""] ?? null;
+            return (
+              <div
+                key={t.id}
+                className="session-body"
+                hidden={t.id !== activeTabId}
+              >
+                <div className="session-toolbar">
+                  <button
+                    className={`tool-btn ${panel === "sftp" ? "on" : ""}`}
+                    title="SFTP 文件面板"
+                    onClick={() => togglePanel(t.id, "sftp")}
+                  >
+                    📁
+                  </button>
+                  <button
+                    className={`tool-btn ${panel === "forward" ? "on" : ""}`}
+                    title="端口转发"
+                    onClick={() => togglePanel(t.id, "forward")}
+                  >
+                    ⇄
+                  </button>
+                  <button
+                    className="tool-btn"
+                    title="水平分屏"
+                    onClick={() => splitTab(t.id, "row")}
+                  >
+                    ◫
+                  </button>
+                  <button
+                    className="tool-btn"
+                    title="垂直分屏"
+                    onClick={() => splitTab(t.id, "column")}
+                  >
+                    ⬓
+                  </button>
+                </div>
+                <div className="session-content">
+                  <div
+                    className="panes"
+                    style={{
+                      flexDirection: t.splitDir === "column" ? "column" : "row",
+                    }}
+                  >
+                    {t.panes.map((p, i) => (
+                      <div
+                        key={p.id}
+                        className={`pane ${i === t.activePane ? "focused" : ""}`}
+                        onClick={() => focusPane(t.id, i)}
+                      >
+                        <TerminalView
+                          session={p}
+                          active={t.id === activeTabId && i === t.activePane}
+                          settings={settings}
+                          onBackendReady={setBackendId}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {panel === "sftp" && (
+                    <SftpPanel
+                      sessionId={activePaneBackend ?? ""}
+                      onClose={() => togglePanel(t.id, null)}
+                    />
+                  )}
+                  {panel === "forward" && (
+                    <ForwardPanel
+                      sessionId={activePaneBackend ?? ""}
+                      onClose={() => togglePanel(t.id, null)}
+                    />
+                  )}
+                </div>
+                <MonitorBar backendId={activePaneBackend} />
+              </div>
+            );
+          })
         )}
       </main>
-      {showForm && (
-        <ServerForm onSubmit={addServer} onCancel={() => setShowForm(false)} />
+      {formTarget !== null && (
+        <ServerForm
+          initial={formTarget}
+          onSubmit={submitServer}
+          onCancel={() => setFormTarget(null)}
+        />
+      )}
+      {showSettings && (
+        <SettingsModal
+          settings={settings}
+          onChange={updateSettings}
+          onClose={() => setShowSettings(false)}
+        />
       )}
     </div>
   );
