@@ -5,6 +5,16 @@
 - 平台：macOS / Windows
 - 技术栈：Tauri v2 + React + [ghostty-web](https://github.com/rcarmo/ghostty-web)（Kitty graphics fork）+ russh
 
+## 功能（v0.2.0）
+
+- ✅ 服务器列表：分组 / 搜索 / 编辑，凭据存系统 keyring
+- ✅ SSH 终端：自动登录（密码/私钥）、多标签页、水平/垂直分屏、中文输入
+- ✅ 终端内图片：Kitty graphics 协议（pi 等工具直接内联显示），双击图片弹预览窗
+- ✅ SFTP 文件面板：浏览 / 拖拽上传 / 下载 / 新建目录 / 删除 / 重命名
+- ✅ 端口转发：本地 / 远程 / 动态 SOCKS5
+- ✅ 服务器监控条：CPU / 内存 / 磁盘 / 负载
+- ✅ 主题：4 套预设热切换 + 字号 / 字体设置
+
 ## 文档
 
 - [需求文档](docs/requirements.md)

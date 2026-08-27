@@ -33,7 +33,7 @@
       "id": "6",
       "subject": "SFTP 文件管理面板",
       "description": "后端 sftp.rs：基于 russh-sftp 的 list_dir/download/upload/mkdir/delete/rename；前端：会话内可开关的文件面板（面包屑路径、文件列表、双击进目录、上传/下载/新建/删除/刷新）。",
-      "status": "pending",
+      "status": "completed",
       "activeForm": "实现 SFTP 面板",
       "metadata": {},
       "blocks": [],
@@ -41,13 +41,13 @@
         "5"
       ],
       "createdAt": 1787761730877,
-      "updatedAt": 1787761832276
+      "updatedAt": 1787802855091
     },
     {
       "id": "7",
       "subject": "端口转发管理",
       "description": "后端 forward.rs：local（direct-tcpip 监听本地端口转发）/remote（tcpip-forward）/dynamic（本地 SOCKS5）；前端：转发规则管理面板（增删、启停、状态）。规则随会话生命周期。",
-      "status": "pending",
+      "status": "completed",
       "activeForm": "实现端口转发",
       "metadata": {},
       "blocks": [],
@@ -55,7 +55,7 @@
         "5"
       ],
       "createdAt": 1787761730877,
-      "updatedAt": 1787761832276
+      "updatedAt": 1787802855092
     },
     {
       "id": "8",
@@ -73,7 +73,7 @@
       "id": "9",
       "subject": "监控面板 + 终端分屏",
       "description": "监控：后端 monitor.rs 定时通过 SSH exec 采集 /proc/stat、/proc/meminfo、df，事件推前端小面板（CPU%/MEM%/磁盘）。分屏：活动会话可水平/垂直拆分新窗格（同服务器新会话），简单二分布局。",
-      "status": "in_progress",
+      "status": "completed",
       "activeForm": "实现监控面板与分屏",
       "metadata": {},
       "blocks": [],
@@ -81,19 +81,19 @@
         "5"
       ],
       "createdAt": 1787761730878,
-      "updatedAt": 1787762918675
+      "updatedAt": 1787802855097
     },
     {
       "id": "10",
       "subject": "v0.2.0 构建验证与发版",
       "description": "本地 npm build + cargo check 全绿；demo 里可加验证的尽量加；提交、tag v0.2.0、CI 双平台构建、确认 release 资产。",
-      "status": "pending",
+      "status": "in_progress",
       "activeForm": "构建验证与发版",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1787761730878,
-      "updatedAt": 1787761730878
+      "updatedAt": 1787802855098
     }
   ]
 }
