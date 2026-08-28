@@ -146,12 +146,7 @@ export default function App() {
   };
 
   const closeTab = (tabId: string) => {
-    if (
-      !confirmClose(
-        [tabId],
-        "此标签仍有 SSH 会话连接中，确定要关闭吗？",
-      )
-    )
+    if (!confirmClose([tabId], "此标签仍有 SSH 会话连接中，确定要关闭吗？"))
       return;
     removeTabs([tabId]);
   };
@@ -203,9 +198,7 @@ export default function App() {
     const title = editingTitle.trim();
     setTabs((prev) =>
       prev.map((tab) =>
-        tab.id === tabId
-          ? { ...tab, customTitle: title || undefined }
-          : tab,
+        tab.id === tabId ? { ...tab, customTitle: title || undefined } : tab,
       ),
     );
     setEditingTabId(null);
@@ -389,9 +382,7 @@ export default function App() {
                 : "";
             const title =
               t.customTitle || `${t.panes[0].server.name}${dupSuffix}`;
-            const isConnecting = t.panes.some(
-              (pane) => !backendIds[pane.id],
-            );
+            const isConnecting = t.panes.some((pane) => !backendIds[pane.id]);
             return (
               <div
                 key={t.id}
@@ -405,7 +396,11 @@ export default function App() {
                 }}
                 onContextMenu={(event) => {
                   event.preventDefault();
-                  setContextMenu({ tabId: t.id, x: event.clientX, y: event.clientY });
+                  setContextMenu({
+                    tabId: t.id,
+                    x: event.clientX,
+                    y: event.clientY,
+                  });
                 }}
               >
                 <span
@@ -584,7 +579,12 @@ export default function App() {
           <button onClick={() => closeTabsToRight(contextMenu.tabId)}>
             关闭右侧
           </button>
-          <button onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}>
+          <button
+            onClick={() => {
+              closeTab(contextMenu.tabId);
+              setContextMenu(null);
+            }}
+          >
             关闭标签
           </button>
         </div>
@@ -594,7 +594,10 @@ export default function App() {
           className="modal-backdrop"
           onMouseDown={() => setServerPickerOpen(false)}
         >
-          <div className="modal server-picker" onMouseDown={(event) => event.stopPropagation()}>
+          <div
+            className="modal server-picker"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <h3>新建标签</h3>
             <p className="server-picker-hint">选择一个服务器建立新会话</p>
             {servers.length === 0 ? (
@@ -619,7 +622,10 @@ export default function App() {
               </div>
             )}
             <div className="form-actions">
-              <button className="btn-secondary" onClick={() => setServerPickerOpen(false)}>
+              <button
+                className="btn-secondary"
+                onClick={() => setServerPickerOpen(false)}
+              >
                 取消（Esc）
               </button>
             </div>
