@@ -3,8 +3,6 @@ import type { MouseEvent } from "react";
 import logoUrl from "../assets/logo.png";
 import type { ServerEntry } from "../types";
 import {
-  IconChevronDown,
-  IconChevronRight,
   IconClose,
   IconEdit,
   IconPlus,
@@ -21,9 +19,25 @@ interface Props {
   onOpenSettings: () => void;
 }
 
+const ALL_FOLDER = "__all__";
 const UNGROUPED = "未分组";
+const ACTIVE_FOLDER_KEY = "dssh.sidebar.active-folder";
 
-/** 服务器列表：分组 + 搜索 + 增删改 */
+function getGroup(server: ServerEntry): string {
+  return server.group?.trim() || UNGROUPED;
+}
+
+function compareGroups(a: string, b: string): number {
+  if (a === UNGROUPED) return b === UNGROUPED ? 0 : 1;
+  if (b === UNGROUPED) return -1;
+  return a.localeCompare(b);
+}
+
+function compareServers(a: ServerEntry, b: ServerEntry): number {
+  return compareGroups(getGroup(a), getGroup(b)) || a.name.localeCompare(b.name);
+}
+
+/** 服务器列表：文件夹 tab + 搜索 + 增删改 */
 export default function Sidebar({
   servers,
   onConnect,
@@ -33,7 +47,13 @@ export default function Sidebar({
   onOpenSettings,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [activeFolder, setActiveFolder] = useState(() => {
+    try {
+      return localStorage.getItem(ACTIVE_FOLDER_KEY) ?? ALL_FOLDER;
+    } catch {
+      return ALL_FOLDER;
+    }
+  });
   const [selectedId, setSelectedId] = useState<string>();
   const [contextMenu, setContextMenu] = useState<{
     server: ServerEntry;
@@ -64,18 +84,57 @@ export default function Sidebar({
     );
   }, [servers, query]);
 
-  const groups = useMemo(() => {
-    const map = new Map<string, ServerEntry[]>();
-    for (const s of filtered) {
-      const g = s.group?.trim() || UNGROUPED;
-      const list = map.get(g) ?? [];
-      list.push(s);
-      map.set(g, list);
+  const folderTabs = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const server of servers) {
+      const group = getGroup(server);
+      counts.set(group, (counts.get(group) ?? 0) + 1);
     }
-    return [...map.entries()].sort(([a], [b]) =>
-      a === UNGROUPED ? 1 : b === UNGROUPED ? -1 : a.localeCompare(b),
-    );
-  }, [filtered]);
+    const groups = [...counts.keys()].sort(compareGroups);
+    return [
+      { key: ALL_FOLDER, label: "全部", count: servers.length },
+      ...groups.map((group) => ({
+        key: group,
+        label: group,
+        count: counts.get(group) ?? 0,
+      })),
+    ];
+  }, [servers]);
+
+  // 搜索有结果时跨越所有文件夹；未搜索时才按当前 tab 筛选。
+  const visibleServers = useMemo(() => {
+    const q = query.trim();
+    if (q) return filtered.slice().sort(compareServers);
+    if (activeFolder === ALL_FOLDER) return servers.slice().sort(compareServers);
+    return servers
+      .filter((server) => getGroup(server) === activeFolder)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [activeFolder, filtered, query, servers]);
+
+  useEffect(() => {
+    if (servers.length > 0 && activeFolder !== ALL_FOLDER &&
+        !folderTabs.some((folder) => folder.key === activeFolder)) {
+      setActiveFolder(ALL_FOLDER);
+      return;
+    }
+    try {
+      localStorage.setItem(ACTIVE_FOLDER_KEY, activeFolder);
+    } catch {
+      // localStorage 不可用时仍不影响本次使用。
+    }
+  }, [activeFolder, folderTabs, servers.length]);
+
+  useEffect(() => {
+    if (selectedId && !visibleServers.some((server) => server.id === selectedId)) {
+      setSelectedId(undefined);
+    }
+  }, [selectedId, visibleServers]);
+
+  const selectFolder = (folder: string) => {
+    setActiveFolder(folder);
+    setSelectedId(undefined);
+    setContextMenu(undefined);
+  };
 
   return (
     <aside className="sidebar">
@@ -101,89 +160,91 @@ export default function Sidebar({
           placeholder="搜索名称 / 地址 / 分组…"
         />
       </div>
+      {servers.length > 0 && (
+        <div className="folder-tabs" role="tablist" aria-label="服务器文件夹">
+          {folderTabs.map((folder) => (
+            <button
+              key={folder.key}
+              type="button"
+              role="tab"
+              aria-selected={activeFolder === folder.key}
+              className={`folder-tab${activeFolder === folder.key ? " active" : ""}`}
+              onClick={() => selectFolder(folder.key)}
+              title={`${folder.label}（${folder.count} 个连接）`}
+            >
+              <span className="folder-tab-label">{folder.label}</span>
+              <span className="folder-tab-count">{folder.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {servers.length === 0 ? (
         <div className="sidebar-empty">
           还没有服务器
           <br />
           点右上角 ＋ 新建连接
         </div>
-      ) : groups.length === 0 ? (
-        <div className="sidebar-empty">没有匹配「{query}」的服务器</div>
+      ) : visibleServers.length === 0 ? (
+        <div className="sidebar-empty">
+          {query.trim()
+            ? `没有匹配「${query}」的服务器`
+            : `「${activeFolder}」暂无服务器`}
+        </div>
       ) : (
         <div className="server-groups">
-          {groups.map(([group, list]) => (
-            <div key={group} className="server-group">
-              <div
-                className="group-header"
-                onClick={() =>
-                  setCollapsed((c) => ({ ...c, [group]: !c[group] }))
-                }
+          <ul className="server-list">
+            {visibleServers.map((s) => (
+              <li
+                key={s.id}
+                className={`server-item${selectedId === s.id ? " selected" : ""}`}
+                onClick={() => {
+                  setSelectedId(s.id);
+                  setContextMenu(undefined);
+                }}
+                onDoubleClick={() => onConnect(s)}
+                onContextMenu={(e: MouseEvent<HTMLLIElement>) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSelectedId(s.id);
+                  setContextMenu({
+                    server: s,
+                    x: e.clientX,
+                    y: e.clientY,
+                  });
+                }}
               >
-                {collapsed[group] ? (
-                  <IconChevronRight size={12} />
-                ) : (
-                  <IconChevronDown size={12} />
-                )}
-                <span>{group}</span>
-                <span className="group-count">{list.length}</span>
-              </div>
-              {!collapsed[group] && (
-                <ul className="server-list">
-                  {list.map((s) => (
-                    <li
-                      key={s.id}
-                      className={`server-item${selectedId === s.id ? " selected" : ""}`}
-                      onClick={() => {
-                        setSelectedId(s.id);
-                        setContextMenu(undefined);
-                      }}
-                      onDoubleClick={() => onConnect(s)}
-                      onContextMenu={(e: MouseEvent<HTMLLIElement>) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setSelectedId(s.id);
-                        setContextMenu({
-                          server: s,
-                          x: e.clientX,
-                          y: e.clientY,
-                        });
-                      }}
-                    >
-                      <span className="server-status" />
-                      <div className="server-item-meta">
-                        <div className="server-name">{s.name}</div>
-                        <div className="server-addr">
-                          {s.username}@{s.host}:{s.port}
-                        </div>
-                      </div>
-                      <div className="server-item-actions">
-                        <button
-                          className="icon-btn"
-                          title="编辑"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEdit(s);
-                          }}
-                        >
-                          <IconEdit size={13} />
-                        </button>
-                        <button
-                          className="icon-btn danger"
-                          title="删除"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteServer(s);
-                          }}
-                        >
-                          <IconClose size={13} />
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
+                <span className="server-status" />
+                <div className="server-item-meta">
+                  <div className="server-name">{s.name}</div>
+                  <div className="server-addr">
+                    {s.username}@{s.host}:{s.port}
+                  </div>
+                </div>
+                <div className="server-item-actions">
+                  <button
+                    className="icon-btn"
+                    title="编辑"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(s);
+                    }}
+                  >
+                    <IconEdit size={13} />
+                  </button>
+                  <button
+                    className="icon-btn danger"
+                    title="删除"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteServer(s);
+                    }}
+                  >
+                    <IconClose size={13} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {contextMenu && (

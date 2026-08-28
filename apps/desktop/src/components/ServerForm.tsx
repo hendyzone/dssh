@@ -23,6 +23,7 @@ export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
   const [port, setPort] = useState(String(initial?.port ?? 22));
   const [username, setUsername] = useState(initial?.username ?? "root");
   const [group, setGroup] = useState(initial?.group ?? "");
+  const [existingGroups, setExistingGroups] = useState<string[]>([]);
   const [authMethod, setAuthMethod] = useState<"password" | "publicKey">(
     initial?.authMethod ?? "password",
   );
@@ -30,6 +31,27 @@ export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
   const [keyPath, setKeyPath] = useState(initial?.keyPath ?? "");
   const [sshKeys, setSshKeys] = useState<string[]>([]);
   const [passphrase, setPassphrase] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<ServerEntry[]>("servers_list")
+      .then((servers) => {
+        if (cancelled) return;
+        const groups = new Set(
+          servers
+            .map((server) => server.group?.trim())
+            .filter((value): value is string => Boolean(value)),
+        );
+        if (initial?.group?.trim()) groups.add(initial.group.trim());
+        setExistingGroups([...groups].sort((a, b) => a.localeCompare(b)));
+      })
+      .catch(() => {
+        // 分组建议加载失败时仍可自由输入。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initial?.group]);
 
   useEffect(() => {
     if (authMethod !== "publicKey") {
@@ -107,7 +129,13 @@ export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
             value={group}
             onChange={(e) => setGroup(e.target.value)}
             placeholder="生产环境 / 测试 / 个人…"
+            list="server-groups"
           />
+          <datalist id="server-groups">
+            {existingGroups.map((existingGroup) => (
+              <option key={existingGroup} value={existingGroup} />
+            ))}
+          </datalist>
         </label>
         <label>
           地址 *

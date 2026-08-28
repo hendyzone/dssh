@@ -1034,3 +1034,66 @@ input[type="range"] {
   border-color: var(--ui-accent);
   color: var(--ui-accent);
 }
+
+/* ===== 文件夹 tab 导航 ===== */
+.folder-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 0 -4px;
+  padding: 0 4px 2px;
+  scrollbar-width: thin;
+}
+
+.folder-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  max-width: 132px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--ui-muted);
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    color 0.15s var(--ease),
+    background 0.15s var(--ease),
+    border-color 0.15s var(--ease);
+}
+
+.folder-tab:hover {
+  color: var(--ui-fg);
+  background: var(--ui-panel);
+}
+
+.folder-tab.active {
+  color: var(--ui-fg);
+  background: color-mix(in srgb, var(--ui-accent) 15%, var(--ui-panelAlt));
+  border-color: color-mix(in srgb, var(--ui-accent) 38%, var(--ui-border));
+}
+
+.folder-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-tab-count {
+  flex: 0 0 auto;
+  min-width: 17px;
+  border-radius: 9px;
+  background: var(--ui-border);
+  color: var(--ui-muted);
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+}
+
+.folder-tab.active .folder-tab-count {
+  background: color-mix(in srgb, var(--ui-accent) 30%, var(--ui-border));
+  color: var(--ui-fg);
+}
