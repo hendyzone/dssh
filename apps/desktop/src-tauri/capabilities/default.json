@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "默认能力集",
   "windows": ["main", "preview-*"],
-  "permissions": ["core:default", "core:event:default"]
+  "permissions": ["core:default", "core:event:default", "dialog:default"]
 }

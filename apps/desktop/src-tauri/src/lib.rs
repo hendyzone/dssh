@@ -1,3 +1,4 @@
+mod commands;
 mod forward;
 mod monitor;
 mod preview;
@@ -10,6 +11,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(ssh::SshState::default());
             app.manage(preview::PreviewState::default());
@@ -18,6 +20,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::list_ssh_keys,
             ssh::ssh_connect,
             ssh::ssh_write,
             ssh::ssh_resize,
