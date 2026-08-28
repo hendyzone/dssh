@@ -42,6 +42,11 @@ export default function TerminalView({
 
   // 标签重新激活时重新 fit（display:none 时尺寸为 0）
   useEffect(() => {
+    const t = termRef.current;
+    if (t) {
+      // 非聚焦窗格的光标不闪烁，避免分屏时多个光标一起闪
+      t.options.cursorBlink = active;
+    }
     if (active) fitRef.current?.fit();
   }, [active]);
 
