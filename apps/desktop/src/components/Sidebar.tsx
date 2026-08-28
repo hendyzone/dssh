@@ -142,7 +142,11 @@ export default function Sidebar({
                         e.preventDefault();
                         e.stopPropagation();
                         setSelectedId(s.id);
-                        setContextMenu({ server: s, x: e.clientX, y: e.clientY });
+                        setContextMenu({
+                          server: s,
+                          x: e.clientX,
+                          y: e.clientY,
+                        });
                       }}
                     >
                       <span className="server-status" />
@@ -208,7 +212,11 @@ export default function Sidebar({
           >
             编辑
           </button>
-          <button type="button" className="danger" onClick={() => deleteServer(contextMenu.server)}>
+          <button
+            type="button"
+            className="danger"
+            onClick={() => deleteServer(contextMenu.server)}
+          >
             删除
           </button>
         </div>
