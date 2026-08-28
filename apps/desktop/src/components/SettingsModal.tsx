@@ -7,6 +7,8 @@ interface Props {
   settings: AppSettings;
   onChange: (s: AppSettings) => void;
   onClose: () => void;
+  /** 同步下载替换 servers.json 后通知外层刷新列表（内存态与磁盘保持一致） */
+  onServersChanged?: () => void;
 }
 
 const SYNC_REPOSITORY_KEY = "dssh.sync.repository";
@@ -14,7 +16,7 @@ const SYNC_REPOSITORY_KEY = "dssh.sync.repository";
 type SyncOperation = "sync_test" | "sync_upload" | "sync_download";
 
 /** 设置面板：主题 / 字号 / 字体 / GitHub 加密同步。 */
-export default function SettingsModal({ settings, onChange, onClose }: Props) {
+export default function SettingsModal({ settings, onChange, onClose, onServersChanged }: Props) {
   const [pat, setPat] = useState("");
   const [repository, setRepository] = useState(
     () => localStorage.getItem(SYNC_REPOSITORY_KEY) ?? "",
@@ -52,6 +54,7 @@ export default function SettingsModal({ settings, onChange, onClose }: Props) {
       } else {
         const message = await invoke<string>(operation, credentials);
         setSyncMessage(`成功：${message}`);
+        if (operation === "sync_download") onServersChanged?.();
       }
     } catch (error) {
       setSyncMessage(`失败：${String(error)}`);

@@ -427,10 +427,7 @@ export default function App() {
                   });
                 }}
               >
-                <span
-                  className={`tab-dot ${dotState}`}
-                  title={dotTitle}
-                />
+                <span className={`tab-dot ${dotState}`} title={dotTitle} />
                 {editingTabId === t.id ? (
                   <input
                     className="tab-title-input"
@@ -669,6 +666,12 @@ export default function App() {
           settings={settings}
           onChange={updateSettings}
           onClose={() => setShowSettings(false)}
+          onServersChanged={() => {
+            // 同步下载已替换磁盘上的 servers.json，重新加载内存列表
+            loadServers()
+              .then(setServers)
+              .catch((e) => console.error("同步后刷新服务器列表失败:", e));
+          }}
         />
       )}
     </div>
