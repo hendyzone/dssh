@@ -835,6 +835,10 @@ input[type="range"] {
   background: #9ece6a;
 }
 
+.tab-dot.disconnected {
+  background: var(--ui-danger);
+}
+
 @keyframes tab-dot-pulse {
   0%,
   100% {

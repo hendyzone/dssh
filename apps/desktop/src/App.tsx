@@ -95,6 +95,17 @@ export default function App() {
     [],
   );
 
+  /** 窗格连接状态（TerminalView 上报）：connecting/connected/disconnected */
+  const [paneStates, setPaneStates] = useState<
+    Record<string, "connecting" | "connected" | "disconnected">
+  >({});
+  const setPaneState = useCallback(
+    (paneId: string, state: "connecting" | "connected" | "disconnected") => {
+      setPaneStates((prev) => ({ ...prev, [paneId]: state }));
+    },
+    [],
+  );
+
   // ---- 连接 / 标签页 ----
 
   const connect = (server: ServerEntry) => {
@@ -382,7 +393,20 @@ export default function App() {
                 : "";
             const title =
               t.customTitle || `${t.panes[0].server.name}${dupSuffix}`;
-            const isConnecting = t.panes.some((pane) => !backendIds[pane.id]);
+            // 任一窗格断开=断开(红)，否则任一连接中=连接中(黄)，全连上=绿
+            const dotState = t.panes.some(
+              (pane) => paneStates[pane.id] === "disconnected",
+            )
+              ? "disconnected"
+              : t.panes.some((pane) => !backendIds[pane.id])
+                ? "connecting"
+                : "connected";
+            const dotTitle =
+              dotState === "disconnected"
+                ? "已断开"
+                : dotState === "connecting"
+                  ? "连接中"
+                  : "已连接";
             return (
               <div
                 key={t.id}
@@ -404,8 +428,8 @@ export default function App() {
                 }}
               >
                 <span
-                  className={`tab-dot ${isConnecting ? "connecting" : "connected"}`}
-                  title={isConnecting ? "连接中" : "已连接"}
+                  className={`tab-dot ${dotState}`}
+                  title={dotTitle}
                 />
                 {editingTabId === t.id ? (
                   <input
@@ -539,6 +563,7 @@ export default function App() {
                           active={t.id === activeTabId && i === t.activePane}
                           settings={settings}
                           onBackendReady={setBackendId}
+                          onStateChange={setPaneState}
                         />
                       </div>
                     ))}
