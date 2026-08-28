@@ -7,6 +7,8 @@ use std::fs;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use crate::forward::PersistentForwardRule;
+
 /// 服务器条目（前端 ServerEntry 对应；不含明文密钥）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +28,9 @@ pub struct ServerRecord {
     pub has_password: bool,
     #[serde(default)]
     pub has_passphrase: bool,
+    /// 该服务器的端口转发规则；旧版本 servers.json 缺少此字段时使用空列表。
+    #[serde(default)]
+    pub forwards: Vec<PersistentForwardRule>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -129,11 +134,46 @@ pub async fn servers_upsert(
 
     let mut all = read_all(&app)?;
     match all.iter_mut().find(|s| s.id == record.id) {
-        Some(existing) => *existing = record.clone(),
+        Some(existing) => {
+            // ServerForm 尚未携带 forwards，编辑服务器基础信息时保留已有规则。
+            if record.forwards.is_empty() {
+                record.forwards = existing.forwards.clone();
+            }
+            *existing = record.clone();
+        }
         None => all.push(record.clone()),
     }
     write_all(&app, &all)?;
     Ok(record)
+}
+
+/// 读取服务器保存的转发规则，供转发命令使用。
+///
+/// 该函数不暴露为 Tauri command，前端通过 forward_rules_list 调用。
+pub fn read_forwards(
+    app: &AppHandle,
+    server_id: &str,
+) -> Result<Vec<PersistentForwardRule>, ServersError> {
+    read_all(app)?
+        .into_iter()
+        .find(|server| server.id == server_id)
+        .map(|server| server.forwards)
+        .ok_or_else(|| ServersError::Other(format!("服务器不存在: {server_id}")))
+}
+
+/// 整体写入服务器的转发规则。
+pub fn write_forwards(
+    app: &AppHandle,
+    server_id: &str,
+    forwards: &[PersistentForwardRule],
+) -> Result<(), ServersError> {
+    let mut all = read_all(app)?;
+    let server = all
+        .iter_mut()
+        .find(|server| server.id == server_id)
+        .ok_or_else(|| ServersError::Other(format!("服务器不存在: {server_id}")))?;
+    server.forwards = forwards.to_vec();
+    write_all(app, &all)
 }
 
 #[tauri::command]

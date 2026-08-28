@@ -11,6 +11,20 @@ export interface ServerEntry {
   /** 密码/passphrase 是否已存于系统 keyring */
   hasPassword?: boolean;
   hasPassphrase?: boolean;
+  /** 该服务器保存的端口转发规则 */
+  forwards?: ForwardRuleDefinition[];
+}
+
+/** 服务器条目中的持久化端口转发规则 */
+export interface ForwardRuleDefinition {
+  id: string;
+  ruleType: "local" | "remote" | "dynamic";
+  localHost: string;
+  localPort: number;
+  remoteHost: string;
+  remotePort: number;
+  enabled: boolean;
+  autoStart: boolean;
 }
 
 export interface SessionInfo {
