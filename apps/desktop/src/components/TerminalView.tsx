@@ -1,11 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { FitAddon, Terminal, init } from "ghostty-web";
 import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 import { findImageAtPoint } from "../lib/kittyPreview";
 import { getTheme } from "../themes";
 import type { AppSettings, SessionInfo } from "../types";
+
+type ConnectionState = "connecting" | "connected" | "disconnected";
 
 interface Props {
   session: SessionInfo;
@@ -13,6 +15,8 @@ interface Props {
   settings: AppSettings;
   /** 后端 SSH 会话建立/销毁时回调（侧面板、监控需要 backendId） */
   onBackendReady: (paneId: string, backendId: string | null) => void;
+  /** SSH 连接状态变化回调（供标签状态点等外部 UI 使用） */
+  onStateChange?: (paneId: string, state: ConnectionState) => void;
 }
 
 // ghostty-web 终端组件，经 Tauri commands 与 Rust SSH 层（russh）交互
@@ -22,10 +26,19 @@ export default function TerminalView({
   active,
   settings,
   onBackendReady,
+  onStateChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
+  const onStateChangeRef = useRef(onStateChange);
+  const reconnectRef = useRef<(() => void) | null>(null);
+  const [connectionState, setConnectionState] =
+    useState<ConnectionState>("connecting");
+
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange;
+  }, [onStateChange]);
 
   // 标签重新激活时重新 fit（display:none 时尺寸为 0）
   useEffect(() => {
@@ -48,7 +61,25 @@ export default function TerminalView({
     let disposed = false;
     let term: Terminal | null = null;
     let backendId: string | null = null;
+    // session 变化时，先把外部状态点恢复为连接中。
+    setConnectionState("connecting");
+    onStateChangeRef.current?.(session.id, "connecting");
+    let connecting = false;
+    let connectionStateRef: ConnectionState = "connecting";
+    let reconnect: () => Promise<void> = async () => {};
     const cleanups: Array<() => void> = [];
+    const backendListeners: UnlistenFn[] = [];
+
+    const updateState = (next: ConnectionState) => {
+      if (connectionStateRef === next) return;
+      connectionStateRef = next;
+      setConnectionState(next);
+      onStateChangeRef.current?.(session.id, next);
+    };
+
+    const detachBackendListeners = () => {
+      backendListeners.splice(0).forEach((unlisten) => unlisten());
+    };
 
     (async () => {
       await init(wasmUrl);
@@ -85,7 +116,6 @@ export default function TerminalView({
         cleanups.push(() =>
           root.removeEventListener("mousedown", focusHandler),
         );
-        textarea?.focus();
 
         // 双击图片 → 单独窗口预览（单击仍留给文本选择）
         const canvas = root.querySelector("canvas");
@@ -105,13 +135,24 @@ export default function TerminalView({
             canvas.removeEventListener("dblclick", dblHandler),
           );
         }
+        textarea?.focus();
       }
 
       t.write(
         `\x1b[36m⟫ 正在连接 ${session.server.username}@${session.server.host}:${session.server.port} …\x1b[0m\r\n\r\n`,
       );
 
-      // 先注册输入转发，再连接（连接失败时也能看到终端里的报错）
+      // 断线时只消费 R/r，其余按键全部拦截，避免写入已经失效的会话。
+      t.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+        if (connectionStateRef !== "disconnected") return undefined;
+        if (event.type === "keydown" && event.key.toLowerCase() === "r") {
+          event.preventDefault();
+          reconnectRef.current?.();
+        }
+        return true;
+      });
+
+      // 输入和 resize 回调始终复用这个 Terminal；连接断开时 backendId 会被清空。
       const dataSub = t.onData((data: string) => {
         if (backendId) {
           invoke("ssh_write", { sessionId: backendId, data }).catch(() => {});
@@ -130,46 +171,119 @@ export default function TerminalView({
       cleanups.push(() => resizeSub.dispose());
 
       const { server } = session;
-      try {
-        backendId = await invoke<string>("ssh_connect", {
-          params: {
-            host: server.host,
-            port: server.port,
-            username: server.username,
-            authMethod: server.authMethod,
-            // 密码不在前端持有：后端按 serverId 从 keyring 取；私钥模式传路径
-            secret:
-              server.authMethod === "publicKey"
-                ? (server.keyPath ?? null)
-                : null,
-            passphrase: null,
-            serverId: server.id,
-            cols: t.cols,
-            rows: t.rows,
-          },
-        });
-      } catch (e) {
-        t.write(`\x1b[31m✗ ${String(e)}\x1b[0m\r\n`);
-        return;
-      }
-      if (disposed) {
-        invoke("ssh_disconnect", { sessionId: backendId }).catch(() => {});
-        return;
-      }
-      onBackendReady(session.id, backendId);
+      const connect = async (isReconnect: boolean): Promise<void> => {
+        if (disposed || connecting) return;
+        connecting = true;
+        updateState("connecting");
+        if (isReconnect) {
+          t.write("\r\n\x1b[36m⟫ 正在重新连接 …\x1b[0m\r\n");
+        }
 
-      cleanups.push(
-        await listen<string>(`ssh://${backendId}/data`, (e) => {
-          t.write(e.payload);
-        }),
-      );
-      cleanups.push(
-        await listen<number>(`ssh://${backendId}/exit`, (e) => {
-          const msg =
-            e.payload >= 0 ? `进程退出 (exit=${e.payload})` : "连接已断开";
-          t.write(`\r\n\x1b[33m⟫ ${msg}\x1b[0m\r\n`);
-        }),
-      );
+        let newBackendId: string;
+        try {
+          newBackendId = await invoke<string>("ssh_connect", {
+            params: {
+              host: server.host,
+              port: server.port,
+              username: server.username,
+              authMethod: server.authMethod,
+              // 密码不在前端持有：后端按 serverId 从 keyring 取；私钥模式传路径
+              secret:
+                server.authMethod === "publicKey"
+                  ? (server.keyPath ?? null)
+                  : null,
+              passphrase: null,
+              serverId: server.id,
+              cols: t.cols,
+              rows: t.rows,
+            },
+          });
+        } catch (e) {
+          connecting = false;
+          if (disposed) return;
+          backendId = null;
+          onBackendReady(session.id, null);
+          updateState("disconnected");
+          t.write(`\x1b[31m✗ ${String(e)}\x1b[0m\r\n`);
+          return;
+        }
+
+        if (disposed) {
+          invoke("ssh_disconnect", { sessionId: newBackendId }).catch(() => {});
+          return;
+        }
+
+        backendId = newBackendId;
+        onBackendReady(session.id, newBackendId);
+        updateState("connected");
+        if (isReconnect) {
+          t.write("\x1b[32m⟫ 已重新连接\x1b[0m\r\n");
+        }
+
+        // 先注册 exit，再注册 data，确保连接刚建立就断开时仍能反馈给 UI。
+        try {
+          const exitUnlisten = await listen<number>(
+            `ssh://${newBackendId}/exit`,
+            (e: { payload: number }) => {
+              // 旧连接排队中的事件不能影响新连接。
+              if (backendId !== newBackendId || disposed) return;
+              backendId = null;
+              detachBackendListeners();
+              onBackendReady(session.id, null);
+              updateState("disconnected");
+              const msg =
+                e.payload >= 0 ? `进程退出 (exit=${e.payload})` : "连接已断开";
+              t.write(
+                `\r\n\x1b[33m⟫ ${msg}\r\n⟫ [已断开] 按 R 或点此重连\x1b[0m\r\n`,
+              );
+              // 从后端会话表移除已失效句柄，避免重连留下旧连接。
+              invoke("ssh_disconnect", { sessionId: newBackendId }).catch(
+                () => {},
+              );
+            },
+          );
+          if (disposed || backendId !== newBackendId) {
+            exitUnlisten();
+            return;
+          }
+          backendListeners.push(exitUnlisten);
+
+          const dataUnlisten = await listen<string>(
+            `ssh://${newBackendId}/data`,
+            (e: { payload: string }) => {
+              if (backendId === newBackendId && !disposed) t.write(e.payload);
+            },
+          );
+          if (disposed || backendId !== newBackendId) {
+            dataUnlisten();
+            return;
+          }
+          backendListeners.push(dataUnlisten);
+        } catch (e) {
+          detachBackendListeners();
+          if (backendId === newBackendId) {
+            backendId = null;
+            onBackendReady(session.id, null);
+            updateState("disconnected");
+            t.write(`\x1b[31m✗ 监听连接事件失败：${String(e)}\x1b[0m\r\n`);
+            invoke("ssh_disconnect", { sessionId: newBackendId }).catch(
+              () => {},
+            );
+          }
+        } finally {
+          connecting = false;
+        }
+      };
+
+      reconnect = async () => {
+        if (connectionStateRef !== "disconnected") return;
+        await connect(true);
+      };
+      reconnectRef.current = () => {
+        void reconnect();
+      };
+
+      await connect(false);
     })();
 
     const onWindowResize = () => fitRef.current?.fit();
@@ -177,7 +291,9 @@ export default function TerminalView({
 
     return () => {
       disposed = true;
+      reconnectRef.current = null;
       window.removeEventListener("resize", onWindowResize);
+      detachBackendListeners();
       cleanups.forEach((fn) => fn());
       if (backendId) {
         onBackendReady(session.id, null);
@@ -191,5 +307,33 @@ export default function TerminalView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  return <div ref={containerRef} className="terminal-view" />;
+  const isDisconnected = connectionState === "disconnected";
+  return (
+    <div className="terminal-view" style={{ position: "relative" }}>
+      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+      {isDisconnected && (
+        <button
+          type="button"
+          onClick={() => reconnectRef.current?.()}
+          style={{
+            position: "absolute",
+            left: "50%",
+            bottom: "18px",
+            transform: "translateX(-50%)",
+            zIndex: 2,
+            padding: "7px 16px",
+            border: "1px solid #d8a31a",
+            borderRadius: "4px",
+            background: "rgba(45, 35, 10, 0.95)",
+            color: "#ffd866",
+            font: "inherit",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          [已断开] 点此重连
+        </button>
+      )}
+    </div>
+  );
 }
