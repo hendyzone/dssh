@@ -258,6 +258,9 @@ pub async fn ssh_connect(
             let mut decoder = Utf8Decoder::default();
             let data_event = format!("ssh://{sid}/data");
             let exit_event = format!("ssh://{sid}/exit");
+            // ExitStatus 后仍可能收到 EOF/Close；只通知一次，避免前端把一次
+            // 正常退出误判成两次断线。没有退出码时统一用 -1 表示连接断开。
+            let mut exit_emitted = false;
             loop {
                 match read_half.wait().await {
                     Some(russh::ChannelMsg::Data { data })
@@ -269,13 +272,17 @@ pub async fn ssh_connect(
                     }
                     Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
                         let _ = app.emit(&exit_event, exit_status as i64);
+                        exit_emitted = true;
                     }
                     Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => break,
                     _ => {}
                 }
             }
-            // 兜底：任何原因的读循环结束都通知前端
-            let _ = app.emit(&exit_event, -1i64);
+            // EOF/Close/None 覆盖对端主动关闭、网络中断及 keepalive 失败后的
+            // russh 通道结束路径；没有 ExitStatus 时也必须通知前端重连。
+            if !exit_emitted {
+                let _ = app.emit(&exit_event, -1i64);
+            }
             tracing::info!("ssh session {sid} read loop ended");
         });
     }
