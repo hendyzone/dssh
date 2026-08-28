@@ -50,3 +50,11 @@ export interface AppSettings {
   fontSize: number;
   fontFamily: string;
 }
+
+/** GitHub 仓库连通性检查结果（PAT 不会返回到前端或界面回显）。 */
+export interface SyncTestResult {
+  repository: string;
+  exists: boolean;
+  private: boolean;
+  fullName: string;
+}

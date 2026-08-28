@@ -5,6 +5,7 @@ mod preview;
 mod servers;
 mod sftp;
 mod ssh;
+mod sync;
 
 use tauri::Manager;
 
@@ -28,6 +29,9 @@ pub fn run() {
             servers::servers_list,
             servers::servers_upsert,
             servers::servers_delete,
+            sync::sync_test,
+            sync::sync_upload,
+            sync::sync_download,
             preview::open_image_preview,
             preview::take_pending_image,
             monitor::monitor_start,
