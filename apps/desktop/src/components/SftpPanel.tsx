@@ -22,6 +22,8 @@ interface FileEntry {
 
 interface SftpPanelProps {
   sessionId: string;
+  /** 当前聚焦窗格的远端终端目录（OSC 7 上报，未知时为 undefined） */
+  terminalCwd?: string;
   onClose: () => void;
 }
 
@@ -82,13 +84,19 @@ function formatTime(mtime: number | null | undefined): string {
   return date.toLocaleString();
 }
 
-export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
+export default function SftpPanel({
+  sessionId,
+  terminalCwd,
+  onClose,
+}: SftpPanelProps) {
   const [currentPath, setCurrentPath] = useState("/");
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
+  /** 跟随模式：终端 cd 时面板自动跳转 */
+  const [followTerminal, setFollowTerminal] = useState(false);
   const [loading, setLoading] = useState(false);
   const activeTransfers = transfers.filter(
     (transfer) => transfer.status === "active",
@@ -127,6 +135,17 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
     if (!sessionId) return;
     void loadDirectory("/");
   }, [loadDirectory, sessionId]);
+
+  // 跟随模式：终端目录变化且与面板当前目录不同时自动跳转
+  useEffect(() => {
+    if (
+      followTerminal &&
+      terminalCwd &&
+      terminalCwd !== currentPathRef.current
+    ) {
+      void loadDirectory(terminalCwd);
+    }
+  }, [followTerminal, terminalCwd, loadDirectory]);
 
   const uploadFiles = useCallback(
     async (paths: string[]) => {
@@ -283,6 +302,34 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
         <strong style={{ color: "var(--ui-fg)", marginRight: "auto" }}>
           SFTP
         </strong>
+        <button
+          type="button"
+          style={{
+            ...buttonStyle,
+            ...(terminalCwd ? {} : { opacity: 0.4, cursor: "default" }),
+          }}
+          onClick={() => terminalCwd && void loadDirectory(terminalCwd)}
+          title={
+            terminalCwd
+              ? `定位到终端目录：${terminalCwd}`
+              : "终端目录未知（在终端里执行一条命令后即可识别）"
+          }
+        >
+          ⌖
+        </button>
+        <button
+          type="button"
+          style={{
+            ...buttonStyle,
+            ...(followTerminal
+              ? { color: "var(--ui-accent)", borderColor: "var(--ui-accent)" }
+              : {}),
+          }}
+          onClick={() => setFollowTerminal((v) => !v)}
+          title="跟随终端：终端 cd 时面板自动跳转"
+        >
+          跟随
+        </button>
         <button
           type="button"
           style={buttonStyle}

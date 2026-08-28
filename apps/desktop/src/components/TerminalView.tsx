@@ -9,6 +9,38 @@ import type { AppSettings, SessionInfo } from "../types";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
 
+// 连接成功后注入的 OSC 7 钩子（仅当前会话生效，不写远端任何文件）：
+// 每次出现提示符时 shell 上报当前目录，SFTP 面板据此定位/跟随终端目录。
+// 覆盖 bash/zsh；其余 shell 会静默忽略或设一个无害变量。前导空格配合
+// HISTCONTROL=ignorespace 避免进历史记录。
+const OSC7_HOOK =
+  ' __dssh_osc7(){ printf "\\033]7;file://%s%s\\033\\\\" "${HOSTNAME:-$(hostname)}" "$PWD"; };case "$0" in *zsh*) precmd_functions+=(__dssh_osc7);; *) PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;};__dssh_osc7";;esac\r';
+
+const OSC7_RE = /\x1b\]7;file:\/\/[^\x07\x1b]*?(\/[^\x07\x1b]*?)(?:\x07|\x1b\\)/g;
+
+/**
+ * 从输出流中解析 OSC 7 路径。序列可能跨事件被截断，
+ * 用 carry 保留末尾不完整的片段与下一块拼接。
+ */
+function scanOsc7(carry: string, chunk: string): { path: string | null; carry: string } {
+  const text = carry + chunk;
+  let path: string | null = null;
+  let lastEnd = 0;
+  OSC7_RE.lastIndex = 0;
+  for (let m = OSC7_RE.exec(text); m; m = OSC7_RE.exec(text)) {
+    try {
+      path = decodeURIComponent(m[1]);
+    } catch {
+      path = m[1];
+    }
+    lastEnd = m.index + m[0].length;
+  }
+  const tailStart = text.lastIndexOf("\x1b]7;");
+  const nextCarry =
+    tailStart >= lastEnd ? text.slice(tailStart, tailStart + 512) : "";
+  return { path, carry: nextCarry };
+}
+
 interface Props {
   session: SessionInfo;
   active: boolean;
@@ -17,6 +49,8 @@ interface Props {
   onBackendReady: (paneId: string, backendId: string | null) => void;
   /** SSH 连接状态变化回调（供标签状态点等外部 UI 使用） */
   onStateChange?: (paneId: string, state: ConnectionState) => void;
+  /** 远端 shell 当前目录变化回调（OSC 7，供 SFTP 定位/跟随使用） */
+  onCwdChange?: (paneId: string, cwd: string) => void;
 }
 
 // ghostty-web 终端组件，经 Tauri commands 与 Rust SSH 层（russh）交互
@@ -27,18 +61,21 @@ export default function TerminalView({
   settings,
   onBackendReady,
   onStateChange,
+  onCwdChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const onStateChangeRef = useRef(onStateChange);
+  const onCwdChangeRef = useRef(onCwdChange);
   const reconnectRef = useRef<(() => void) | null>(null);
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("connecting");
 
   useEffect(() => {
     onStateChangeRef.current = onStateChange;
-  }, [onStateChange]);
+    onCwdChangeRef.current = onCwdChange;
+  }, [onStateChange, onCwdChange]);
 
   // 标签重新激活时重新 fit（display:none 时尺寸为 0）
   useEffect(() => {
@@ -221,6 +258,10 @@ export default function TerminalView({
         backendId = newBackendId;
         onBackendReady(session.id, newBackendId);
         updateState("connected");
+        // 注入 OSC 7 目录上报钩子（回显一行属正常，钩子本身无输出）
+        invoke("ssh_write", { sessionId: newBackendId, data: OSC7_HOOK }).catch(
+          () => {},
+        );
         if (isReconnect) {
           t.write("\x1b[32m⟫ 已重新连接\x1b[0m\r\n");
         }
@@ -253,10 +294,15 @@ export default function TerminalView({
           }
           backendListeners.push(exitUnlisten);
 
+          let oscCarry = "";
           const dataUnlisten = await listen<string>(
             `ssh://${newBackendId}/data`,
             (e: { payload: string }) => {
-              if (backendId === newBackendId && !disposed) t.write(e.payload);
+              if (backendId !== newBackendId || disposed) return;
+              const scanned = scanOsc7(oscCarry, e.payload);
+              oscCarry = scanned.carry;
+              if (scanned.path) onCwdChangeRef.current?.(session.id, scanned.path);
+              t.write(e.payload);
             },
           );
           if (disposed || backendId !== newBackendId) {

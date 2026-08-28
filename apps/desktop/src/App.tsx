@@ -106,6 +106,12 @@ export default function App() {
     [],
   );
 
+  /** 各窗格远端 shell 的当前目录（TerminalView 经 OSC 7 上报） */
+  const [paneCwds, setPaneCwds] = useState<Record<string, string>>({});
+  const setPaneCwd = useCallback((paneId: string, cwd: string) => {
+    setPaneCwds((prev) => (prev[paneId] === cwd ? prev : { ...prev, [paneId]: cwd }));
+  }, []);
+
   // ---- 连接 / 标签页 ----
 
   const connect = (server: ServerEntry) => {
@@ -150,6 +156,11 @@ export default function App() {
       return next;
     });
     setBackendIds((prev) => {
+      const next = { ...prev };
+      removedPaneIds.forEach((id) => delete next[id]);
+      return next;
+    });
+    setPaneCwds((prev) => {
       const next = { ...prev };
       removedPaneIds.forEach((id) => delete next[id]);
       return next;
@@ -561,6 +572,7 @@ export default function App() {
                           settings={settings}
                           onBackendReady={setBackendId}
                           onStateChange={setPaneState}
+                          onCwdChange={setPaneCwd}
                         />
                       </div>
                     ))}
@@ -568,6 +580,7 @@ export default function App() {
                   {panel === "sftp" && (
                     <SftpPanel
                       sessionId={activePaneBackend ?? ""}
+                      terminalCwd={paneCwds[t.panes[t.activePane]?.id ?? ""]}
                       onClose={() => togglePanel(t.id, null)}
                     />
                   )}
