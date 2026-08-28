@@ -232,9 +232,7 @@ export default function TerminalView({
               onBackendReady(session.id, null);
               updateState("disconnected");
               const msg =
-                e.payload >= 0
-                  ? `进程退出 (exit=${e.payload})`
-                  : "连接已断开";
+                e.payload >= 0 ? `进程退出 (exit=${e.payload})` : "连接已断开";
               t.write(
                 `\r\n\x1b[33m⟫ ${msg}\r\n⟫ [已断开] 按 R 或点此重连\x1b[0m\r\n`,
               );
@@ -311,10 +309,7 @@ export default function TerminalView({
 
   const isDisconnected = connectionState === "disconnected";
   return (
-    <div
-      className="terminal-view"
-      style={{ position: "relative" }}
-    >
+    <div className="terminal-view" style={{ position: "relative" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
       {isDisconnected && (
         <button
