@@ -13,7 +13,7 @@ use base64::Engine;
 use rand::{rngs::OsRng, RngCore};
 use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::servers::{self, ServerRecord};
 
@@ -261,11 +261,15 @@ pub async fn sync_test(
         .json::<GitHubRepository>()
         .await
         .map_err(|error| SyncError::Other(format!("GitHub 仓库响应格式异常: {error}")))?;
+    // 先把借用了 repository 的 full_name 算出来，才能在结构体里 move repository。
+    let full_name = metadata
+        .full_name
+        .unwrap_or_else(|| format!("{owner}/{name}"));
     Ok(SyncTestResult {
         repository,
         exists: true,
         private: metadata.private,
-        full_name: metadata.full_name.unwrap_or_else(|| format!("{owner}/{name}")),
+        full_name,
     })
 }
 
