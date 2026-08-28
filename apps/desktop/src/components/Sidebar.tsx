@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { MouseEvent } from "react";
 import logoUrl from "../assets/logo.png";
 import type { ServerEntry } from "../types";
 import {
@@ -33,6 +34,23 @@ export default function Sidebar({
 }: Props) {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [selectedId, setSelectedId] = useState<string>();
+  const [contextMenu, setContextMenu] = useState<{
+    server: ServerEntry;
+    x: number;
+    y: number;
+  }>();
+
+  useEffect(() => {
+    const closeContextMenu = () => setContextMenu(undefined);
+    window.addEventListener("click", closeContextMenu);
+    return () => window.removeEventListener("click", closeContextMenu);
+  }, []);
+
+  const deleteServer = (server: ServerEntry) => {
+    setContextMenu(undefined);
+    if (confirm(`删除服务器「${server.name}」？`)) onDelete(server.id);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -114,8 +132,18 @@ export default function Sidebar({
                   {list.map((s) => (
                     <li
                       key={s.id}
-                      className="server-item"
-                      onClick={() => onConnect(s)}
+                      className={`server-item${selectedId === s.id ? " selected" : ""}`}
+                      onClick={() => {
+                        setSelectedId(s.id);
+                        setContextMenu(undefined);
+                      }}
+                      onDoubleClick={() => onConnect(s)}
+                      onContextMenu={(e: MouseEvent<HTMLLIElement>) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedId(s.id);
+                        setContextMenu({ server: s, x: e.clientX, y: e.clientY });
+                      }}
                     >
                       <span className="server-status" />
                       <div className="server-item-meta">
@@ -140,8 +168,7 @@ export default function Sidebar({
                           title="删除"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`删除服务器「${s.name}」？`))
-                              onDelete(s.id);
+                            deleteServer(s);
                           }}
                         >
                           <IconClose size={13} />
@@ -153,6 +180,37 @@ export default function Sidebar({
               )}
             </div>
           ))}
+        </div>
+      )}
+      {contextMenu && (
+        <div
+          className="sidebar-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+          role="menu"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              onConnect(contextMenu.server);
+              setContextMenu(undefined);
+            }}
+          >
+            连接
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onEdit(contextMenu.server);
+              setContextMenu(undefined);
+            }}
+          >
+            编辑
+          </button>
+          <button type="button" className="danger" onClick={() => deleteServer(contextMenu.server)}>
+            删除
+          </button>
         </div>
       )}
     </aside>

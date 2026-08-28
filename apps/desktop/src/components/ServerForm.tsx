@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { ServerEntry } from "../types";
 
 interface Props {
@@ -26,7 +28,37 @@ export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
   );
   const [password, setPassword] = useState("");
   const [keyPath, setKeyPath] = useState(initial?.keyPath ?? "");
+  const [sshKeys, setSshKeys] = useState<string[]>([]);
   const [passphrase, setPassphrase] = useState("");
+
+  useEffect(() => {
+    if (authMethod !== "publicKey") {
+      setSshKeys([]);
+      return;
+    }
+
+    let cancelled = false;
+    invoke<string[]>("list_ssh_keys")
+      .then((keys) => {
+        if (!cancelled) setSshKeys(keys);
+      })
+      .catch(() => {
+        if (!cancelled) setSshKeys([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authMethod]);
+
+  const chooseKeyFile = async () => {
+    const selected = await open({
+      title: "选择私钥文件",
+      defaultPath: "~",
+      directory: false,
+      multiple: false,
+    });
+    if (typeof selected === "string") setKeyPath(selected);
+  };
 
   const valid =
     host.trim() !== "" && username.trim() !== "" && Number(port) > 0;
@@ -133,11 +165,34 @@ export default function ServerForm({ initial, onSubmit, onCancel }: Props) {
           <>
             <label>
               私钥路径
-              <input
-                value={keyPath}
-                onChange={(e) => setKeyPath(e.target.value)}
-                placeholder="~/.ssh/id_ed25519"
-              />
+              <div className="key-path-picker">
+                <input
+                  value={keyPath}
+                  onChange={(e) => setKeyPath(e.target.value)}
+                  placeholder="~/.ssh/id_ed25519"
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={chooseKeyFile}
+                >
+                  浏览…
+                </button>
+              </div>
+              {sshKeys.length > 0 && (
+                <div className="key-chips" aria-label="常用私钥">
+                  {sshKeys.map((key) => (
+                    <button
+                      type="button"
+                      className="key-chip"
+                      key={key}
+                      onClick={() => setKeyPath(`~/.ssh/${key}`)}
+                    >
+                      {key}
+                    </button>
+                  ))}
+                </div>
+              )}
             </label>
             <label>
               私钥密码（如有）
