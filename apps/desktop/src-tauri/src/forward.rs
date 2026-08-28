@@ -4,7 +4,7 @@
 //! forward uses a small, separate SSH client because the terminal handler is not
 //! able to receive forwarded channels.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,6 +30,17 @@ pub struct ForwardRule {
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
+}
+
+/// 保存在服务器条目中的转发规则定义，id 用于跨会话关联运行状态。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentForwardRule {
+    pub id: String,
+    #[serde(flatten)]
+    pub rule: ForwardRule,
+    pub enabled: bool,
+    pub auto_start: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,9 +138,24 @@ pub async fn forward_start(
     ssh_state: State<'_, SshState>,
     session_id: String,
     rule: ForwardRule,
+    rule_id: Option<String>,
 ) -> Result<String, ForwardError> {
     validate_rule(&rule)?;
-    let rule_id = new_rule_id();
+    let rule_id = rule_id
+        .filter(|id| !id.trim().is_empty())
+        .unwrap_or_else(new_rule_id);
+
+    // 自动启动和手动点击可能同时到达；锁覆盖启动和登记，避免并发重复监听。
+    let mut rules = state.rules.lock().await;
+    if let Some(entry) = rules.get(&rule_id) {
+        if !entry.task.is_finished() {
+            if entry.session_id == session_id {
+                return Ok(rule_id);
+            }
+            return Err(ForwardError::Other("该转发规则已在其他会话运行".into()));
+        }
+    }
+    rules.remove(&rule_id);
     let (stop, stop_rx) = oneshot::channel();
 
     let task = match rule.rule_type {
@@ -191,7 +217,7 @@ pub async fn forward_start(
         }
     };
 
-    state.rules.lock().await.insert(
+    rules.insert(
         rule_id.clone(),
         RunningForward {
             session_id,
@@ -201,6 +227,53 @@ pub async fn forward_start(
         },
     );
     Ok(rule_id)
+}
+
+/// 读取当前会话所属服务器保存的转发规则。
+#[tauri::command]
+pub async fn forward_rules_list(
+    app: tauri::AppHandle,
+    ssh_state: State<'_, SshState>,
+    session_id: String,
+) -> Result<Vec<PersistentForwardRule>, ForwardError> {
+    let meta = ssh_state
+        .get_meta(&session_id)
+        .await
+        .ok_or_else(|| ForwardError::SessionNotFound(session_id.clone()))?;
+    let server_id = meta.server_id.ok_or_else(|| {
+        ForwardError::Other("当前会话没有关联服务器条目".into())
+    })?;
+    crate::servers::read_forwards(&app, &server_id).map_err(|error| ForwardError::Other(error.to_string()))
+}
+
+/// 整体保存当前会话所属服务器的转发规则定义。
+#[tauri::command]
+pub async fn forward_rules_save(
+    app: tauri::AppHandle,
+    ssh_state: State<'_, SshState>,
+    session_id: String,
+    rules: Vec<PersistentForwardRule>,
+) -> Result<Vec<PersistentForwardRule>, ForwardError> {
+    let meta = ssh_state
+        .get_meta(&session_id)
+        .await
+        .ok_or_else(|| ForwardError::SessionNotFound(session_id.clone()))?;
+    let server_id = meta.server_id.ok_or_else(|| {
+        ForwardError::Other("当前会话没有关联服务器条目".into())
+    })?;
+    let mut ids = HashSet::new();
+    for persisted in &rules {
+        if persisted.id.trim().is_empty() {
+            return Err(ForwardError::InvalidRule("转发规则 id 不能为空".into()));
+        }
+        if !ids.insert(&persisted.id) {
+            return Err(ForwardError::InvalidRule("转发规则 id 不能重复".into()));
+        }
+        validate_rule(&persisted.rule)?;
+    }
+    crate::servers::write_forwards(&app, &server_id, &rules)
+        .map_err(|error| ForwardError::Other(error.to_string()))?;
+    Ok(rules)
 }
 
 /// Stop a rule.  Stopping removes it from the active rule list; deleting a UI

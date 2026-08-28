@@ -38,6 +38,8 @@ pub fn run() {
             forward::forward_start,
             forward::forward_stop,
             forward::forward_list,
+            forward::forward_rules_list,
+            forward::forward_rules_save,
             forward::forward_stop_session,
         ])
         .run(tauri::generate_context!())
