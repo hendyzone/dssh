@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import {
+  createTransfer,
+  formatTransferSize,
+  subscribeTransfers,
+  transferPercent,
+  waitForTransferListener,
+  type Transfer,
+} from "../lib/transfers";
 
 interface FileEntry {
   name: string;
@@ -80,8 +88,14 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [uploading, setUploading] = useState<string[]>([]);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [loading, setLoading] = useState(false);
+  const activeTransfers = transfers.filter((transfer) => transfer.status === "active");
+
+  useEffect(() => {
+    if (!sessionId) return;
+    return subscribeTransfers(sessionId, setTransfers);
+  }, [sessionId]);
   const currentPathRef = useRef(currentPath);
 
   const loadDirectory = useCallback(
@@ -117,25 +131,35 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
       if (paths.length === 0) return;
       setError(null);
       setNotice(null);
-      setUploading(paths);
+      const queued = paths.map((localPath) => ({
+        localPath,
+        remotePath: joinRemotePath(
+          currentPathRef.current,
+          basename(localPath),
+        ),
+        transferId: createTransfer(sessionId, basename(localPath), "upload"),
+      }));
+      let failed = false;
       try {
-        for (const localPath of paths) {
-          const remotePath = joinRemotePath(
-            currentPathRef.current,
-            basename(localPath),
-          );
-          await invoke("sftp_upload", {
-            sessionId,
-            remotePath,
-            localPath,
-          });
-        }
-        await loadDirectory(currentPathRef.current);
+        await waitForTransferListener(sessionId);
       } catch (reason) {
         setError(String(reason));
-      } finally {
-        setUploading([]);
+        return;
       }
+      for (const transfer of queued) {
+        try {
+          await invoke("sftp_upload", {
+            sessionId,
+            remotePath: transfer.remotePath,
+            localPath: transfer.localPath,
+            transferId: transfer.transferId,
+          });
+        } catch (reason) {
+          failed = true;
+          setError(String(reason));
+        }
+      }
+      if (!failed) await loadDirectory(currentPathRef.current);
     },
     [loadDirectory, sessionId],
   );
@@ -194,19 +218,28 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
   };
 
   const download = (entry: FileEntry) => {
+    const transferId = createTransfer(sessionId, entry.name, "download");
     void (async () => {
       setError(null);
       setNotice(null);
       try {
+        await waitForTransferListener(sessionId);
         const localPath = await invoke<string>("sftp_download", {
           sessionId,
           remotePath: entry.path,
+          transferId,
         });
         setNotice(`已下载到 ${localPath}`);
       } catch (reason) {
         setError(String(reason));
       }
     })();
+  };
+
+  const cancelTransfer = (transfer: Transfer) => {
+    void invoke("cancel_upload", { transferId: transfer.transferId }).catch(
+      (reason) => setError(String(reason)),
+    );
   };
 
   const rename = (entry: FileEntry) => {
@@ -342,17 +375,133 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
           {notice}
         </div>
       )}
-      {uploading.length > 0 && (
+      {transfers.length > 0 && (
         <div
           style={{
             margin: "0 8px 6px",
             padding: "7px 8px",
             borderRadius: 4,
             background: "var(--ui-border)",
-            color: "var(--ui-accent)",
+            color: "var(--ui-fg)",
+            maxHeight: 220,
+            overflowY: "auto",
           }}
         >
-          正在上传 {uploading.length} 个文件…
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <strong>传输</strong>
+            {activeTransfers.length > 0 && (
+              <span style={{ color: "var(--ui-accent)", fontSize: 11 }}>
+                进行中 {activeTransfers.length}
+              </span>
+            )}
+          </div>
+          {transfers.map((transfer) => {
+            const percent = transferPercent(transfer);
+            const finished = transfer.status === "done";
+            const failed = transfer.status === "error";
+            return (
+              <div
+                key={transfer.transferId}
+                style={{
+                  marginTop: 8,
+                  paddingTop: 7,
+                  borderTop: "1px solid var(--ui-panelAlt)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 12,
+                  }}
+                >
+                  <span
+                    title={transfer.fileName}
+                    style={{
+                      minWidth: 0,
+                      flex: 1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {transfer.direction === "upload" ? "↑" : "↓"} {transfer.fileName}
+                  </span>
+                  {finished && <span aria-label="完成">✓</span>}
+                  {failed && (
+                    <span
+                      title={transfer.error}
+                      style={{ color: "var(--ui-danger)" }}
+                    >
+                      失败
+                    </span>
+                  )}
+                  {!finished && !failed && (
+                    <button
+                      type="button"
+                      style={{
+                        ...buttonStyle,
+                        padding: "2px 5px",
+                        color: "var(--ui-danger)",
+                      }}
+                      onClick={() => cancelTransfer(transfer)}
+                    >
+                      取消
+                    </button>
+                  )}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    marginTop: 5,
+                    fontSize: 11,
+                    color: failed ? "var(--ui-danger)" : "var(--ui-muted)",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: 5,
+                      flex: 1,
+                      overflow: "hidden",
+                      borderRadius: 3,
+                      background: "var(--ui-panelAlt)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${percent}%`,
+                        height: "100%",
+                        background: failed
+                          ? "var(--ui-danger)"
+                          : "var(--ui-accent)",
+                        transition: "width 120ms linear",
+                      }}
+                    />
+                  </div>
+                  <span style={{ width: 34, textAlign: "right" }}>{percent}%</span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: 11,
+                    color: failed ? "var(--ui-danger)" : "var(--ui-muted)",
+                  }}
+                >
+                  <span>
+                    {formatTransferSize(transfer.transferredBytes)} / {formatTransferSize(transfer.totalBytes)}
+                    {transfer.error ? ` · ${transfer.error}` : ""}
+                  </span>
+                  {!finished && !failed && (
+                    <span>{formatTransferSize(Math.round(transfer.speedBytesPerSecond))}/s</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
