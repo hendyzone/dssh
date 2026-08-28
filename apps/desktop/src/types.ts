@@ -22,6 +22,8 @@ export interface SessionInfo {
 /** 一个标签页：1-2 个窗格（分屏） */
 export interface TabInfo {
   id: string;
+  /** 用户自定义标签名；未设置时显示服务器名 */
+  customTitle?: string;
   panes: SessionInfo[];
   /** 分屏方向；undefined = 单窗格 */
   splitDir?: "row" | "column";
