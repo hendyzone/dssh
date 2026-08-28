@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import logoUrl from "./assets/logo.png";
 import ForwardPanel from "./components/ForwardPanel";
 import {
@@ -25,6 +26,7 @@ import { applyTheme, getTheme } from "./themes";
 import type { AppSettings, ServerEntry, SessionInfo, TabInfo } from "./types";
 
 type SidePanel = "sftp" | "forward" | null;
+type ContextMenu = { tabId: string; x: number; y: number };
 
 export default function App() {
   const [servers, setServers] = useState<ServerEntry[]>([]);
@@ -41,6 +43,15 @@ export default function App() {
   );
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [serverPickerOpen, setServerPickerOpen] = useState(false);
+
+  // 关闭窗口回调由 Tauri 保存，使用 ref 读取最新会话状态，避免监听器过期。
+  const backendIdsRef = useRef(backendIds);
+  const allowWindowCloseRef = useRef(false);
+  backendIdsRef.current = backendIds;
 
   useEffect(() => {
     applyTheme(getTheme(settings.themeId));
@@ -48,6 +59,28 @@ export default function App() {
       .then(setServers)
       .catch((e) => console.error("加载服务器列表失败:", e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const appWindow = getCurrentWindow();
+    appWindow
+      .onCloseRequested(async (event) => {
+        const hasActiveSession = Object.values(backendIdsRef.current).some(
+          Boolean,
+        );
+        if (allowWindowCloseRef.current || !hasActiveSession) return;
+        event.preventDefault();
+        if (window.confirm("仍有 SSH 会话连接中，确定要退出 dssh 吗？")) {
+          allowWindowCloseRef.current = true;
+          await appWindow.close();
+        }
+      })
+      .then((dispose) => {
+        unlisten = dispose;
+      })
+      .catch((e) => console.error("注册窗口关闭确认失败:", e));
+    return () => unlisten?.();
   }, []);
 
   const updateSettings = (next: AppSettings) => {
@@ -76,18 +109,131 @@ export default function App() {
     setActiveTabId(tab.id);
   };
 
-  const closeTab = (tabId: string) => {
+  const hasActiveConnection = (tabId: string) => {
+    const tab = tabs.find((item) => item.id === tabId);
+    return tab?.panes.some((pane) => Boolean(backendIds[pane.id])) ?? false;
+  };
+
+  const confirmClose = (tabIds: string[], message: string) => {
+    const hasActiveSession = tabIds.some(hasActiveConnection);
+    return !hasActiveSession || window.confirm(message);
+  };
+
+  const removeTabs = (tabIds: string[], focusTabId?: string) => {
+    const ids = new Set(tabIds);
+    const removedPaneIds = tabs
+      .filter((tab) => ids.has(tab.id))
+      .flatMap((tab) => tab.panes.map((pane) => pane.id));
     setTabs((prev) => {
-      const next = prev.filter((t) => t.id !== tabId);
-      if (activeTabId === tabId)
+      const next = prev.filter((tab) => !ids.has(tab.id));
+      if (focusTabId && next.some((tab) => tab.id === focusTabId)) {
+        setActiveTabId(focusTabId);
+      } else if (activeTabId && ids.has(activeTabId)) {
         setActiveTabId(next[next.length - 1]?.id ?? null);
+      }
       return next;
     });
     setSidePanels((prev) => {
       const next = { ...prev };
-      delete next[tabId];
+      ids.forEach((id) => delete next[id]);
       return next;
     });
+    setBackendIds((prev) => {
+      const next = { ...prev };
+      removedPaneIds.forEach((id) => delete next[id]);
+      return next;
+    });
+  };
+
+  const closeTab = (tabId: string) => {
+    if (
+      !confirmClose(
+        [tabId],
+        "此标签仍有 SSH 会话连接中，确定要关闭吗？",
+      )
+    )
+      return;
+    removeTabs([tabId]);
+  };
+
+  const closePane = (tabId: string, paneIndex: number) => {
+    const tab = tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+    const pane = tab.panes[paneIndex];
+    if (!pane) return;
+    if (
+      backendIds[pane.id] &&
+      !window.confirm("此窗格仍有 SSH 会话连接中，确定要关闭吗？")
+    )
+      return;
+    if (tab.panes.length === 1) {
+      // 最后一个窗格就是整个标签，避免再次弹出相同确认框。
+      removeTabs([tabId]);
+      return;
+    }
+    const panes = tab.panes.filter((_, index) => index !== paneIndex);
+    setTabs((prev) =>
+      prev.map((item) => {
+        if (item.id !== tabId) return item;
+        const activePane =
+          item.activePane === paneIndex
+            ? Math.min(paneIndex, panes.length - 1)
+            : item.activePane > paneIndex
+              ? item.activePane - 1
+              : item.activePane;
+        return { ...item, panes, activePane, splitDir: undefined };
+      }),
+    );
+    setBackendIds((prev) => {
+      const next = { ...prev };
+      delete next[pane.id];
+      return next;
+    });
+  };
+
+  const renameTab = (tabId: string) => {
+    const tab = tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+    setEditingTitle(tab.customTitle ?? "");
+    setEditingTabId(tabId);
+    setContextMenu(null);
+  };
+
+  const saveTabTitle = (tabId: string) => {
+    const title = editingTitle.trim();
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId
+          ? { ...tab, customTitle: title || undefined }
+          : tab,
+      ),
+    );
+    setEditingTabId(null);
+  };
+
+  const duplicateTab = (tabId: string) => {
+    const tab = tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+    connect(tab.panes[0].server);
+    setContextMenu(null);
+  };
+
+  const closeOtherTabs = (tabId: string) => {
+    const ids = tabs.filter((tab) => tab.id !== tabId).map((tab) => tab.id);
+    if (!confirmClose(ids, "其他标签仍有 SSH 会话连接中，确定要关闭吗？"))
+      return;
+    removeTabs(ids, tabId);
+    setContextMenu(null);
+  };
+
+  const closeTabsToRight = (tabId: string) => {
+    const index = tabs.findIndex((tab) => tab.id === tabId);
+    if (index < 0) return;
+    const ids = tabs.slice(index + 1).map((tab) => tab.id);
+    if (!confirmClose(ids, "右侧标签仍有 SSH 会话连接中，确定要关闭吗？"))
+      return;
+    removeTabs(ids, tabId);
+    setContextMenu(null);
   };
 
   // ---- 分屏 ----
@@ -127,6 +273,56 @@ export default function App() {
       [tabId]: prev[tabId] === panel ? null : panel,
     }));
   };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeMenu = () => setContextMenu(null);
+    document.addEventListener("mousedown", closeMenu);
+    return () => document.removeEventListener("mousedown", closeMenu);
+  }, [contextMenu]);
+
+  // 全局快捷键：不处理复制、粘贴等文本快捷键，终端焦点也能响应本应用快捷键。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (editingTabId) {
+          setEditingTabId(null);
+        } else if (contextMenu) {
+          setContextMenu(null);
+        } else if (serverPickerOpen) {
+          setServerPickerOpen(false);
+        }
+        return;
+      }
+      if (event.ctrlKey && event.key === "Tab") {
+        event.preventDefault();
+        if (tabs.length > 1) {
+          const index = tabs.findIndex((tab) => tab.id === activeTabId);
+          setActiveTabId(tabs[(index + 1) % tabs.length].id);
+        }
+        return;
+      }
+      const commandKey = event.metaKey || event.ctrlKey;
+      if (!commandKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "w") {
+        event.preventDefault();
+        if (activeTabId) {
+          const tab = tabs.find((item) => item.id === activeTabId);
+          if (tab) closePane(tab.id, tab.activePane);
+        }
+      } else if (key === "t") {
+        event.preventDefault();
+        setServerPickerOpen(true);
+      } else if (/^[1-9]$/.test(event.key)) {
+        event.preventDefault();
+        const tab = tabs[Number(event.key) - 1];
+        if (tab) setActiveTabId(tab.id);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeTabId, contextMenu, editingTabId, serverPickerOpen, tabs]);
 
   // ---- 服务器条目 ----
 
@@ -181,43 +377,87 @@ export default function App() {
         onOpenSettings={() => setShowSettings(true)}
       />
       <main className="main-area">
-        {tabs.length > 0 && (
-          <div className="tab-bar">
-            {tabs.map((t) => {
-              // 同服务器的多个标签加 #n 序号区分
-              const sameServer = tabs.filter(
-                (x) => x.panes[0].server.id === t.panes[0].server.id,
-              );
-              const dupSuffix =
-                sameServer.length > 1
-                  ? ` #${sameServer.findIndex((x) => x.id === t.id) + 1}`
-                  : "";
-              return (
-                <div
-                  key={t.id}
-                  className={`tab ${t.id === activeTabId ? "active" : ""}`}
-                  onClick={() => setActiveTabId(t.id)}
-                >
-                  <span className="tab-dot" />
-                  <span>
-                    {t.panes[0].server.name}
-                    {dupSuffix}
-                    {t.panes.length > 1 ? ` ⊞${t.panes.length}` : ""}
-                  </span>
-                  <button
-                    className="tab-close"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(t.id);
+        <div className="tab-bar">
+          {tabs.map((t) => {
+            // 未重命名的标签仍以服务器名和 #n 序号显示。
+            const sameServer = tabs.filter(
+              (x) => x.panes[0].server.id === t.panes[0].server.id,
+            );
+            const dupSuffix =
+              sameServer.length > 1
+                ? ` #${sameServer.findIndex((x) => x.id === t.id) + 1}`
+                : "";
+            const title =
+              t.customTitle || `${t.panes[0].server.name}${dupSuffix}`;
+            const isConnecting = t.panes.some(
+              (pane) => !backendIds[pane.id],
+            );
+            return (
+              <div
+                key={t.id}
+                className={`tab ${t.id === activeTabId ? "active" : ""}`}
+                onClick={() => setActiveTabId(t.id)}
+                onAuxClick={(event) => {
+                  if (event.button === 1) {
+                    event.preventDefault();
+                    closeTab(t.id);
+                  }
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setContextMenu({ tabId: t.id, x: event.clientX, y: event.clientY });
+                }}
+              >
+                <span
+                  className={`tab-dot ${isConnecting ? "connecting" : "connected"}`}
+                  title={isConnecting ? "连接中" : "已连接"}
+                />
+                {editingTabId === t.id ? (
+                  <input
+                    className="tab-title-input"
+                    value={editingTitle}
+                    autoFocus
+                    onChange={(event) => setEditingTitle(event.target.value)}
+                    onClick={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter") saveTabTitle(t.id);
+                      if (event.key === "Escape") setEditingTabId(null);
+                    }}
+                  />
+                ) : (
+                  <span
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      renameTab(t.id);
                     }}
                   >
-                    <IconClose size={12} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    {title}
+                    {t.panes.length > 1 ? ` ⊞${t.panes.length}` : ""}
+                  </span>
+                )}
+                <button
+                  className="tab-close"
+                  title="关闭标签"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    closeTab(t.id);
+                  }}
+                >
+                  <IconClose size={12} />
+                </button>
+              </div>
+            );
+          })}
+          <button
+            className="tab-new"
+            title="新建标签 (⌘T / Ctrl+T)"
+            onClick={() => setServerPickerOpen(true)}
+          >
+            ＋
+          </button>
+        </div>
         {tabs.length === 0 ? (
           <div className="welcome">
             <img src={logoUrl} alt="dssh" />
@@ -289,6 +529,16 @@ export default function App() {
                         className={`pane ${i === t.activePane ? "focused" : ""}`}
                         onClick={() => focusPane(t.id, i)}
                       >
+                        <button
+                          className="pane-close"
+                          title="关闭窗格"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            closePane(t.id, i);
+                          }}
+                        >
+                          <IconClose size={12} />
+                        </button>
                         <TerminalView
                           session={p}
                           active={t.id === activeTabId && i === t.activePane}
@@ -317,6 +567,65 @@ export default function App() {
           })
         )}
       </main>
+      {contextMenu && (
+        <div
+          className="tab-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <button onClick={() => renameTab(contextMenu.tabId)}>重命名</button>
+          <button onClick={() => duplicateTab(contextMenu.tabId)}>
+            复制此会话
+          </button>
+          <button onClick={() => closeOtherTabs(contextMenu.tabId)}>
+            关闭其他
+          </button>
+          <button onClick={() => closeTabsToRight(contextMenu.tabId)}>
+            关闭右侧
+          </button>
+          <button onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}>
+            关闭标签
+          </button>
+        </div>
+      )}
+      {serverPickerOpen && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={() => setServerPickerOpen(false)}
+        >
+          <div className="modal server-picker" onMouseDown={(event) => event.stopPropagation()}>
+            <h3>新建标签</h3>
+            <p className="server-picker-hint">选择一个服务器建立新会话</p>
+            {servers.length === 0 ? (
+              <div className="sidebar-empty">暂无服务器，请先添加服务器。</div>
+            ) : (
+              <div className="server-picker-list">
+                {servers.map((server) => (
+                  <button
+                    key={server.id}
+                    className="server-picker-item"
+                    onClick={() => {
+                      connect(server);
+                      setServerPickerOpen(false);
+                    }}
+                  >
+                    <strong>{server.name}</strong>
+                    <span>
+                      {server.username}@{server.host}:{server.port}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="form-actions">
+              <button className="btn-secondary" onClick={() => setServerPickerOpen(false)}>
+                取消（Esc）
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {formTarget !== null && (
         <ServerForm
           initial={formTarget}
