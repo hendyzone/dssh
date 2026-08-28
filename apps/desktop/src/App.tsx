@@ -109,7 +109,9 @@ export default function App() {
   /** 各窗格远端 shell 的当前目录（TerminalView 经 OSC 7 上报） */
   const [paneCwds, setPaneCwds] = useState<Record<string, string>>({});
   const setPaneCwd = useCallback((paneId: string, cwd: string) => {
-    setPaneCwds((prev) => (prev[paneId] === cwd ? prev : { ...prev, [paneId]: cwd }));
+    setPaneCwds((prev) =>
+      prev[paneId] === cwd ? prev : { ...prev, [paneId]: cwd },
+    );
   }, []);
 
   // ---- 连接 / 标签页 ----

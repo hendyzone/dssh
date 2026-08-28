@@ -16,13 +16,17 @@ type ConnectionState = "connecting" | "connected" | "disconnected";
 const OSC7_HOOK =
   ' __dssh_osc7(){ printf "\\033]7;file://%s%s\\033\\\\" "${HOSTNAME:-$(hostname)}" "$PWD"; };case "$0" in *zsh*) precmd_functions+=(__dssh_osc7);; *) PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;};__dssh_osc7";;esac\r';
 
-const OSC7_RE = /\x1b\]7;file:\/\/[^\x07\x1b]*?(\/[^\x07\x1b]*?)(?:\x07|\x1b\\)/g;
+const OSC7_RE =
+  /\x1b\]7;file:\/\/[^\x07\x1b]*?(\/[^\x07\x1b]*?)(?:\x07|\x1b\\)/g;
 
 /**
  * 从输出流中解析 OSC 7 路径。序列可能跨事件被截断，
  * 用 carry 保留末尾不完整的片段与下一块拼接。
  */
-function scanOsc7(carry: string, chunk: string): { path: string | null; carry: string } {
+function scanOsc7(
+  carry: string,
+  chunk: string,
+): { path: string | null; carry: string } {
   const text = carry + chunk;
   let path: string | null = null;
   let lastEnd = 0;
@@ -301,7 +305,8 @@ export default function TerminalView({
               if (backendId !== newBackendId || disposed) return;
               const scanned = scanOsc7(oscCarry, e.payload);
               oscCarry = scanned.carry;
-              if (scanned.path) onCwdChangeRef.current?.(session.id, scanned.path);
+              if (scanned.path)
+                onCwdChangeRef.current?.(session.id, scanned.path);
               t.write(e.payload);
             },
           );
