@@ -45,7 +45,7 @@ impl serde::Serialize for ServersError {
     }
 }
 
-fn servers_file(app: &AppHandle) -> Result<std::path::PathBuf, ServersError> {
+pub(crate) fn servers_file(app: &AppHandle) -> Result<std::path::PathBuf, ServersError> {
     let dir = app
         .path()
         .app_config_dir()
@@ -54,7 +54,7 @@ fn servers_file(app: &AppHandle) -> Result<std::path::PathBuf, ServersError> {
     Ok(dir.join("servers.json"))
 }
 
-fn read_all(app: &AppHandle) -> Result<Vec<ServerRecord>, ServersError> {
+pub(crate) fn read_all(app: &AppHandle) -> Result<Vec<ServerRecord>, ServersError> {
     let path = servers_file(app)?;
     if !path.exists() {
         return Ok(vec![]);
@@ -63,7 +63,7 @@ fn read_all(app: &AppHandle) -> Result<Vec<ServerRecord>, ServersError> {
     serde_json::from_str(&raw).map_err(|e| ServersError::Other(format!("servers.json 损坏: {e}")))
 }
 
-fn write_all(app: &AppHandle, servers: &[ServerRecord]) -> Result<(), ServersError> {
+pub(crate) fn write_all(app: &AppHandle, servers: &[ServerRecord]) -> Result<(), ServersError> {
     let path = servers_file(app)?;
     let raw =
         serde_json::to_string_pretty(servers).map_err(|e| ServersError::Other(e.to_string()))?;
