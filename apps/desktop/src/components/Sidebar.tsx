@@ -34,7 +34,9 @@ function compareGroups(a: string, b: string): number {
 }
 
 function compareServers(a: ServerEntry, b: ServerEntry): number {
-  return compareGroups(getGroup(a), getGroup(b)) || a.name.localeCompare(b.name);
+  return (
+    compareGroups(getGroup(a), getGroup(b)) || a.name.localeCompare(b.name)
+  );
 }
 
 /** 服务器列表：文件夹 tab + 搜索 + 增删改 */
@@ -105,15 +107,19 @@ export default function Sidebar({
   const visibleServers = useMemo(() => {
     const q = query.trim();
     if (q) return filtered.slice().sort(compareServers);
-    if (activeFolder === ALL_FOLDER) return servers.slice().sort(compareServers);
+    if (activeFolder === ALL_FOLDER)
+      return servers.slice().sort(compareServers);
     return servers
       .filter((server) => getGroup(server) === activeFolder)
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [activeFolder, filtered, query, servers]);
 
   useEffect(() => {
-    if (servers.length > 0 && activeFolder !== ALL_FOLDER &&
-        !folderTabs.some((folder) => folder.key === activeFolder)) {
+    if (
+      servers.length > 0 &&
+      activeFolder !== ALL_FOLDER &&
+      !folderTabs.some((folder) => folder.key === activeFolder)
+    ) {
       setActiveFolder(ALL_FOLDER);
       return;
     }
@@ -125,7 +131,10 @@ export default function Sidebar({
   }, [activeFolder, folderTabs, servers.length]);
 
   useEffect(() => {
-    if (selectedId && !visibleServers.some((server) => server.id === selectedId)) {
+    if (
+      selectedId &&
+      !visibleServers.some((server) => server.id === selectedId)
+    ) {
       setSelectedId(undefined);
     }
   }, [selectedId, visibleServers]);
