@@ -45,9 +45,9 @@ function notify(sessionId: string): void {
   const sessionTransfers = [...transfers.values()].filter(
     (transfer) => transfer.sessionId === sessionId,
   );
-  subscribers.get(sessionId)?.forEach((subscriber) =>
-    subscriber(sessionTransfers),
-  );
+  subscribers
+    .get(sessionId)
+    ?.forEach((subscriber) => subscriber(sessionTransfers));
 }
 
 function ensureListener(sessionId: string): void {
@@ -89,17 +89,21 @@ function ensureListener(sessionId: string): void {
       });
       notify(sessionId);
     },
-  ).then((cleanup: UnlistenFn) => {
-    // 监听器故意保持到应用退出，避免面板卸载时错过传输终态。
-    void cleanup;
-  }).catch(() => {
-    // 监听失败时允许后续重新订阅重试。
-    listeners.delete(sessionId);
-  });
+  )
+    .then((cleanup: UnlistenFn) => {
+      // 监听器故意保持到应用退出，避免面板卸载时错过传输终态。
+      void cleanup;
+    })
+    .catch(() => {
+      // 监听失败时允许后续重新订阅重试。
+      listeners.delete(sessionId);
+    });
   listeners.set(sessionId, registration);
 }
 
-export async function waitForTransferListener(sessionId: string): Promise<void> {
+export async function waitForTransferListener(
+  sessionId: string,
+): Promise<void> {
   ensureListener(sessionId);
   await listeners.get(sessionId);
 }
@@ -132,11 +136,14 @@ export function subscribeTransfers(
   subscriber: Subscriber,
 ): () => void {
   ensureListener(sessionId);
-  const sessionSubscribers = subscribers.get(sessionId) ?? new Set<Subscriber>();
+  const sessionSubscribers =
+    subscribers.get(sessionId) ?? new Set<Subscriber>();
   sessionSubscribers.add(subscriber);
   subscribers.set(sessionId, sessionSubscribers);
   subscriber(
-    [...transfers.values()].filter((transfer) => transfer.sessionId === sessionId),
+    [...transfers.values()].filter(
+      (transfer) => transfer.sessionId === sessionId,
+    ),
   );
   return () => {
     sessionSubscribers.delete(subscriber);
@@ -163,4 +170,3 @@ export function formatTransferSize(bytes: number): string {
   }
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
-

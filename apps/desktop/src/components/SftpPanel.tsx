@@ -90,7 +90,9 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [loading, setLoading] = useState(false);
-  const activeTransfers = transfers.filter((transfer) => transfer.status === "active");
+  const activeTransfers = transfers.filter(
+    (transfer) => transfer.status === "active",
+  );
 
   useEffect(() => {
     if (!sessionId) return;
@@ -133,10 +135,7 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
       setNotice(null);
       const queued = paths.map((localPath) => ({
         localPath,
-        remotePath: joinRemotePath(
-          currentPathRef.current,
-          basename(localPath),
-        ),
+        remotePath: joinRemotePath(currentPathRef.current, basename(localPath)),
         transferId: createTransfer(sessionId, basename(localPath), "upload"),
       }));
       let failed = false;
@@ -426,7 +425,8 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {transfer.direction === "upload" ? "↑" : "↓"} {transfer.fileName}
+                    {transfer.direction === "upload" ? "↑" : "↓"}{" "}
+                    {transfer.fileName}
                   </span>
                   {finished && <span aria-label="完成">✓</span>}
                   {failed && (
@@ -481,7 +481,9 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
                       }}
                     />
                   </div>
-                  <span style={{ width: 34, textAlign: "right" }}>{percent}%</span>
+                  <span style={{ width: 34, textAlign: "right" }}>
+                    {percent}%
+                  </span>
                 </div>
                 <div
                   style={{
@@ -492,11 +494,17 @@ export default function SftpPanel({ sessionId, onClose }: SftpPanelProps) {
                   }}
                 >
                   <span>
-                    {formatTransferSize(transfer.transferredBytes)} / {formatTransferSize(transfer.totalBytes)}
+                    {formatTransferSize(transfer.transferredBytes)} /{" "}
+                    {formatTransferSize(transfer.totalBytes)}
                     {transfer.error ? ` · ${transfer.error}` : ""}
                   </span>
                   {!finished && !failed && (
-                    <span>{formatTransferSize(Math.round(transfer.speedBytesPerSecond))}/s</span>
+                    <span>
+                      {formatTransferSize(
+                        Math.round(transfer.speedBytesPerSecond),
+                      )}
+                      /s
+                    </span>
                   )}
                 </div>
               </div>
