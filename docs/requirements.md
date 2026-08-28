@@ -3,6 +3,7 @@
 > 个人自用的现代化 SSH 客户端。起点：Xterminal 功能基本满足需求，但存在莫名黑屏（稳定性差）且界面丑。dssh 的目标是在覆盖同等功能的前提下做到**稳定**和**好看**。
 >
 > 功能取舍参照：[docs/competitor-survey.md](competitor-survey.md)（Xterminal / Tabby / WindTerm / electerm / Termius / iTerm2 调研）。
+> 逐交互点的细化清单：[docs/feature-details.md](feature-details.md)（基于代码实际盘点的缺失项与缺陷）。
 
 ## 平台
 
