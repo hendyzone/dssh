@@ -118,7 +118,9 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
         }
       }
       if (saved.some((item) => item.enabled && item.autoStart)) {
-        setStatuses(await invoke<ForwardStatus[]>("forward_list", { sessionId }));
+        setStatuses(
+          await invoke<ForwardStatus[]>("forward_list", { sessionId }),
+        );
       }
     } catch (reason) {
       setError(String(reason));
@@ -260,7 +262,9 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
   const remove = async (item: PersistentForwardRule) => {
     setBusy(true);
     try {
-      if (statuses.some((status) => status.ruleId === item.id && status.running)) {
+      if (
+        statuses.some((status) => status.ruleId === item.id && status.running)
+      ) {
         await invoke("forward_stop", { ruleId: item.id });
       }
       await saveRules(rules.filter((rule) => rule.id !== item.id));
@@ -290,7 +294,12 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
     <aside className="forward-panel" style={styles.panel}>
       <header style={styles.header}>
         <strong>端口转发</strong>
-        <button type="button" onClick={onClose} style={styles.close} aria-label="关闭">
+        <button
+          type="button"
+          onClick={onClose}
+          style={styles.close}
+          aria-label="关闭"
+        >
           ×
         </button>
       </header>
@@ -312,11 +321,20 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
                   : `${endpoint(item.localHost, item.localPort)} → ${endpoint(item.remoteHost, item.remotePort)}`;
             return (
               <div key={item.id} style={styles.row}>
-                <span style={{ ...styles.badge, background: info.color }}>{info.short}</span>
+                <span style={{ ...styles.badge, background: info.color }}>
+                  {info.short}
+                </span>
                 <div style={styles.details}>
-                  <div style={styles.description} title={info.label}>{description}</div>
+                  <div style={styles.description} title={info.label}>
+                    {description}
+                  </div>
                   <div style={styles.state}>
-                    <span style={{ ...styles.dot, background: running ? "#9ece6a" : "var(--ui-danger)" }} />
+                    <span
+                      style={{
+                        ...styles.dot,
+                        background: running ? "#9ece6a" : "var(--ui-danger)",
+                      }}
+                    />
                     {running ? "运行中" : "已停止"}
                   </div>
                 </div>
@@ -324,18 +342,35 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
                   type="button"
                   style={styles.smallButton}
                   disabled={busy}
-                  onClick={() => (running ? void stop(item.id) : void start(item))}
+                  onClick={() =>
+                    running ? void stop(item.id) : void start(item)
+                  }
                 >
                   {running ? "停止" : "启动"}
                 </button>
-                <button type="button" style={styles.smallButton} disabled={busy} onClick={() => edit(item)}>
+                <button
+                  type="button"
+                  style={styles.smallButton}
+                  disabled={busy}
+                  onClick={() => edit(item)}
+                >
                   编辑
                 </button>
-                <button type="button" style={styles.delete} disabled={busy} onClick={() => void remove(item)} aria-label="删除">
+                <button
+                  type="button"
+                  style={styles.delete}
+                  disabled={busy}
+                  onClick={() => void remove(item)}
+                  aria-label="删除"
+                >
                   ×
                 </button>
                 <label style={styles.autoStart} title="连接后自动启动">
-                  <input type="checkbox" checked={item.autoStart} onChange={() => void toggleAutoStart(item)} />
+                  <input
+                    type="checkbox"
+                    checked={item.autoStart}
+                    onChange={() => void toggleAutoStart(item)}
+                  />
                   自动
                 </label>
               </div>
@@ -345,33 +380,76 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
       </div>
 
       <form onSubmit={save} style={styles.form}>
-        <div style={styles.formTitle}>{editingId ? "编辑转发规则" : "添加并启动"}</div>
-        <select value={ruleType} onChange={(event) => setRuleType(event.target.value as ForwardType)} style={styles.field}>
+        <div style={styles.formTitle}>
+          {editingId ? "编辑转发规则" : "添加并启动"}
+        </div>
+        <select
+          value={ruleType}
+          onChange={(event) => setRuleType(event.target.value as ForwardType)}
+          style={styles.field}
+        >
           <option value="local">本地转发</option>
           <option value="remote">远程转发</option>
           <option value="dynamic">动态 SOCKS5</option>
         </select>
         <label style={styles.label}>本地地址:端口</label>
         <div style={styles.inline}>
-          <input value={localHost} onChange={(event) => setLocalHost(event.target.value)} style={{ ...styles.field, flex: 1 }} placeholder="127.0.0.1" />
-          <input value={localPort} onChange={(event) => setLocalPort(event.target.value)} style={{ ...styles.port, width: 72 }} inputMode="numeric" placeholder="8080" />
+          <input
+            value={localHost}
+            onChange={(event) => setLocalHost(event.target.value)}
+            style={{ ...styles.field, flex: 1 }}
+            placeholder="127.0.0.1"
+          />
+          <input
+            value={localPort}
+            onChange={(event) => setLocalPort(event.target.value)}
+            style={{ ...styles.port, width: 72 }}
+            inputMode="numeric"
+            placeholder="8080"
+          />
         </div>
         {ruleType !== "dynamic" && (
           <>
             <label style={styles.label}>远程地址:端口</label>
             <div style={styles.inline}>
-              <input value={remoteHost} onChange={(event) => setRemoteHost(event.target.value)} style={{ ...styles.field, flex: 1 }} placeholder="远程主机" />
-              <input value={remotePort} onChange={(event) => setRemotePort(event.target.value)} style={{ ...styles.port, width: 72 }} inputMode="numeric" placeholder="3306" />
+              <input
+                value={remoteHost}
+                onChange={(event) => setRemoteHost(event.target.value)}
+                style={{ ...styles.field, flex: 1 }}
+                placeholder="远程主机"
+              />
+              <input
+                value={remotePort}
+                onChange={(event) => setRemotePort(event.target.value)}
+                style={{ ...styles.port, width: 72 }}
+                inputMode="numeric"
+                placeholder="3306"
+              />
             </div>
           </>
         )}
         <label style={styles.checkbox}>
-          <input type="checkbox" checked={autoStart} onChange={(event) => setAutoStart(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={autoStart}
+            onChange={(event) => setAutoStart(event.target.checked)}
+          />
           连接后自动启动
         </label>
         <div style={styles.formButtons}>
-          <button type="submit" disabled={busy} style={styles.submit}>{busy ? "保存中…" : editingId ? "保存并应用" : "添加并启动"}</button>
-          {editingId && <button type="button" disabled={busy} style={styles.cancel} onClick={resetForm}>取消</button>}
+          <button type="submit" disabled={busy} style={styles.submit}>
+            {busy ? "保存中…" : editingId ? "保存并应用" : "添加并启动"}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              disabled={busy}
+              style={styles.cancel}
+              onClick={resetForm}
+            >
+              取消
+            </button>
+          )}
         </div>
         {error && <div style={styles.error}>{error}</div>}
       </form>
@@ -380,29 +458,170 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  panel: { width: 340, height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", background: colors.panel, color: colors.text, borderLeft: `1px solid ${colors.border}`, fontFamily: "system-ui, sans-serif" },
-  header: { height: 48, padding: "0 14px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${colors.border}`, fontSize: 15 },
-  close: { border: 0, background: "transparent", color: colors.text, fontSize: 23, cursor: "pointer", lineHeight: 1 },
+  panel: {
+    width: 340,
+    height: "100%",
+    boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+    background: colors.panel,
+    color: colors.text,
+    borderLeft: `1px solid ${colors.border}`,
+    fontFamily: "system-ui, sans-serif",
+  },
+  header: {
+    height: 48,
+    padding: "0 14px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottom: `1px solid ${colors.border}`,
+    fontSize: 15,
+  },
+  close: {
+    border: 0,
+    background: "transparent",
+    color: colors.text,
+    fontSize: 23,
+    cursor: "pointer",
+    lineHeight: 1,
+  },
   list: { flex: 1, overflowY: "auto", padding: 10 },
-  empty: { padding: "28px 8px", color: colors.muted, textAlign: "center", fontSize: 13 },
-  row: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, minHeight: 54, padding: "7px 4px", borderBottom: `1px solid ${colors.border}` },
-  badge: { width: 21, height: 21, borderRadius: 4, color: "var(--ui-panelAlt)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 },
+  empty: {
+    padding: "28px 8px",
+    color: colors.muted,
+    textAlign: "center",
+    fontSize: 13,
+  },
+  row: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 7,
+    minHeight: 54,
+    padding: "7px 4px",
+    borderBottom: `1px solid ${colors.border}`,
+  },
+  badge: {
+    width: 21,
+    height: 21,
+    borderRadius: 4,
+    color: "var(--ui-panelAlt)",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 700,
+    fontSize: 12,
+    flexShrink: 0,
+  },
   details: { minWidth: 0, flex: 1 },
-  description: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 },
-  state: { color: colors.muted, fontSize: 11, marginTop: 4, display: "flex", alignItems: "center", gap: 4 },
+  description: {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    fontSize: 12,
+  },
+  state: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 4,
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+  },
   dot: { width: 6, height: 6, borderRadius: "50%", display: "inline-block" },
-  smallButton: { border: `1px solid ${colors.border}`, borderRadius: 3, background: colors.input, color: colors.text, padding: "3px 6px", cursor: "pointer", fontSize: 11 },
-  delete: { border: 0, background: "transparent", color: colors.muted, cursor: "pointer", fontSize: 18, padding: 3 },
-  autoStart: { width: "100%", color: colors.muted, fontSize: 11, paddingLeft: 28, cursor: "pointer" },
+  smallButton: {
+    border: `1px solid ${colors.border}`,
+    borderRadius: 3,
+    background: colors.input,
+    color: colors.text,
+    padding: "3px 6px",
+    cursor: "pointer",
+    fontSize: 11,
+  },
+  delete: {
+    border: 0,
+    background: "transparent",
+    color: colors.muted,
+    cursor: "pointer",
+    fontSize: 18,
+    padding: 3,
+  },
+  autoStart: {
+    width: "100%",
+    color: colors.muted,
+    fontSize: 11,
+    paddingLeft: 28,
+    cursor: "pointer",
+  },
   form: { borderTop: `1px solid ${colors.border}`, padding: 12 },
-  formTitle: { fontSize: 12, color: colors.accent, marginBottom: 8, fontWeight: 600 },
-  label: { display: "block", fontSize: 11, color: colors.muted, margin: "8px 0 4px" },
+  formTitle: {
+    fontSize: 12,
+    color: colors.accent,
+    marginBottom: 8,
+    fontWeight: 600,
+  },
+  label: {
+    display: "block",
+    fontSize: 11,
+    color: colors.muted,
+    margin: "8px 0 4px",
+  },
   inline: { display: "flex", gap: 5 },
-  field: { minWidth: 0, boxSizing: "border-box", border: `1px solid ${colors.border}`, borderRadius: 3, background: colors.input, color: colors.text, padding: "7px 8px", outline: "none", fontSize: 12 },
-  port: { boxSizing: "border-box", border: `1px solid ${colors.border}`, borderRadius: 3, background: colors.input, color: colors.text, padding: "7px 6px", outline: "none", fontSize: 12 },
-  checkbox: { display: "flex", alignItems: "center", gap: 5, color: colors.muted, fontSize: 11, marginTop: 10 },
+  field: {
+    minWidth: 0,
+    boxSizing: "border-box",
+    border: `1px solid ${colors.border}`,
+    borderRadius: 3,
+    background: colors.input,
+    color: colors.text,
+    padding: "7px 8px",
+    outline: "none",
+    fontSize: 12,
+  },
+  port: {
+    boxSizing: "border-box",
+    border: `1px solid ${colors.border}`,
+    borderRadius: 3,
+    background: colors.input,
+    color: colors.text,
+    padding: "7px 6px",
+    outline: "none",
+    fontSize: 12,
+  },
+  checkbox: {
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 10,
+  },
   formButtons: { display: "flex", gap: 7, marginTop: 12 },
-  submit: { flex: 1, border: 0, borderRadius: 3, background: colors.accent, color: "var(--ui-panelAlt)", padding: "8px 10px", cursor: "pointer", fontWeight: 600, fontSize: 12 },
-  cancel: { border: `1px solid ${colors.border}`, borderRadius: 3, background: colors.input, color: colors.text, padding: "8px 10px", cursor: "pointer", fontSize: 12 },
-  error: { color: "var(--ui-danger)", fontSize: 11, marginTop: 7, wordBreak: "break-word" },
+  submit: {
+    flex: 1,
+    border: 0,
+    borderRadius: 3,
+    background: colors.accent,
+    color: "var(--ui-panelAlt)",
+    padding: "8px 10px",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: 12,
+  },
+  cancel: {
+    border: `1px solid ${colors.border}`,
+    borderRadius: 3,
+    background: colors.input,
+    color: colors.text,
+    padding: "8px 10px",
+    cursor: "pointer",
+    fontSize: 12,
+  },
+  error: {
+    color: "var(--ui-danger)",
+    fontSize: 11,
+    marginTop: 7,
+    wordBreak: "break-word",
+  },
 };
