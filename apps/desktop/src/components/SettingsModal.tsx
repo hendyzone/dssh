@@ -16,7 +16,12 @@ const SYNC_REPOSITORY_KEY = "dssh.sync.repository";
 type SyncOperation = "sync_test" | "sync_upload" | "sync_download";
 
 /** 设置面板：主题 / 字号 / 字体 / GitHub 加密同步。 */
-export default function SettingsModal({ settings, onChange, onClose, onServersChanged }: Props) {
+export default function SettingsModal({
+  settings,
+  onChange,
+  onClose,
+  onServersChanged,
+}: Props) {
   const [pat, setPat] = useState("");
   const [repository, setRepository] = useState(
     () => localStorage.getItem(SYNC_REPOSITORY_KEY) ?? "",
