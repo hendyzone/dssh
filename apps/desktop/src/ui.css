@@ -487,6 +487,20 @@ textarea,
   background: var(--color-accent);
 }
 
+.sidebar-brand-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.2;
+}
+.app-version {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--ui-muted);
+  white-space: nowrap;
+}
+
 @theme inline {
   --color-background: var(--ui-panel);
   --color-foreground: var(--ui-fg);

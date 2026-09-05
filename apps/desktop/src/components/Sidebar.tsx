@@ -9,6 +9,7 @@ import { useServerTreeEditing } from "../lib/useServerTreeEditing";
 import { buildServerTree, type ServerGroupNode } from "../lib/serverGroups";
 import { useSidebarWidth } from "../lib/useSidebarWidth";
 import logoUrl from "../assets/logo.png";
+import { version } from "../../src-tauri/tauri.conf.json";
 import type { ServerEntry } from "../types";
 import {
   IconClose,
@@ -336,7 +337,12 @@ export default function Sidebar({
       <div className="sidebar-header">
         <div className="sidebar-brand">
           <img src={logoUrl} alt="" />
-          dssh
+          <span className="sidebar-brand-label">
+            dssh
+            <small className="app-version" title={`当前版本 ${version}`}>
+              v{version}
+            </small>
+          </span>
         </div>
         <div className="sidebar-actions">
           <Button
