@@ -64,6 +64,9 @@ vi.mock("ghostty-web", () => ({
     onResize() {
       return { dispose() {} };
     }
+    onRender() {
+      return { dispose() {} };
+    }
     dispose() {}
   },
 }));

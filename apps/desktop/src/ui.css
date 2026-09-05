@@ -458,6 +458,35 @@ textarea,
   outline: none;
 }
 
+.workspace-tab-header {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  min-width: 0;
+  background: var(--ui-panelAlt);
+  border-bottom: 1px solid var(--ui-border);
+}
+.workspace-tab-header > .connection-tab-bar {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 0;
+}
+.workspace-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+}
+.workspace-tab-actions [data-slot="button"] {
+  color: var(--ui-muted);
+}
+.workspace-tab-actions [data-slot="button"]:hover {
+  color: var(--ui-fg);
+  background: var(--color-accent);
+}
+
 @theme inline {
   --color-background: var(--ui-panel);
   --color-foreground: var(--ui-fg);

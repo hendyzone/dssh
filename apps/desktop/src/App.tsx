@@ -708,26 +708,54 @@ export default function App() {
               ))}
           </div>
         )}
-        <ConnectionTabStrip
-          tabs={tabs}
-          groups={connectionGroups}
-          activeTabId={activeTabId}
-          renderTab={renderTab}
-          onToggle={(id) =>
-            setConnectionGroups((prev) =>
-              prev.map((g) =>
-                g.id === id ? { ...g, collapsed: !g.collapsed } : g,
-              ),
-            )
-          }
-          onEdit={(group) => {
-            setContextMenu(null);
-            setGroupEditor({ groupId: group.id });
-          }}
-          onCreate={() => setGroupEditor({ tabId: activeTabId ?? undefined })}
-          onNewTab={() => setServerPickerOpen(true)}
-          onMove={moveToGroup}
-        />
+        <div className="workspace-tab-header">
+          <ConnectionTabStrip
+            tabs={tabs}
+            groups={connectionGroups}
+            activeTabId={activeTabId}
+            renderTab={renderTab}
+            onToggle={(id) =>
+              setConnectionGroups((prev) =>
+                prev.map((g) =>
+                  g.id === id ? { ...g, collapsed: !g.collapsed } : g,
+                ),
+              )
+            }
+            onEdit={(group) => {
+              setContextMenu(null);
+              setGroupEditor({ groupId: group.id });
+            }}
+            onCreate={() => setGroupEditor({ tabId: activeTabId ?? undefined })}
+            onNewTab={() => setServerPickerOpen(true)}
+            onMove={moveToGroup}
+          />
+          {activeTabId && (
+            <div
+              className="workspace-tab-actions"
+              role="toolbar"
+              aria-label="终端布局"
+            >
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title="左右分屏"
+                aria-label="左右分屏"
+                onClick={() => splitTab(activeTabId, "row")}
+              >
+                <IconSplitH />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title="上下分屏"
+                aria-label="上下分屏"
+                onClick={() => splitTab(activeTabId, "column")}
+              >
+                <IconSplitV />
+              </Button>
+            </div>
+          )}
+        </div>
         {tabs.length === 0 ? (
           <div className="welcome">
             <img src={logoUrl} alt="dssh" />
@@ -757,26 +785,6 @@ export default function App() {
                 className="session-body"
                 hidden={t.id !== activeTabId}
               >
-                <div className="session-toolbar">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="icon-btn"
-                    title="左右分屏"
-                    onClick={() => splitTab(t.id, "row")}
-                  >
-                    <IconSplitH />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="icon-btn"
-                    title="上下分屏"
-                    onClick={() => splitTab(t.id, "column")}
-                  >
-                    <IconSplitV />
-                  </Button>
-                </div>
                 <div className="session-content">
                   <ToolRail
                     side="left"

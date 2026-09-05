@@ -15,6 +15,7 @@ import { findImageAtPoint } from "../lib/kittyPreview";
 import { createEchoSuppressor, type EchoSuppressor } from "../lib/echoSuppress";
 import { isAppShortcut, isComposingKey } from "../lib/keyboard";
 import { OSC7_HOOK } from "../lib/shellIntegration";
+import { trackTerminalIme } from "../lib/terminalIme";
 import { getTheme } from "../themes";
 import type { AppSettings, SessionInfo } from "../types";
 import TerminalContextMenu, {
@@ -332,6 +333,7 @@ export default function TerminalView({
         }
       };
       t.open(containerRef.current);
+      cleanups.push(trackTerminalIme(t, containerRef.current));
       {
         const root = containerRef.current;
         let selectionStarted = false;
