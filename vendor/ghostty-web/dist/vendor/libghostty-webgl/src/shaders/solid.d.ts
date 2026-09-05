@@ -1,0 +1,3 @@
+export declare const solidVertexSource = "#version 300 es\nprecision highp float;\n\nlayout(location = 0) in vec2 a_position;\n\nuniform vec2 u_rectOrigin;\nuniform vec2 u_rectSize;\nuniform vec2 u_canvasSize;\n\nvoid main() {\n  vec2 pos = u_rectOrigin + a_position * u_rectSize;\n  vec2 ndc = (pos / u_canvasSize) * 2.0 - 1.0;\n  ndc.y = -ndc.y;\n  gl_Position = vec4(ndc, 0.0, 1.0);\n}\n";
+export declare const solidFragmentSource = "#version 300 es\nprecision highp float;\n\nuniform vec4 u_color;\n\nout vec4 fragColor;\n\nvoid main() {\n  if (u_color.a <= 0.0) {\n    discard;\n  }\n  fragColor = u_color;\n}\n";
+//# sourceMappingURL=solid.d.ts.map

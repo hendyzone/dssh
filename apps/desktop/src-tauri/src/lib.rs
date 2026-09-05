@@ -6,6 +6,9 @@ mod servers;
 mod sftp;
 mod ssh;
 mod sync;
+mod tmux;
+mod workspace;
+mod vscode;
 
 use tauri::Manager;
 
@@ -13,6 +16,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             app.manage(ssh::SshState::default());
             app.manage(preview::PreviewState::default());
@@ -22,13 +26,24 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_ssh_keys,
+            workspace::workspace_changes,
+            workspace::workspace_diff,
+            vscode::vscode_open,
             ssh::ssh_connect,
+            ssh::ssh_start,
+            tmux::tmux_snapshot,
+            tmux::tmux_action,
+            tmux::tmux_copy_buffer,
             ssh::ssh_write,
             ssh::ssh_resize,
             ssh::ssh_disconnect,
             servers::servers_list,
+            servers::servers_import_private_key,
+            servers::servers_move,
+            servers::servers_auto_group,
             servers::servers_upsert,
             servers::servers_delete,
+            servers::servers_clone,
             sync::sync_test,
             sync::sync_upload,
             sync::sync_download,
@@ -37,6 +52,11 @@ pub fn run() {
             monitor::monitor_start,
             monitor::monitor_stop,
             sftp::sftp_list,
+            sftp::sftp_home,
+            sftp::sftp_clipboard_image,
+            sftp::sftp_read_text,
+            sftp::sftp_save_text,
+            sftp::sftp_open_local,
             sftp::sftp_download,
             sftp::sftp_upload,
             sftp::cancel_upload,

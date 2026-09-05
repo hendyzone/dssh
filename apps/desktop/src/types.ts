@@ -31,11 +31,15 @@ export interface SessionInfo {
   /** 前端本地 id，与后端 session_id 不同（后者由 ssh_connect 返回） */
   id: string;
   server: ServerEntry;
+  /** Stable remote identity prevents reconnecting to a reused tmux session ID. */
+  tmux?: { id: string; created: number; name: string };
 }
 
 /** 一个标签页：1-2 个窗格（分屏） */
 export interface TabInfo {
   id: string;
+  /** 当前窗口内已打开连接的分组 */
+  groupId?: string;
   /** 用户自定义标签名；未设置时显示服务器名 */
   customTitle?: string;
   panes: SessionInfo[];

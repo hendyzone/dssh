@@ -100,11 +100,11 @@ describe('Terminal Scrolling', () => {
       expect(terminal.wasmTerm?.isAlternateScreen()).toBe(true);
     });
 
-    test('should send arrow up sequences on wheel up in alternate screen', async () => {
+    test('does not inject history keys on wheel up in alternate screen', async () => {
       const dataSent: string[] = [];
       terminal.onData((data) => dataSent.push(data));
 
-      // Simulate wheel up (negative deltaY = -100, should send ~3 arrow ups)
+      // Simulate wheel up
       const wheelEvent = new WheelEvent('wheel', {
         deltaY: -100,
         bubbles: true,
@@ -112,13 +112,11 @@ describe('Terminal Scrolling', () => {
       });
       container.dispatchEvent(wheelEvent);
 
-      // Should send arrow up sequences (ESC[A)
-      expect(dataSent.length).toBeGreaterThan(0);
-      expect(dataSent.every((data) => data === '\x1B[A')).toBe(true);
-      expect(dataSent.length).toBeCloseTo(3, 1); // ~3 arrows per click
+      // Wheel events must not change the TUI prompt history.
+      expect(dataSent).toEqual([]);
     });
 
-    test('should send arrow down sequences on wheel down in alternate screen', async () => {
+    test('does not inject history keys on wheel down in alternate screen', async () => {
       const dataSent: string[] = [];
       terminal.onData((data) => dataSent.push(data));
 
@@ -130,10 +128,8 @@ describe('Terminal Scrolling', () => {
       });
       container.dispatchEvent(wheelEvent);
 
-      // Should send arrow down sequences (ESC[B)
-      expect(dataSent.length).toBeGreaterThan(0);
-      expect(dataSent.every((data) => data === '\x1B[B')).toBe(true);
-      expect(dataSent.length).toBeCloseTo(3, 1); // ~3 arrows per click
+      // Wheel events must not change the TUI prompt history.
+      expect(dataSent).toEqual([]);
     });
 
     test('should not scroll viewport in alternate screen', async () => {
@@ -193,7 +189,7 @@ describe('Terminal Scrolling', () => {
       const dataSent: string[] = [];
       terminal.onData((data) => dataSent.push(data));
 
-      // Wheel should now send arrow keys
+      // Alternate-screen wheel events must preserve the prompt input
       const wheelUpAlt = new WheelEvent('wheel', {
         deltaY: -100,
         bubbles: true,
@@ -201,9 +197,8 @@ describe('Terminal Scrolling', () => {
       });
       container.dispatchEvent(wheelUpAlt);
 
-      // Should have sent arrow keys, not scrolled
-      expect(dataSent.length).toBeGreaterThan(0);
-      expect(dataSent[0]).toBe('\x1B[A');
+      // Wheel events must not synthesize cursor keys.
+      expect(dataSent).toEqual([]);
     });
 
     test('should switch back to viewport scrolling when exiting alternate screen', async () => {
@@ -275,9 +270,8 @@ describe('Terminal Scrolling', () => {
       });
       container.dispatchEvent(wheelEvent);
 
-      // Should still send arrow keys
-      expect(dataSent.length).toBeGreaterThan(0);
-      expect(dataSent[0]).toBe('\x1B[A');
+      // Wheel events must not synthesize cursor keys.
+      expect(dataSent).toEqual([]);
     });
   });
 

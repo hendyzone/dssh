@@ -7,3 +7,8 @@ gen/schemas
 # 构建产物（注意：不能用裸 dist/，会误伤 vendor/ghostty-web/dist 预编译产物）
 /apps/desktop/dist/
 /prototypes/kitty-image/dist/
+
+# Local packages, logs, preview fixtures and downloaded build tools.
+/artifacts/
+/tools/*
+*.tsbuildinfo

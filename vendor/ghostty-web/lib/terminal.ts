@@ -1962,31 +1962,31 @@ export class Terminal implements ITerminalCore {
   private handleWheel = (e: WheelEvent): void => {
     // Always prevent default browser scrolling
     e.preventDefault();
-    e.stopPropagation();
 
     // Allow custom handler to override
     if (this.customWheelEventHandler && this.customWheelEventHandler(e)) {
+      e.stopImmediatePropagation();
       return;
     }
 
-    // Check if in alternate screen mode (vim, less, htop, etc.)
-    const isAltScreen = this.wasmTerm?.isAlternateScreen() ?? false;
+    if (e.deltaY === 0) {
+      e.stopImmediatePropagation();
+      return;
+    }
 
-    if (isAltScreen) {
-      // Alternate screen: send arrow keys to the application
-      // Applications like vim handle scrolling internally
-      // Standard: ~3 arrow presses per wheel "click"
-      const direction = e.deltaY > 0 ? 'down' : 'up';
-      const count = Math.min(Math.abs(Math.round(e.deltaY / 33)), 5); // Cap at 5
+    // InputHandler reports wheel coordinates to applications such as tmux.
+    // This listener runs in capture phase: stopping propagation here prevents
+    // its bubble listener from ever receiving events from the canvas.
+    if (!e.shiftKey && this.wasmTerm?.hasMouseTracking()) {
+      return;
+    }
 
-      for (let i = 0; i < count; i++) {
-        if (direction === 'up') {
-          this.dataEmitter.fire('\x1B[A'); // Up arrow
-        } else {
-          this.dataEmitter.fire('\x1B[B'); // Down arrow
-        }
-      }
-    } else {
+    // Local scrolling or arrow emulation owns the event completely. Also cover
+    // events whose target is the container itself, avoiding duplicate reports.
+    e.stopImmediatePropagation();
+
+    // Never synthesize cursor keys: TUI inputs interpret them as prompt history.
+    {
       // Normal screen: scroll viewport through history with smooth scrolling
       // Handle different deltaMode values for better trackpad/mouse support
       let deltaLines: number;

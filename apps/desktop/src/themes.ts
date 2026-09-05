@@ -2,6 +2,7 @@
 export interface ThemePreset {
   id: string;
   name: string;
+  description?: string;
   ui: {
     bg: string;
     panel: string;
@@ -23,8 +24,74 @@ export interface ThemePreset {
 
 export const THEMES: ThemePreset[] = [
   {
+    id: "nord",
+    name: "Nord · 冷灰蓝",
+    description: "低饱和蓝灰，清晰沉稳",
+    ui: {
+      bg: "#2e3440",
+      panel: "#2e3440",
+      panelAlt: "#3b4252",
+      fg: "#eceff4",
+      muted: "#a7b1c2",
+      accent: "#88c0d0",
+      border: "#4c566a",
+      danger: "#bf616a",
+    },
+    term: {
+      background: "#2e3440",
+      foreground: "#d8dee9",
+      cursor: "#88c0d0",
+      cursorAccent: "#2e3440",
+      selectionBackground: "#434c5e",
+    },
+  },
+  {
+    id: "catppuccin-latte",
+    name: "Latte · 清爽浅色",
+    description: "浅灰底色，蓝色重点，适合白天",
+    ui: {
+      bg: "#eff1f5",
+      panel: "#eff1f5",
+      panelAlt: "#e6e9ef",
+      fg: "#4c4f69",
+      muted: "#6c6f85",
+      accent: "#1e66f5",
+      border: "#ccd0da",
+      danger: "#d20f39",
+    },
+    term: {
+      background: "#eff1f5",
+      foreground: "#4c4f69",
+      cursor: "#1e66f5",
+      cursorAccent: "#eff1f5",
+      selectionBackground: "#ccd0da",
+    },
+  },
+  {
+    id: "graphite",
+    name: "Graphite · 石墨黑",
+    description: "中性深灰，少量蓝色点缀",
+    ui: {
+      bg: "#17191d",
+      panel: "#1c1f24",
+      panelAlt: "#22262d",
+      fg: "#e6eaf0",
+      muted: "#9ba6b7",
+      accent: "#80b4ff",
+      border: "#363e4b",
+      danger: "#ff8792",
+    },
+    term: {
+      background: "#17191d",
+      foreground: "#e6eaf0",
+      cursor: "#80b4ff",
+      cursorAccent: "#17191d",
+      selectionBackground: "#34465f",
+    },
+  },
+  {
     id: "tokyo-night",
-    name: "Tokyo Night（默认）",
+    name: "Tokyo Night · 蓝紫夜色",
     ui: {
       bg: "#1a1b26",
       panel: "#16161e",
@@ -46,6 +113,7 @@ export const THEMES: ThemePreset[] = [
   {
     id: "catppuccin",
     name: "Catppuccin Mocha",
+    description: "柔和蓝紫，暖色文字",
     ui: {
       bg: "#1e1e2e",
       panel: "#181825",

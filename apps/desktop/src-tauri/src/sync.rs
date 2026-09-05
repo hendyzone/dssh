@@ -1,9 +1,10 @@
 //! GitHub 加密同步。
 //!
-//! 同步文件只包含 ServerRecord 列表（包括转发规则），不包含服务器密码或私钥
-//! passphrase；这些秘密始终留在每台机器的系统 keyring 中，不会上传。
+//! 完整配置、系统凭据和私钥在本机经 Argon2 + AES-GCM 加密后上传。
+//! 凭据和私钥仅在 Rust 后端处理，不通过前端 IPC 返回。
 
-use std::fs;
+#[path = "sync_bundle.rs"]
+pub(crate) mod bundle;
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -15,7 +16,7 @@ use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::servers::{self, ServerRecord};
+use crate::servers::ServerRecord;
 
 const SYNC_SERVICE: &str = "dssh.sync";
 const PAT_ACCOUNT: &str = "github_pat";
@@ -131,7 +132,9 @@ fn github_client() -> Result<Client, SyncError> {
 
 fn contents_url(repository: &str) -> Result<String, SyncError> {
     validate_repository(repository)?;
-    Ok(format!("{GITHUB_API}/repos/{repository}/contents/{SYNC_FILE}"))
+    Ok(format!(
+        "{GITHUB_API}/repos/{repository}/contents/{SYNC_FILE}"
+    ))
 }
 
 async fn report_failure(response: Response) -> SyncError {
@@ -178,7 +181,7 @@ async fn get_contents(
         .map_err(|error| SyncError::Other(format!("GitHub 响应格式异常: {error}")))
 }
 
-fn encrypt_servers(servers: &[ServerRecord], password: &str) -> Result<Vec<u8>, SyncError> {
+fn encrypt_bundle(payload: &bundle::Bundle, password: &str) -> Result<Vec<u8>, SyncError> {
     let mut salt = [0_u8; 16];
     OsRng.fill_bytes(&mut salt);
     let mut key = [0_u8; 32];
@@ -190,13 +193,13 @@ fn encrypt_servers(servers: &[ServerRecord], password: &str) -> Result<Vec<u8>, 
     OsRng.fill_bytes(&mut nonce_bytes);
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|error| SyncError::Other(format!("初始化加密失败: {error}")))?;
-    let plain = serde_json::to_vec(servers)
+    let plain = serde_json::to_vec(payload)
         .map_err(|error| SyncError::Other(format!("读取服务器配置失败: {error}")))?;
     let data = cipher
         .encrypt(Nonce::from_slice(&nonce_bytes), plain.as_ref())
         .map_err(|_| SyncError::Other("加密服务器配置失败".to_string()))?;
     let envelope = EncryptedSyncFile {
-        v: 1,
+        v: 2,
         kdf: KdfInfo {
             salt: BASE64.encode(salt),
         },
@@ -207,10 +210,13 @@ fn encrypt_servers(servers: &[ServerRecord], password: &str) -> Result<Vec<u8>, 
         .map_err(|error| SyncError::Other(format!("生成同步文件失败: {error}")))
 }
 
-fn decrypt_servers(raw: &[u8], password: &str) -> Result<Vec<ServerRecord>, SyncError> {
+fn decrypt_bundle(raw: &[u8], password: &str) -> Result<bundle::Bundle, SyncError> {
+    if raw.len() > 900 * 1024 {
+        return Err(SyncError::Other("同步文件超过 900 KB 限制".into()));
+    }
     let envelope: EncryptedSyncFile = serde_json::from_slice(raw)
         .map_err(|_| SyncError::Other("同步文件损坏或格式不受支持".to_string()))?;
-    if envelope.v != 1 {
+    if envelope.v != 1 && envelope.v != 2 {
         return Err(SyncError::Other("同步文件版本不受支持".to_string()));
     }
     let salt = BASE64
@@ -222,7 +228,7 @@ fn decrypt_servers(raw: &[u8], password: &str) -> Result<Vec<ServerRecord>, Sync
     let data = BASE64
         .decode(envelope.data)
         .map_err(|_| SyncError::Other("同步文件损坏（密文无效）".to_string()))?;
-    if salt.is_empty() || nonce.len() != 12 {
+    if salt.len() != 16 || nonce.len() != 12 {
         return Err(SyncError::Other("同步文件损坏（加密参数无效）".to_string()));
     }
     let mut key = [0_u8; 32];
@@ -234,8 +240,25 @@ fn decrypt_servers(raw: &[u8], password: &str) -> Result<Vec<ServerRecord>, Sync
     let plain = cipher
         .decrypt(Nonce::from_slice(&nonce), data.as_ref())
         .map_err(|_| SyncError::Other("同步密码错误或文件损坏（AES-GCM 认证失败）".to_string()))?;
-    serde_json::from_slice(&plain)
-        .map_err(|_| SyncError::Other("同步密码正确但文件损坏（服务器列表无效）".to_string()))
+    if envelope.v == 1 {
+        let records: Vec<ServerRecord> = serde_json::from_slice(&plain)
+            .map_err(|_| SyncError::Other("旧版备份格式无效".into()))?;
+        Ok(bundle::Bundle {
+            entries: records
+                .into_iter()
+                .map(|record| bundle::Entry {
+                    record,
+                    password: None,
+                    passphrase: None,
+                    private_key: None,
+                })
+                .collect(),
+            ui_state: Default::default(),
+            legacy: true,
+        })
+    } else {
+        serde_json::from_slice(&plain).map_err(|_| SyncError::Other("完整备份格式无效".into()))
+    }
 }
 
 /// 测试 PAT 和仓库可达性；不会读取或修改同步文件。
@@ -273,19 +296,25 @@ pub async fn sync_test(
     })
 }
 
-/// 上传本机服务器列表。服务器密码和私钥 passphrase 不在 ServerRecord 中，因此不会同步。
+/// 上传加密的完整备份。
 #[tauri::command]
 pub async fn sync_upload(
     app: AppHandle,
     pat: Option<String>,
     repository: String,
     password: Option<String>,
+    ui_state: Option<bundle::UiState>,
 ) -> Result<String, SyncError> {
     let pat = resolve_secret(pat, PAT_ACCOUNT, "GitHub PAT")?;
     let password = resolve_secret(password, PASSWORD_ACCOUNT, "同步密码")?;
     let client = github_client()?;
-    let local = servers::read_all(&app).map_err(|error| SyncError::Other(error.to_string()))?;
-    let encrypted = encrypt_servers(&local, &password)?;
+    let local = bundle::collect(&app, ui_state.unwrap_or_default())?;
+    let encrypted = encrypt_bundle(&local, &password)?;
+    if encrypted.len() > 900 * 1024 {
+        return Err(SyncError::Other(
+            "完整备份超过 900 KB，请检查私钥文件和界面配置大小".into(),
+        ));
+    }
     let encoded = BASE64.encode(encrypted);
     let existing = get_contents(&client, &repository, &pat).await?;
     let sha = existing.as_ref().and_then(|content| content.sha.as_deref());
@@ -304,7 +333,10 @@ pub async fn sync_upload(
     if !response.status().is_success() {
         return Err(report_failure(response).await);
     }
-    Ok(format!("已上传 {} 个服务器配置", local.len()))
+    Ok(format!(
+        "已加密上传 {} 个连接及凭据、私钥和界面配置",
+        local.entries.len()
+    ))
 }
 
 /// 下载并整体替换本机服务器列表；替换前保留 servers.json.bak（last-write-wins，不合并）。
@@ -314,7 +346,7 @@ pub async fn sync_download(
     pat: Option<String>,
     repository: String,
     password: Option<String>,
-) -> Result<String, SyncError> {
+) -> Result<bundle::RestoreResult, SyncError> {
     let pat = resolve_secret(pat, PAT_ACCOUNT, "GitHub PAT")?;
     let password = resolve_secret(password, PASSWORD_ACCOUNT, "同步密码")?;
     let client = github_client()?;
@@ -328,15 +360,82 @@ pub async fn sync_download(
     let encrypted = BASE64
         .decode(encoded)
         .map_err(|_| SyncError::Other("GitHub 同步文件不是有效的 Base64".to_string()))?;
-    let servers = decrypt_servers(&encrypted, &password)?;
+    let payload = decrypt_bundle(&encrypted, &password)?;
+    bundle::restore(&app, payload)
+}
 
-    let path = servers::servers_file(&app).map_err(|error| SyncError::Other(error.to_string()))?;
-    if path.exists() {
-        let backup = path.with_file_name("servers.json.bak");
-        fs::copy(&path, backup).map_err(|error| {
-            SyncError::Other(format!("下载前备份本地 servers.json 失败: {error}"))
-        })?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn full_backup_encrypts_secrets_and_round_trips() {
+        let payload = bundle::sample_bundle();
+        let encrypted = encrypt_bundle(&payload, "synthetic-sync-password").unwrap();
+        let text = String::from_utf8(encrypted.clone()).unwrap();
+        for secret in [
+            "synthetic-ssh-password",
+            "synthetic-key-passphrase",
+            "synthetic-private-key-bytes",
+            "example.invalid",
+            "empty/child",
+        ] {
+            assert!(!text.contains(secret));
+        }
+        let restored = decrypt_bundle(&encrypted, "synthetic-sync-password").unwrap();
+        assert_eq!(restored.entries[0].password, payload.entries[0].password);
+        assert_eq!(
+            restored.entries[0].private_key,
+            payload.entries[0].private_key
+        );
+        assert_eq!(
+            restored.entries[0].passphrase,
+            payload.entries[0].passphrase
+        );
+        assert_eq!(restored.ui_state, payload.ui_state);
+        assert_ne!(
+            encrypted,
+            encrypt_bundle(&payload, "synthetic-sync-password").unwrap()
+        );
+        assert!(decrypt_bundle(&encrypted, "wrong-password").is_err());
+        let mut envelope: EncryptedSyncFile = serde_json::from_slice(&encrypted).unwrap();
+        let mut data = BASE64.decode(&envelope.data).unwrap();
+        data[0] ^= 1;
+        envelope.data = BASE64.encode(data);
+        assert!(decrypt_bundle(
+            &serde_json::to_vec(&envelope).unwrap(),
+            "synthetic-sync-password"
+        )
+        .is_err());
     }
-    servers::write_all(&app, &servers).map_err(|error| SyncError::Other(error.to_string()))?;
-    Ok(format!("已下载并替换 {} 个服务器配置", servers.len()))
+    #[test]
+    fn reads_original_v1_backups_without_inventing_credentials() {
+        let salt = [1u8; 16];
+        let nonce = [2u8; 12];
+        let mut key = [0u8; 32];
+        Argon2::default()
+            .hash_password_into(b"legacy-password", &salt, &mut key)
+            .unwrap();
+        let records = vec![bundle::sample_bundle().entries.remove(0).record];
+        let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+        let data = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                serde_json::to_vec(&records).unwrap().as_slice(),
+            )
+            .unwrap();
+        let envelope = EncryptedSyncFile {
+            v: 1,
+            kdf: KdfInfo {
+                salt: BASE64.encode(salt),
+            },
+            nonce: BASE64.encode(nonce),
+            data: BASE64.encode(data),
+        };
+        let restored =
+            decrypt_bundle(&serde_json::to_vec(&envelope).unwrap(), "legacy-password").unwrap();
+        assert!(restored.legacy);
+        assert!(restored.entries[0].password.is_none());
+        assert!(restored.entries[0].private_key.is_none());
+        assert!(restored.ui_state.is_empty());
+    }
 }

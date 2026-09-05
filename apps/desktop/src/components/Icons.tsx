@@ -94,3 +94,13 @@ export const IconSplitV = (p: IconProps) => (
     <path d="M3 12h18" />
   </svg>
 );
+
+export const IconFile = (p: IconProps) =>
+  svg(
+    "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5",
+    p,
+  );
+export const IconTasks = (p: IconProps) =>
+  svg("M9 5h12M9 12h12M9 19h12M2 5l1 1 3-3M2 12l1 1 3-3M2 19l1 1 3-3", p);
+export const IconChanges = (p: IconProps) =>
+  svg("M8 3v12a4 4 0 0 0 4 4h5M5 6l3-3 3 3M14 16l3 3-3 3M16 3v7M12 6h8", p);

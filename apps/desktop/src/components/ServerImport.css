@@ -1,0 +1,73 @@
+@layer legacy {
+.modal.server-import {
+  width: min(880px, 92vw);
+  max-height: 90vh;
+  overflow: auto;
+}
+.server-import p {
+  color: var(--ui-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.server-import textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 240px;
+  resize: vertical;
+  padding: 12px;
+  font-family: monospace;
+}
+.server-import input {
+  min-width: 0;
+}
+.import-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.import-key input {
+  flex: 1;
+}
+.import-preview {
+  overflow: auto;
+  max-height: 38vh;
+  margin-top: 16px;
+}
+.import-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+.import-preview th,
+.import-preview td {
+  padding: 9px;
+  border-bottom: 1px solid var(--ui-border);
+  overflow-wrap: anywhere;
+}
+.import-preview small {
+  display: block;
+  opacity: 0.65;
+  margin-top: 4px;
+}
+.import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.server-import textarea {
+  background: var(--ui-panel);
+  color: var(--ui-fg);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+}
+.server-import h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+}

@@ -14,6 +14,7 @@ export interface Transfer {
   speedBytesPerSecond: number;
   status: TransferStatus;
   error?: string;
+  completedAt?: number;
 }
 
 interface TransferProgressPayload {
@@ -85,6 +86,7 @@ function ensureListener(sessionId: string): void {
         totalBytes: payload.totalBytes,
         speedBytesPerSecond: speed,
         status,
+        ...(status === "done" ? {completedAt:previous?.completedAt ?? Date.now()} : {}),
         ...(payload.error ? { error: payload.error } : {}),
       });
       notify(sessionId);

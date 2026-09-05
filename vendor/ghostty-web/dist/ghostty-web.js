@@ -791,7 +791,7 @@ var Te = new TextDecoder(), P = class e {
 		n === this.cellWidthPx && r === this.cellHeightPx || (this.cellWidthPx = n, this.cellHeightPx = r, this.exports.ghostty_terminal_resize(this.handle, this._cols, this._rows, n, r), this.invalidateCellCaches());
 	}
 	free() {
-		this.invalidateCellCaches(), this.callbackRegistry &&= (this.callbackRegistry.instancesByHandle.delete(this.handle), void 0), this.rowCells &&= (this.exports.ghostty_render_state_row_cells_free(this.rowCells), 0), this.rowIter &&= (this.exports.ghostty_render_state_row_iterator_free(this.rowIter), 0), this.renderHandle &&= (this.exports.ghostty_render_state_free(this.renderHandle), 0), this.exports.ghostty_terminal_free(this.handle);
+		this.handle &&= (this.invalidateCellCaches(), this.callbackRegistry &&= (this.callbackRegistry.instancesByHandle.delete(this.handle), void 0), this.rowCells &&= (this.exports.ghostty_render_state_row_cells_free(this.rowCells), 0), this.rowIter &&= (this.exports.ghostty_render_state_row_iterator_free(this.rowIter), 0), this.renderHandle &&= (this.exports.ghostty_render_state_free(this.renderHandle), 0), this.exports.ghostty_terminal_free(this.handle), 0);
 	}
 	setColors(e) {
 		let t = this.exports.ghostty_terminal_set_colors;
@@ -1492,7 +1492,7 @@ var Te = new TextDecoder(), P = class e {
 		this.BEFORE_INPUT_IGNORE_MS = 100;
 	}
 	constructor(e, t, n, r, i, a, o, s, c, l) {
-		this.keydownListener = null, this.keypressListener = null, this.pasteListener = null, this.beforeInputListener = null, this.compositionStartListener = null, this.compositionUpdateListener = null, this.compositionEndListener = null, this.mousedownListener = null, this.mouseupListener = null, this.mousemoveListener = null, this.wheelListener = null, this.isComposing = !1, this.compositionJustEnded = !1, this.pendingKeyAfterComposition = null, this.isDisposed = !1, this.mouseButtonsPressed = 0, this.lastKeyDownData = null, this.lastKeyDownTime = 0, this.lastPasteData = null, this.lastPasteTime = 0, this.lastPasteSource = null, this.lastCompositionData = null, this.lastCompositionTime = 0, this.lastBeforeInputData = null, this.lastBeforeInputTime = 0, this.encoder = e.createKeyEncoder(), this.container = t, this.inputElement = c, this.onDataCallback = n, this.onBellCallback = r, this.onKeyCallback = i, this.customKeyEventHandler = a, this.getModeCallback = o, this.onCopyCallback = s, this.mouseConfig = l, this.attach();
+		this.keydownListener = null, this.keypressListener = null, this.pasteListener = null, this.beforeInputListener = null, this.compositionStartListener = null, this.compositionUpdateListener = null, this.compositionEndListener = null, this.mousedownListener = null, this.mouseupListener = null, this.mousemoveListener = null, this.wheelListener = null, this.blurListener = null, this.isComposing = !1, this.compositionJustEnded = !1, this.pendingKeyAfterComposition = null, this.isDisposed = !1, this.mouseButtonsPressed = 0, this.lastKeyDownData = null, this.lastKeyDownTime = 0, this.lastPasteData = null, this.lastPasteTime = 0, this.lastPasteSource = null, this.lastCompositionData = null, this.lastCompositionTime = 0, this.lastBeforeInputData = null, this.lastBeforeInputTime = 0, this.encoder = e.createKeyEncoder(), this.container = t, this.inputElement = c, this.onDataCallback = n, this.onBellCallback = r, this.onKeyCallback = i, this.customKeyEventHandler = a, this.getModeCallback = o, this.onCopyCallback = s, this.mouseConfig = l, this.attach();
 	}
 	setCustomKeyEventHandler(e) {
 		this.customKeyEventHandler = e;
@@ -1500,7 +1500,7 @@ var Te = new TextDecoder(), P = class e {
 	attach() {
 		typeof this.container.hasAttribute == "function" && typeof this.container.setAttribute == "function" && (this.container.hasAttribute("tabindex") || this.container.setAttribute("tabindex", "0"), this.container.style && (this.container.style.outline = "none")), this.keydownListener = this.handleKeyDown.bind(this), this.container.addEventListener("keydown", this.keydownListener), this.pasteListener = this.handlePaste.bind(this), this.container.addEventListener("paste", this.pasteListener), this.inputElement && this.inputElement !== this.container && this.inputElement.addEventListener("paste", this.pasteListener), this.inputElement && (this.beforeInputListener = this.handleBeforeInput.bind(this), this.inputElement.addEventListener("beforeinput", this.beforeInputListener));
 		let e = this.inputElement || this.container;
-		this.compositionStartListener = this.handleCompositionStart.bind(this), e.addEventListener("compositionstart", this.compositionStartListener), this.compositionUpdateListener = this.handleCompositionUpdate.bind(this), e.addEventListener("compositionupdate", this.compositionUpdateListener), this.compositionEndListener = this.handleCompositionEnd.bind(this), e.addEventListener("compositionend", this.compositionEndListener), this.mousedownListener = this.handleMouseDown.bind(this), this.container.addEventListener("mousedown", this.mousedownListener), this.mouseupListener = this.handleMouseUp.bind(this), this.container.addEventListener("mouseup", this.mouseupListener), this.mousemoveListener = this.handleMouseMove.bind(this), this.container.addEventListener("mousemove", this.mousemoveListener), this.wheelListener = this.handleWheel.bind(this), this.container.addEventListener("wheel", this.wheelListener, { passive: !1 });
+		this.compositionStartListener = this.handleCompositionStart.bind(this), e.addEventListener("compositionstart", this.compositionStartListener), this.compositionUpdateListener = this.handleCompositionUpdate.bind(this), e.addEventListener("compositionupdate", this.compositionUpdateListener), this.compositionEndListener = this.handleCompositionEnd.bind(this), e.addEventListener("compositionend", this.compositionEndListener), this.mousedownListener = this.handleMouseDown.bind(this), this.container.addEventListener("mousedown", this.mousedownListener), this.mouseupListener = this.handleMouseUp.bind(this), document.addEventListener("mouseup", this.mouseupListener), this.mousemoveListener = this.handleMouseMove.bind(this), this.container.addEventListener("mousemove", this.mousemoveListener), this.wheelListener = this.handleWheel.bind(this), this.container.addEventListener("wheel", this.wheelListener, { passive: !1 }), this.blurListener = this.handleWindowBlur.bind(this), window.addEventListener("blur", this.blurListener);
 	}
 	mapKeyCode(e) {
 		return Me[e] ?? null;
@@ -1755,30 +1755,33 @@ var Te = new TextDecoder(), P = class e {
 		this.onDataCallback(s);
 	}
 	handleMouseDown(e) {
-		if (this.isDisposed || !this.mouseConfig?.hasMouseTracking()) return;
+		if (this.isDisposed || e.shiftKey || !this.mouseConfig?.hasMouseTracking()) return;
 		let t = this.pixelToCell(e);
 		if (!t) return;
 		let n = e.button;
 		this.mouseButtonsPressed |= 1 << n, this.sendMouseEvent(n, t.col, t.row, !1, e);
 	}
 	handleMouseUp(e) {
-		if (this.isDisposed || !this.mouseConfig?.hasMouseTracking()) return;
-		let t = this.pixelToCell(e);
-		if (!t) return;
-		let n = e.button;
-		this.mouseButtonsPressed &= ~(1 << n), this.sendMouseEvent(n, t.col, t.row, !0, e);
+		if (this.isDisposed) return;
+		let t = e.button, n = (this.mouseButtonsPressed & 1 << t) != 0;
+		if (this.mouseButtonsPressed &= ~(1 << t), !this.mouseConfig?.hasMouseTracking() || !n) return;
+		let r = this.pixelToCell(e);
+		r && this.sendMouseEvent(t, r.col, r.row, !0, e);
+	}
+	handleWindowBlur() {
+		this.isDisposed || (this.mouseButtonsPressed = 0);
 	}
 	handleMouseMove(e) {
-		if (this.isDisposed || !this.mouseConfig?.hasMouseTracking()) return;
+		if (this.isDisposed || e.shiftKey || !this.mouseConfig?.hasMouseTracking()) return;
 		let t = this.getModeCallback?.(1002) ?? !1, n = this.getModeCallback?.(1003) ?? !1;
 		if (!t && !n || t && !n && this.mouseButtonsPressed === 0) return;
 		let r = this.pixelToCell(e);
 		if (!r) return;
-		let i = 32;
-		this.mouseButtonsPressed & 1 ? i += 0 : this.mouseButtonsPressed & 2 ? i += 1 : this.mouseButtonsPressed & 4 && (i += 2), this.sendMouseEvent(i, r.col, r.row, !1, e);
+		let i;
+		i = this.mouseButtonsPressed & 1 ? 0 : this.mouseButtonsPressed & 2 ? 1 : this.mouseButtonsPressed & 4 ? 2 : 3, this.sendMouseEvent(i + 32, r.col, r.row, !1, e);
 	}
 	handleWheel(e) {
-		if (this.isDisposed || !this.mouseConfig?.hasMouseTracking()) return;
+		if (this.isDisposed || e.shiftKey || !this.mouseConfig?.hasMouseTracking()) return;
 		let t = this.pixelToCell(e);
 		if (!t) return;
 		let n = e.deltaY < 0 ? 64 : 65;
@@ -1826,7 +1829,7 @@ var Te = new TextDecoder(), P = class e {
 		if (this.isDisposed) return;
 		this.keydownListener &&= (this.container.removeEventListener("keydown", this.keydownListener), null), this.keypressListener &&= (this.container.removeEventListener("keypress", this.keypressListener), null), this.pasteListener &&= (this.container.removeEventListener("paste", this.pasteListener), this.inputElement && this.inputElement !== this.container && this.inputElement.removeEventListener("paste", this.pasteListener), null), this.beforeInputListener && this.inputElement && (this.inputElement.removeEventListener("beforeinput", this.beforeInputListener), this.beforeInputListener = null);
 		let e = this.inputElement || this.container;
-		this.compositionStartListener &&= (e.removeEventListener("compositionstart", this.compositionStartListener), null), this.compositionUpdateListener &&= (e.removeEventListener("compositionupdate", this.compositionUpdateListener), null), this.compositionEndListener &&= (e.removeEventListener("compositionend", this.compositionEndListener), null), this.mousedownListener &&= (this.container.removeEventListener("mousedown", this.mousedownListener), null), this.mouseupListener &&= (this.container.removeEventListener("mouseup", this.mouseupListener), null), this.mousemoveListener &&= (this.container.removeEventListener("mousemove", this.mousemoveListener), null), this.wheelListener &&= (this.container.removeEventListener("wheel", this.wheelListener), null), this.isDisposed = !0;
+		this.compositionStartListener &&= (e.removeEventListener("compositionstart", this.compositionStartListener), null), this.compositionUpdateListener &&= (e.removeEventListener("compositionupdate", this.compositionUpdateListener), null), this.compositionEndListener &&= (e.removeEventListener("compositionend", this.compositionEndListener), null), this.mousedownListener &&= (this.container.removeEventListener("mousedown", this.mousedownListener), null), this.mouseupListener &&= (document.removeEventListener("mouseup", this.mouseupListener), null), this.mousemoveListener &&= (this.container.removeEventListener("mousemove", this.mousemoveListener), null), this.wheelListener &&= (this.container.removeEventListener("wheel", this.wheelListener), null), this.blurListener &&= (window.removeEventListener("blur", this.blurListener), null), this.isDisposed = !0;
 	}
 	isActive() {
 		return !this.isDisposed;
@@ -2008,38 +2011,60 @@ var Le = class e {
 	static {
 		this.TRAILING_PUNCTUATION = /[.,;!?)\]]+$/;
 	}
+	static {
+		this.MAX_WRAP_CHAIN_ROWS = 256;
+	}
 	constructor(e) {
 		this.terminal = e;
 	}
 	provideLinks(t, n) {
-		let r = [], i = this.terminal.buffer.active.getLine(t);
-		if (!i) {
+		let r = this.terminal.buffer.active;
+		if (!r.getLine(t)) {
 			n(void 0);
 			return;
 		}
-		let a = this.lineToText(i);
-		e.URL_REGEX.lastIndex = 0;
-		let o = e.URL_REGEX.exec(a);
-		for (; o !== null;) {
-			let n = o[0], i = o.index, s = o.index + n.length - 1, c = n.replace(e.TRAILING_PUNCTUATION, "");
-			c.length < n.length && (n = c, s = i + n.length - 1), n.length > 8 && r.push({
-				text: n,
-				range: {
-					start: {
-						x: i,
-						y: t
-					},
-					end: {
-						x: s,
-						y: t
-					}
-				},
-				activate: (e) => {
-					(e.ctrlKey || e.metaKey) && Re(e, n);
-				}
-			}), o = e.URL_REGEX.exec(a);
+		let i = t, a = 0;
+		for (; i > 0 && a < e.MAX_WRAP_CHAIN_ROWS;) {
+			let e = r.getLine(i);
+			if (!e || !e.isWrapped) break;
+			i--, a++;
 		}
-		n(r.length > 0 ? r : void 0);
+		let o = i;
+		for (; o - i < e.MAX_WRAP_CHAIN_ROWS && o < r.length - 1;) {
+			let e = r.getLine(o + 1);
+			if (!e || !e.isWrapped) break;
+			o++;
+		}
+		let s = "", c = [];
+		for (let e = i; e <= o; e++) {
+			c.push(s.length);
+			let t = r.getLine(e);
+			t && (s += this.lineToText(t));
+		}
+		let l = [];
+		e.URL_REGEX.lastIndex = 0;
+		let u = e.URL_REGEX.exec(s);
+		for (; u !== null;) {
+			let n = u[0], r = u.index, a = r + n.length - 1, o = n.replace(e.TRAILING_PUNCTUATION, "");
+			if (o.length < n.length && (n = o, a = r + n.length - 1), n.length > 8) {
+				let e = this.joinedIdxToRowCol(r, c, i), o = this.joinedIdxToRowCol(a, c, i);
+				if (e.y <= t && o.y >= t) {
+					let t = {
+						start: e,
+						end: o
+					}, r = n;
+					l.push({
+						text: r,
+						range: t,
+						activate: (e) => {
+							(e.ctrlKey || e.metaKey) && Re(e, r);
+						}
+					});
+				}
+			}
+			u = e.URL_REGEX.exec(s);
+		}
+		n(l.length > 0 ? l : void 0);
 	}
 	lineToText(e) {
 		let t = [];
@@ -2053,6 +2078,16 @@ var Le = class e {
 			i === 0 || i < 32 ? t.push(" ") : t.push(String.fromCodePoint(i));
 		}
 		return t.join("");
+	}
+	joinedIdxToRowCol(e, t, n) {
+		for (let r = t.length - 1; r >= 0; r--) if (e >= t[r]) return {
+			x: e - t[r],
+			y: n + r
+		};
+		return {
+			x: 0,
+			y: n
+		};
 	}
 	dispose() {}
 };
@@ -5277,7 +5312,7 @@ var Ut = class e {
 	constructor(t = {}) {
 		this.unicode = { get activeVersion() {
 			return "15.1";
-		} }, this.hoveredHyperlinkId = 0, this.linkHoverRequestId = 0, this.linkClickRequestId = 0, this.dataEmitter = new F(), this.resizeEmitter = new F(), this.bellEmitter = new F(), this.selectionChangeEmitter = new F(), this.keyEmitter = new F(), this.titleChangeEmitter = new F(), this.scrollEmitter = new F(), this.renderEmitter = new F(), this.cursorMoveEmitter = new F(), this.openEmitter = new F(), this.onData = this.dataEmitter.event, this.onResize = this.resizeEmitter.event, this.onBell = this.bellEmitter.event, this.onSelectionChange = this.selectionChangeEmitter.event, this.onKey = this.keyEmitter.event, this.onTitleChange = this.titleChangeEmitter.event, this.onScroll = this.scrollEmitter.event, this.onRender = this.renderEmitter.event, this.onCursorMove = this.cursorMoveEmitter.event, this.onOpen = this.openEmitter.event, this.isOpen = !1, this.isDisposed = !1, this.isSuspended = !1, this.forceNextRender = !1, this.addons = [], this.currentTitle = "", this.viewportY = 0, this.targetViewportY = 0, this.lastCursorY = 0, this.isDraggingScrollbar = !1, this.scrollbarDragStart = null, this.scrollbarDragStartViewportY = 0, this.scrollbarVisible = !1, this.scrollbarOpacity = 0, this.SCROLLBAR_HIDE_DELAY_MS = 1500, this.SCROLLBAR_FADE_DURATION_MS = 200, this.animateScroll = () => {
+		} }, this.hoveredHyperlinkId = 0, this.linkHoverRequestId = 0, this.linkClickRequestId = 0, this.dataEmitter = new F(), this.resizeEmitter = new F(), this.bellEmitter = new F(), this.selectionChangeEmitter = new F(), this.keyEmitter = new F(), this.titleChangeEmitter = new F(), this.scrollEmitter = new F(), this.renderEmitter = new F(), this.cursorMoveEmitter = new F(), this.openEmitter = new F(), this.onData = this.dataEmitter.event, this.onResize = this.resizeEmitter.event, this.onBell = this.bellEmitter.event, this.onSelectionChange = this.selectionChangeEmitter.event, this.onKey = this.keyEmitter.event, this.onTitleChange = this.titleChangeEmitter.event, this.onScroll = this.scrollEmitter.event, this.onRender = this.renderEmitter.event, this.onCursorMove = this.cursorMoveEmitter.event, this.onOpen = this.openEmitter.event, this.isOpen = !1, this.isDisposed = !1, this.isSuspended = !1, this.forceNextRender = !1, this.awaitingEcho = !1, this.addons = [], this.currentTitle = "", this.viewportY = 0, this.targetViewportY = 0, this.lastCursorY = 0, this.isDraggingScrollbar = !1, this.scrollbarDragStart = null, this.scrollbarDragStartViewportY = 0, this.scrollbarVisible = !1, this.scrollbarOpacity = 0, this.SCROLLBAR_HIDE_DELAY_MS = 1500, this.SCROLLBAR_FADE_DURATION_MS = 200, this.animateScroll = () => {
 			if (!this.wasmTerm || this.scrollAnimationStartTime === void 0) return;
 			let e = this.options.smoothScrollDuration ?? 100, t = this.targetViewportY - this.viewportY;
 			if (Math.abs(t) < .01) {
@@ -5325,18 +5360,26 @@ var Ut = class e {
 				t || l.activate(e), (t || e.ctrlKey || e.metaKey) && e.preventDefault();
 			}
 		}, this.handleWheel = (e) => {
-			if (e.preventDefault(), e.stopPropagation(), !(this.customWheelEventHandler && this.customWheelEventHandler(e))) if (this.wasmTerm?.isAlternateScreen() ?? !1) {
-				let t = e.deltaY > 0 ? "down" : "up", n = Math.min(Math.abs(Math.round(e.deltaY / 33)), 5);
-				for (let e = 0; e < n; e++) t === "up" ? this.dataEmitter.fire("\x1B[A") : this.dataEmitter.fire("\x1B[B");
-			} else {
-				let t;
-				if (e.deltaMode === WheelEvent.DOM_DELTA_PIXEL) {
-					let n = this.renderer?.getMetrics()?.height ?? 20;
-					t = e.deltaY / n;
-				} else t = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? e.deltaY * this.rows : e.deltaY / 33;
-				if (t *= this.options.scrollSensitivity ?? 1, t !== 0) {
-					let e = this.viewportY - t;
-					this.smoothScrollTo(e);
+			if (e.preventDefault(), this.customWheelEventHandler && this.customWheelEventHandler(e)) {
+				e.stopImmediatePropagation();
+				return;
+			}
+			if (e.deltaY === 0) {
+				e.stopImmediatePropagation();
+				return;
+			}
+			if (!(!e.shiftKey && this.wasmTerm?.hasMouseTracking())) {
+				e.stopImmediatePropagation();
+				{
+					let t;
+					if (e.deltaMode === WheelEvent.DOM_DELTA_PIXEL) {
+						let n = this.renderer?.getMetrics()?.height ?? 20;
+						t = e.deltaY / n;
+					} else t = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? e.deltaY * this.rows : e.deltaY / 33;
+					if (t *= this.options.scrollSensitivity ?? 1, t !== 0) {
+						let e = this.viewportY - t;
+						this.smoothScrollTo(e);
+					}
 				}
 			}
 		}, this.handleMouseDown = (e) => {
@@ -5566,7 +5609,7 @@ var Ut = class e {
 				}
 			};
 			this.inputHandler = new Ne(this.ghostty, e, (e) => {
-				this.options.disableStdin || (this.selectionManager?.clearSelection(), this.dataEmitter.fire(e));
+				this.options.disableStdin || (this.selectionManager?.clearSelection(), this.awaitingEcho = !0, this.dataEmitter.fire(e));
 			}, () => {
 				this.bellEmitter.fire();
 			}, (e) => {
@@ -5594,7 +5637,7 @@ var Ut = class e {
 			let e = this.getScrollbackLength() - n;
 			e > 0 && (this.viewportY = Math.min(this.getScrollbackLength(), this.viewportY + e), this.scrollEmitter.fire(Math.floor(this.viewportY)));
 		}
-		typeof e == "string" && e.includes("\x1B]") && this.checkForTitleChange(e), t && this.scheduleAnimationFrame(t), this.requestRender();
+		typeof e == "string" && e.includes("\x1B]") && this.checkForTitleChange(e), t && this.scheduleAnimationFrame(t), this.awaitingEcho ? (this.awaitingEcho = !1, this.renderer && this.wasmTerm && this.renderer.render(this.wasmTerm, !1, this.viewportY, this, this.scrollbarOpacity)) : this.requestRender();
 	}
 	writeln(e, t) {
 		if (typeof e == "string") this.write(e + "\r\n", t);
@@ -5604,10 +5647,10 @@ var Ut = class e {
 		}
 	}
 	paste(e) {
-		this.assertOpen(), !this.options.disableStdin && (this.wasmTerm.hasBracketedPaste() ? this.dataEmitter.fire("\x1B[200~" + e + "\x1B[201~") : this.dataEmitter.fire(e));
+		this.assertOpen(), !this.options.disableStdin && (this.awaitingEcho = !0, this.wasmTerm.hasBracketedPaste() ? this.dataEmitter.fire("\x1B[200~" + e + "\x1B[201~") : this.dataEmitter.fire(e));
 	}
 	input(e, t = !1) {
-		this.assertOpen(), !this.options.disableStdin && (t ? this.dataEmitter.fire(e) : this.write(e));
+		this.assertOpen(), !this.options.disableStdin && (t ? (this.awaitingEcho = !0, this.dataEmitter.fire(e)) : this.write(e));
 	}
 	resize(e, t) {
 		if (this.assertOpen(), !Number.isFinite(e) || !Number.isFinite(t) || e < 1 || t < 1) throw RangeError("Terminal dimensions must be positive finite numbers");

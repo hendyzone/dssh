@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use russh::keys::{PrivateKeyWithHashAlg, load_secret_key};
+use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 
@@ -28,6 +28,8 @@ pub struct ConnectParams {
     pub server_id: Option<String>,
     pub cols: u32,
     pub rows: u32,
+    #[serde(default)]
+    pub tmux: Option<crate::tmux::Target>,
 }
 
 type ClientHandle = russh::client::Handle<SshHandler>;
@@ -52,6 +54,7 @@ pub struct Session {
     write_half: WriteHalf,
     handle: SharedHandle,
     meta: SessionMeta,
+    startup: Option<String>,
 }
 
 #[derive(Default)]
@@ -71,7 +74,11 @@ impl SshState {
 
     /// 取会话的连接元数据
     pub async fn get_meta(&self, session_id: &str) -> Option<SessionMeta> {
-        self.sessions.lock().await.get(session_id).map(|s| s.meta.clone())
+        self.sessions
+            .lock()
+            .await
+            .get(session_id)
+            .map(|s| s.meta.clone())
     }
 
     /// 当前存活会话数
@@ -176,13 +183,10 @@ pub async fn ssh_connect(
         ..Default::default()
     });
 
-    let mut handle = russh::client::connect(
-        config,
-        (params.host.as_str(), params.port),
-        SshHandler,
-    )
-    .await
-    .map_err(|e| SshError::Other(format!("连接失败（网络/超时）: {e}")))?;
+    let mut handle =
+        russh::client::connect(config, (params.host.as_str(), params.port), SshHandler)
+            .await
+            .map_err(|e| SshError::Other(format!("连接失败（网络/超时）: {e}")))?;
 
     // ---- 认证（secret/passphrase 为空且有关联服务器条目时，从 keyring 取） ----
     let resolved_secret = match &params.secret {
@@ -239,12 +243,10 @@ pub async fn ssh_connect(
     // 不受服务端 sshd AcceptEnv 白名单限制。
     // TERM_PROGRAM=ghostty 声明本终端支持 Kitty graphics protocol
     //（pi 等现代工具依据该变量决定是否内联显示图片）。
-    channel
-        .exec(
-            false,
-            "env TERM_PROGRAM=ghostty COLORTERM=truecolor ${SHELL:-/bin/bash} -l",
-        )
-        .await?;
+    let startup = match &params.tmux {
+        Some(target) => crate::tmux::attach_command(target).map_err(SshError::Other)?,
+        None => "env TERM_PROGRAM=ghostty COLORTERM=truecolor ${SHELL:-/bin/bash} -l".to_string(),
+    };
 
     let (mut read_half, write_half) = channel.split();
 
@@ -291,6 +293,7 @@ pub async fn ssh_connect(
         session_id.clone(),
         Session {
             write_half,
+            startup: Some(startup),
             handle: Arc::new(handle),
             meta: SessionMeta {
                 host: params.host.clone(),
@@ -308,6 +311,19 @@ pub async fn ssh_connect(
     );
 
     Ok(session_id)
+}
+
+/// Start output only after the frontend has subscribed to both data and exit events.
+#[tauri::command]
+pub async fn ssh_start(state: State<'_, SshState>, session_id: String) -> Result<(), SshError> {
+    let mut sessions = state.sessions.lock().await;
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| SshError::NotFound(session_id.clone()))?;
+    if let Some(startup) = session.startup.take() {
+        session.write_half.exec(false, startup).await?;
+    }
+    Ok(())
 }
 
 /// 前端终端输入 → SSH channel

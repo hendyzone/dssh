@@ -1,3 +1,13 @@
+import {
+  X as UiX,
+  Pencil as UiPencil,
+  Download as UiDownload,
+  RefreshCw as UiRefreshCw,
+} from "lucide-react";
+import { Input } from "./ui/input";
+import { NativeSelect } from "./ui/native-select";
+import { Button } from "./ui/button";
+import { IconClose } from "./Icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -292,16 +302,24 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
 
   return (
     <aside className="forward-panel" style={styles.panel}>
-      <header style={styles.header}>
+      <header
+        data-panel-drag-handle
+        tabIndex={0}
+        title="拖动标题栏到终端左侧或右侧停靠"
+        style={styles.header}
+      >
         <strong>端口转发</strong>
-        <button
+        <Button
+          variant="ghost"
+          size="icon-sm"
           type="button"
           onClick={onClose}
           style={styles.close}
+          className="close-icon-btn"
           aria-label="关闭"
         >
-          ×
-        </button>
+          <IconClose size={14} />
+        </Button>
       </header>
 
       <div style={styles.list}>
@@ -338,7 +356,9 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
                     {running ? "运行中" : "已停止"}
                   </div>
                 </div>
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   type="button"
                   style={styles.smallButton}
                   disabled={busy}
@@ -347,24 +367,28 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
                   }
                 >
                   {running ? "停止" : "启动"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   type="button"
                   style={styles.smallButton}
                   disabled={busy}
                   onClick={() => edit(item)}
                 >
                   编辑
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   type="button"
                   style={styles.delete}
                   disabled={busy}
                   onClick={() => void remove(item)}
                   aria-label="删除"
                 >
-                  ×
-                </button>
+                  <UiX size={14} />
+                </Button>
                 <label style={styles.autoStart} title="连接后自动启动">
                   <input
                     type="checkbox"
@@ -383,7 +407,7 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
         <div style={styles.formTitle}>
           {editingId ? "编辑转发规则" : "添加并启动"}
         </div>
-        <select
+        <NativeSelect
           value={ruleType}
           onChange={(event) => setRuleType(event.target.value as ForwardType)}
           style={styles.field}
@@ -391,16 +415,16 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
           <option value="local">本地转发</option>
           <option value="remote">远程转发</option>
           <option value="dynamic">动态 SOCKS5</option>
-        </select>
+        </NativeSelect>
         <label style={styles.label}>本地地址:端口</label>
         <div style={styles.inline}>
-          <input
+          <Input
             value={localHost}
             onChange={(event) => setLocalHost(event.target.value)}
             style={{ ...styles.field, flex: 1 }}
             placeholder="127.0.0.1"
           />
-          <input
+          <Input
             value={localPort}
             onChange={(event) => setLocalPort(event.target.value)}
             style={{ ...styles.port, width: 72 }}
@@ -412,13 +436,13 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
           <>
             <label style={styles.label}>远程地址:端口</label>
             <div style={styles.inline}>
-              <input
+              <Input
                 value={remoteHost}
                 onChange={(event) => setRemoteHost(event.target.value)}
                 style={{ ...styles.field, flex: 1 }}
                 placeholder="远程主机"
               />
-              <input
+              <Input
                 value={remotePort}
                 onChange={(event) => setRemotePort(event.target.value)}
                 style={{ ...styles.port, width: 72 }}
@@ -437,18 +461,26 @@ export default function ForwardPanel({ sessionId, onClose }: Props) {
           连接后自动启动
         </label>
         <div style={styles.formButtons}>
-          <button type="submit" disabled={busy} style={styles.submit}>
+          <Button
+            variant="outline"
+            size="sm"
+            type="submit"
+            disabled={busy}
+            style={styles.submit}
+          >
             {busy ? "保存中…" : editingId ? "保存并应用" : "添加并启动"}
-          </button>
+          </Button>
           {editingId && (
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               type="button"
               disabled={busy}
               style={styles.cancel}
               onClick={resetForm}
             >
               取消
-            </button>
+            </Button>
           )}
         </div>
         {error && <div style={styles.error}>{error}</div>}
