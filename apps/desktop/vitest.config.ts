@@ -9,8 +9,9 @@ export default defineConfig({
     },
   },
   test: {
-    // Radix portals/focus scopes settle more slowly in jsdom than in WebView2.
+    // Radix focus cleanup is expensive in jsdom; allow IPC to flush between tests.
     testTimeout: 60000,
+    hookTimeout: 60000,
     maxWorkers: 2,
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],

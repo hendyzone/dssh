@@ -3,8 +3,8 @@ import { AppDialog } from "./ui/app-dialog";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { THEMES } from "../themes";
+import { invoke } from "../platform/core";
+import { THEMES, getTheme, themeCategory } from "../themes";
 import SyncGuide from "./SyncGuide";
 import {
   collectSyncUi,
@@ -44,6 +44,15 @@ export default function SettingsModal({
   onServersChanged,
 }: Props) {
   const [section, setSection] = useState<"appearance" | "sync">("appearance");
+  const [themeFilter, setThemeFilter] = useState("all");
+  const [themeQuery, setThemeQuery] = useState("");
+  const visibleThemes = THEMES.filter(
+    (t) =>
+      (themeFilter === "all" || themeCategory(t) === themeFilter) &&
+      `${t.name} ${t.description ?? ""}`
+        .toLowerCase()
+        .includes(themeQuery.trim().toLowerCase()),
+  );
   const [pat, setPat] = useState("");
   const [repository, setRepository] = useState(
     () => localStorage.getItem(SYNC_REPOSITORY_KEY) ?? "",
@@ -144,9 +153,37 @@ export default function SettingsModal({
               className="settings-section"
               hidden={section !== "appearance"}
             >
-              <label>主题</label>
+              <label>主题 · {THEMES.length} 套</label>
+              <p className="theme-current">
+                当前：{getTheme(settings.themeId).name} · 点击预览即刻应用
+              </p>
+              <div className="theme-filters" role="group" aria-label="主题分类">
+                {[
+                  ["all", "全部"],
+                  ["dark", "深色"],
+                  ["light", "浅色"],
+                  ["mixed", "明暗混合"],
+                ].map(([value, label]) => (
+                  <Button
+                    key={value}
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={themeFilter === value}
+                    onClick={() => setThemeFilter(value)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <Input
+                className="theme-search"
+                aria-label="搜索主题"
+                placeholder="搜索主题，例如 One Dark、Monokai…"
+                value={themeQuery}
+                onChange={(e) => setThemeQuery(e.target.value)}
+              />
               <div className="theme-grid">
-                {THEMES.map((t) => (
+                {visibleThemes.map((t) => (
                   <button
                     key={t.id}
                     className={`theme-card ${settings.themeId === t.id ? "active" : ""}`}
@@ -163,7 +200,7 @@ export default function SettingsModal({
                     >
                       <span
                         className="theme-mini-sidebar"
-                        style={{ background: t.ui.panelAlt, color: t.ui.muted }}
+                        style={{ background: t.ui.panelAlt, color: t.ui.fg }}
                       >
                         ⌄ 公司
                         <br />
@@ -172,10 +209,27 @@ export default function SettingsModal({
                         　测试
                       </span>
                       <span className="theme-mini-terminal">
-                        <span style={{ color: t.ui.accent }}>● SSH · tmux</span>
-                        <br />~ $ ssh server
+                        <span style={{ color: t.term.green ?? t.term.cursor }}>
+                          ● SSH · tmux
+                        </span>
+                        <br />~ ${" "}
+                        <span
+                          style={{ color: t.term.blue ?? t.term.foreground }}
+                        >
+                          git status
+                        </span>
                         <br />
-                        <span style={{ color: t.ui.accent }}>❯</span> _
+                        <span style={{ color: t.term.cursor }}>❯</span> _
+                      </span>
+                      <span
+                        className="theme-mini-tools"
+                        style={{ background: t.ui.panelAlt, color: t.ui.fg }}
+                      >
+                        文件
+                        <br />
+                        tmux
+                        <br />
+                        监控
                       </span>
                     </span>
                     <span className="theme-swatches">
@@ -184,10 +238,21 @@ export default function SettingsModal({
                       <i style={{ background: t.ui.accent }} />
                     </span>
                     {t.name}
+                    <span className="theme-category-label">
+                      {
+                        { dark: "深色", light: "浅色", mixed: "明暗混合" }[
+                          themeCategory(t)
+                        ]
+                      }
+                      {settings.themeId === t.id ? " · 使用中" : ""}
+                    </span>
                     {t.description && <small>{t.description}</small>}
                   </button>
                 ))}
               </div>
+              {visibleThemes.length === 0 && (
+                <p role="status">没有匹配的主题，请换个关键词。</p>
+              )}
               <label>
                 字号：{settings.fontSize}px
                 <input

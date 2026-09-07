@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "../platform/window";
+import { confirm } from "../platform/dialog";
 
 /** Own the close request end-to-end; never recursively request another close. */
 export function useWindowClose(hasActiveSession: boolean): string | null {
@@ -14,7 +14,7 @@ export function useWindowClose(hasActiveSession: boolean): string | null {
     let unlisten: (() => void) | undefined;
     appWindow
       .onCloseRequested(async (event) => {
-        // Tauri's default continuation also calls destroy(), so prevent it before awaiting.
+        // The main process defers closing while this handler confirms active sessions.
         event.preventDefault();
         if (disposed || pending) return;
         pending = true;

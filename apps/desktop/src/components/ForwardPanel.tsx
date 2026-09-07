@@ -9,7 +9,7 @@ import { NativeSelect } from "./ui/native-select";
 import { Button } from "./ui/button";
 import { IconClose } from "./Icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform/core";
 
 type ForwardType = "local" | "remote" | "dynamic";
 

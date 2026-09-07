@@ -16,9 +16,9 @@ import { IconClose, IconFolder, IconFile, IconChevronRight } from "./Icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { open } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { open } from "../platform/dialog";
+import { invoke } from "../platform/core";
+import { listen } from "../platform/event";
 import {
   createTransfer,
   formatTransferSize,
@@ -320,7 +320,7 @@ export default function SftpPanel({
     let disposed = false;
     let unlisten: (() => void) | undefined;
     const registration = listen<DragDropPayload>(
-      "tauri://drag-drop",
+      "desktop://drag-drop",
       (event) => {
         const rect = panelRef.current?.getBoundingClientRect();
         const point = event.payload.position;

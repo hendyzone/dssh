@@ -8,8 +8,8 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { IconClose } from "./Icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { invoke } from "../platform/core";
+import { confirm } from "../platform/dialog";
 import type { TmuxSession, TmuxSnapshot } from "../lib/tmux";
 import "./TmuxPanel.css";
 

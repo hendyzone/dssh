@@ -1,8 +1,10 @@
+import { EXTRA_THEMES } from "./themePresets";
 /** 主题预设：ui 驱动界面 CSS 变量，term 传给 ghostty-web */
 export interface ThemePreset {
   id: string;
   name: string;
   description?: string;
+  category?: "dark" | "light" | "mixed";
   ui: {
     bg: string;
     panel: string;
@@ -19,6 +21,23 @@ export interface ThemePreset {
     cursor: string;
     cursorAccent: string;
     selectionBackground: string;
+    selectionForeground?: string;
+    black?: string;
+    red?: string;
+    green?: string;
+    yellow?: string;
+    blue?: string;
+    magenta?: string;
+    cyan?: string;
+    white?: string;
+    brightBlack?: string;
+    brightRed?: string;
+    brightGreen?: string;
+    brightYellow?: string;
+    brightBlue?: string;
+    brightMagenta?: string;
+    brightCyan?: string;
+    brightWhite?: string;
   };
 }
 
@@ -174,10 +193,22 @@ export const THEMES: ThemePreset[] = [
       selectionBackground: "#d3d4d6",
     },
   },
+  ...EXTRA_THEMES,
 ];
 
+export function themeCategory(theme: ThemePreset): "dark" | "light" | "mixed" {
+  return (
+    theme.category ??
+    (["one-light", "catppuccin-latte"].includes(theme.id) ? "light" : "dark")
+  );
+}
+
 export function getTheme(id: string): ThemePreset {
-  return THEMES.find((t) => t.id === id) ?? THEMES[0];
+  const theme = THEMES.find((t) => t.id === id) ?? THEMES[0];
+  return {
+    ...theme,
+    term: { ...theme.term, selectionForeground: theme.term.foreground },
+  };
 }
 
 /** 把主题应用到 :root CSS 变量 */
@@ -186,4 +217,7 @@ export function applyTheme(theme: ThemePreset): void {
   for (const [key, value] of Object.entries(theme.ui)) {
     root.style.setProperty(`--ui-${key}`, value);
   }
+  root.style.setProperty("--term-bg", theme.term.background);
+  root.style.setProperty("--term-fg", theme.term.foreground);
+  root.style.colorScheme = themeCategory(theme) === "dark" ? "dark" : "light";
 }

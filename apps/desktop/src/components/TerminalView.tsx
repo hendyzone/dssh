@@ -7,8 +7,8 @@ import {
 } from "../lib/taskStatus";
 import { IconClose } from "./Icons";
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke } from "../platform/core";
+import { listen, type UnlistenFn } from "../platform/event";
 import { FitAddon, Terminal, init } from "ghostty-web";
 import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 import { findImageAtPoint } from "../lib/kittyPreview";
@@ -72,7 +72,7 @@ interface Props {
   onCwdChange?: (paneId: string, cwd: string) => void;
 }
 
-// ghostty-web 终端组件，经 Tauri commands 与 Rust SSH 层（russh）交互
+// ghostty-web 终端组件，经 Electron IPC 与 Rust SSH 后台（russh）交互
 // 注意：固定使用 Canvas 渲染器（WebGL 路径暂不支持 Kitty graphics）
 export default function TerminalView({
   session,
@@ -259,6 +259,8 @@ export default function TerminalView({
     const t = termRef.current;
     if (!t) return;
     const theme = getTheme(settings.themeId).term;
+    // Ghostty merges themes; reset first so old ANSI colors cannot leak into another preset.
+    t.options.theme = {};
     t.options.theme = theme;
     t.options.fontSize = settings.fontSize;
     t.options.fontFamily = settings.fontFamily;

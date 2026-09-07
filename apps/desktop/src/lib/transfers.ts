@@ -1,5 +1,5 @@
-import { listen } from "@tauri-apps/api/event";
-import type { Event, UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "../platform/event";
+import type { Event, UnlistenFn } from "../platform/event";
 
 export type TransferDirection = "upload" | "download";
 export type TransferStatus = "active" | "done" | "error";

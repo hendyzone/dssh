@@ -1,0 +1,29 @@
+[package]
+name = "dssh-backend"
+version = "1.0.0"
+description = "Personal modern SSH client"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "dssh_lib"
+crate-type = ["rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+# SSH 协议层：交互 shell / SFTP / 端口转发
+russh = "0.54"
+russh-sftp = "2"
+# 系统安全凭据存储（macOS Keychain / Windows Credential Manager）
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+# GitHub 同步：纯 Rust TLS，避免依赖 OpenSSL
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+aes-gcm = "0.10"
+argon2 = "0.5"
+base64 = "0.22"
+rand = "0.8"

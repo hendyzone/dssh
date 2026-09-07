@@ -14,8 +14,8 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (e: { payload: unknown }) => void>(),
   off: vi.fn(),
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+vi.mock("../src/platform/core", () => ({ invoke: mocks.invoke }));
+vi.mock("../src/platform/event", () => ({ listen: mocks.listen }));
 const fixture: MonitorStats = {
   cpuPct: 20,
   cpus: [{ name: "cpu0", pct: 20 }],

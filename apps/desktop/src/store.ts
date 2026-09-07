@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./platform/core";
 import { applyTheme, getTheme } from "./themes";
 import type { AppSettings, ServerEntry } from "./types";
 

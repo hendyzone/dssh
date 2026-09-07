@@ -5,8 +5,8 @@ import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { IconClose } from "./Icons";
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { invoke } from "../platform/core";
+import { listen } from "../platform/event";
 import { IconMonitor } from "./Icons";
 import {
   bytes,

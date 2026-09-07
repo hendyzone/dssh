@@ -3,7 +3,7 @@
 ## 总览
 
 ```
-┌─ 桌面壳：Tauri v2（Rust + Web 前端，macOS/Windows 单包分发）
+┌─ 桌面壳：Electron（固定版本 Chromium，Windows/macOS/Linux 分发）
 │
 ├─ 前端（React + TypeScript + Vite）
 │   ├─ 侧边栏：服务器列表 / 分组 / 搜索
@@ -12,7 +12,7 @@
 │   ├─ 端口转发管理面板
 │   └─ 服务器监控小面板
 │
-├─ Rust 后端（Tauri commands）
+├─ Rust 独立后台（私有 stdio JSON RPC）
 │   ├─ russh：SSH 连接、shell 会话、SFTP、端口转发
 │   └─ keyring：系统安全存储凭据（Keychain / Credential Manager）
 │
@@ -40,15 +40,16 @@
 5. ⚠️ Kitty keyboard protocol 未实现（input-handler 无 CSI u 编码）→ pi 的 Shift+Enter 等按键不可用，待补
 6. 待观察：长时间会话渲染稳定性
 
-### 桌面壳：Tauri v2（而非 Electron）
+### 桌面壳：Electron
 
-- 体积小（~10MB vs ~150MB）、内存低、原生系统能力（keychain、窗口）
-- 代价：前端跑在系统 WebView（macOS WKWebView / Windows WebView2），ghostty-web 的 WASM + Canvas 在两者中均可运行，但需实测 WKWebView 表现
+- 自带固定版本 Chromium，统一终端 Canvas、WASM、剪贴板和输入行为，降低设备差异维护成本。
+- 主进程管理窗口、对话框和后台生命周期；隔离的 preload 暴露受限 IPC，渲染进程不具备 Node 权限。
+- 代价是安装包和运行内存增加。旧 WebView 界面设置的迁移方式见 [Electron 迁移](electron.md)。
 
 ### SSH 层：russh（纯 Rust SSH 库）
 
 - shell 交互会话、SFTP 子系统、tcpip-forward / direct-tcpip 全支持
-- 与 Tauri 后端同进程，字节流通过 Tauri event 推给前端终端组件
+- 作为无窗口 Rust 后台运行，字节流经私有 stdio 和 Electron IPC 推给前端终端组件。
 
 ### 凭据存储：keyring crate
 
@@ -57,10 +58,10 @@
 ## 数据流（终端会话）
 
 ```
-远程主机 ←SSH→ russh（Rust） ←Tauri event/invoke→ 前端 ←→ ghostty-web（WASM 解析 + Canvas 渲染）
+远程主机 ←SSH→ russh 后台 ←stdio JSON→ Electron 主进程 ←IPC/preload→ React ←→ ghostty-web
 ```
 
-键盘输入经 ghostty-web `onData` → Tauri invoke → russh channel 写入；输出反向。
+键盘输入经 ghostty-web `onData` → platform invoke → Electron IPC → stdio → russh channel 写入；输出反向。
 Kitty keyboard protocol 的启用标志位由 ghostty-web 输入层处理（M0 验证）。
 
 ## 仓库结构
@@ -71,9 +72,11 @@ dssh/
 ├── prototypes/
 │   └── kitty-image/       # M0 验证 demo（Vite + ghostty-web + node ws/pty）
 └── apps/
-    └── desktop/           # Tauri 桌面应用
+    └── desktop/           # Electron 桌面应用
         ├── src/           # React 前端
-        └── src-tauri/     # Rust 后端
+        ├── electron/      # 主进程、preload、后台通信和打包图标
+        ├── scripts/       # 开发启动与后台构建
+        └── backend/       # Rust SSH/SFTP 等业务与 stdio 分发
 ```
 
 ## 备选方案（若 ghostty-web 验证失败）

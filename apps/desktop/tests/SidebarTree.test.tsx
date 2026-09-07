@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../src/platform/core";
 import { expect, it, vi } from "vitest";
 import Sidebar from "../src/components/Sidebar";
 import type { ServerEntry } from "../src/types";
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../src/platform/core", () => ({ invoke: vi.fn() }));
 
 it("reorders siblings with an insertion line and persists the order without changing server records", async () => {
   const siblings = servers.map(server => ({ ...server, group: undefined }));
