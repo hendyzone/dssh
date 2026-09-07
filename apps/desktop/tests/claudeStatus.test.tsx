@@ -1,0 +1,21 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { reportTask } from "../src/lib/taskStatus";
+import { useClaudeStatus, type ClaudeTask } from "../src/lib/claudeStatus";
+vi.mock("@tauri-apps/api/core", () => ({invoke:vi.fn()}));
+vi.mock("../src/lib/taskStatus", () => ({reportTask:vi.fn(), removeTask:vi.fn()}));
+it("monitors independently of panels, notifies only new events, and marks failures unknown", async () => {
+  const task = {id:"task", title:"Fix", status:{phase:"running", updated:1}, tmux:null} as unknown as ClaudeTask;
+  vi.mocked(invoke).mockResolvedValue([task]);
+  const view = renderHook(() => useClaudeStatus([{serverId:"host", name:"Server", sessionId:"ssh"}]));
+  await waitFor(() => expect(reportTask).toHaveBeenCalledWith("claude:host:task", "Server · Fix", "working", "处理中", false, false, 1));
+  vi.mocked(invoke).mockResolvedValue([{...task, status:{phase:"idle", updated:2}}]);
+  act(() => window.dispatchEvent(new Event("dssh-claude-refresh")));
+  await waitFor(() => expect(reportTask).toHaveBeenCalledWith("claude:host:task", "Server · Fix", "idle", "本轮已结束", false, true, 2));
+  vi.mocked(invoke).mockRejectedValue(new Error("SSH lost"));
+  act(() => window.dispatchEvent(new Event("dssh-claude-refresh")));
+  await waitFor(() => expect(view.result.current.host.error).toContain("状态未知"));
+  expect(reportTask).toHaveBeenCalledWith("claude:host:task", "Server", "disconnected", "无法读取 Claude 状态", false);
+  view.unmount();
+});

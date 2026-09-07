@@ -136,11 +136,26 @@ pub async fn sftp_list(
     path: String,
 ) -> Result<Vec<FileEntry>, Error> {
     let sftp = open_sftp(&state, &session_id).await?;
+    let entries = list_directory(&sftp, path).await;
+    sftp.close().await?;
+    entries
+}
+
+async fn list_directory(sftp: &SftpSession, path: String) -> Result<Vec<FileEntry>, Error> {
     let mut directory = sftp.read_dir(path).await?;
     let mut entries = Vec::new();
 
     for entry in &mut directory {
         let metadata = entry.metadata();
+        // READDIR describes the link itself. STAT follows relative and absolute
+        // links on the server, while navigation keeps the original link path.
+        // A broken/inaccessible link must not prevent listing its siblings.
+        let target = if metadata.is_symlink() {
+            sftp.metadata(entry.path()).await.ok()
+        } else {
+            None
+        };
+        let metadata = target.as_ref().unwrap_or(&metadata);
         entries.push(FileEntry {
             name: entry.file_name(),
             path: entry.path(),
@@ -151,7 +166,6 @@ pub async fn sftp_list(
         });
     }
 
-    sftp.close().await?;
     entries.sort_by(|a, b| {
         b.is_dir
             .cmp(&a.is_dir)
@@ -407,15 +421,21 @@ pub async fn sftp_delete(
     state: State<'_, SshState>,
     session_id: String,
     path: String,
-    is_dir: bool,
 ) -> Result<(), Error> {
     let sftp = open_sftp(&state, &session_id).await?;
-    if is_dir {
+    let result = remove_entry(&sftp, path).await;
+    sftp.close().await?;
+    result
+}
+
+async fn remove_entry(sftp: &SftpSession, path: String) -> Result<(), Error> {
+    // Do not follow links here, even when the UI displays them as directories.
+    let metadata = sftp.symlink_metadata(path.clone()).await?;
+    if metadata.is_dir() {
         sftp.remove_dir(path).await?;
     } else {
         sftp.remove_file(path).await?;
     }
-    sftp.close().await?;
     Ok(())
 }
 
@@ -628,7 +648,7 @@ mod file_write_tests {
     use super::*;
     #[tokio::test]
     #[ignore = "requires extracted OpenSSH SFTP test runtime in tools/sftp-test"]
-    async fn sftp_live_creates_image_and_truncates_text() {
+    async fn sftp_live_files_and_directory_links() {
         use std::process::Stdio;
         let mut process = tokio::process::Command::new("wsl")
             .args([
@@ -650,6 +670,60 @@ mod file_write_tests {
         let sftp = SftpSession::new(stream).await.unwrap();
         let dir = format!("/tmp/dssh-sftp-test-{}", random_name());
         sftp.create_dir(dir.clone()).await.unwrap();
+        let target = format!("{dir}/target");
+        sftp.create_dir(target.clone()).await.unwrap();
+        write_remote_file(&sftp, &format!("{target}/child.txt"), b"child", true)
+            .await
+            .unwrap();
+        for (name, destination) in [
+            ("relative", "target"),
+            ("absolute", target.as_str()),
+            ("file-link", "target/child.txt"),
+            ("broken", "missing"),
+        ] {
+            assert!(tokio::process::Command::new("wsl")
+                .args([
+                    "-d",
+                    "Ubuntu",
+                    "--",
+                    "ln",
+                    "-s",
+                    destination,
+                    &format!("{dir}/{name}")
+                ])
+                .status()
+                .await
+                .unwrap()
+                .success());
+        }
+        let entries = list_directory(&sftp, dir.clone()).await.unwrap();
+        for name in ["relative", "absolute"] {
+            let entry = entries.iter().find(|entry| entry.name == name).unwrap();
+            assert!(entry.is_dir);
+            assert_eq!(entry.path, format!("{dir}/{name}"));
+            let children = list_directory(&sftp, entry.path.clone()).await.unwrap();
+            assert_eq!(children[0].name, "child.txt");
+            remove_entry(&sftp, entry.path.clone()).await.unwrap();
+            assert!(sftp.metadata(target.clone()).await.unwrap().is_dir());
+        }
+        for name in ["file-link", "broken"] {
+            assert!(
+                !entries
+                    .iter()
+                    .find(|entry| entry.name == name)
+                    .unwrap()
+                    .is_dir
+            );
+            remove_entry(&sftp, format!("{dir}/{name}")).await.unwrap();
+        }
+        assert_eq!(
+            sftp.read(format!("{target}/child.txt")).await.unwrap(),
+            b"child"
+        );
+        remove_entry(&sftp, format!("{target}/child.txt"))
+            .await
+            .unwrap();
+        remove_entry(&sftp, target).await.unwrap();
         let path = format!("{dir}/screenshot.png");
         let png = [137, 80, 78, 71, 13, 10, 26, 10, 0, 1, 2, 3];
         write_remote_file(&sftp, &path, &png, true).await.unwrap();

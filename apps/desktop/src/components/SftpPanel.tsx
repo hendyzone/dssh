@@ -436,7 +436,6 @@ export default function SftpPanel({
       await invoke("sftp_delete", {
         sessionId,
         path: entry.path,
-        isDir: entry.isDir,
       });
     });
   };

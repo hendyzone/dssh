@@ -1,4 +1,5 @@
 mod commands;
+mod claude;
 mod diagnostics;
 mod forward;
 mod monitor;
@@ -52,6 +53,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            claude::claude_status,
             commands::desktop_devtools,
             commands::desktop_report_error,
             commands::desktop_restart,

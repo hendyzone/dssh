@@ -91,11 +91,14 @@ exit 0
 "#;
 
 pub(crate) async fn execute(handle: &SharedHandle, command: &str) -> Result<String, String> {
+    execute_with_timeout(handle, command, Duration::from_secs(12)).await
+}
+pub(crate) async fn execute_with_timeout(handle: &SharedHandle, command: &str, timeout: Duration) -> Result<String, String> {
     let mut channel = tokio::time::timeout(Duration::from_secs(10), handle.channel_open_session())
         .await
         .map_err(|_| "SSH 通道超时")?
         .map_err(|e| e.to_string())?;
-    let result = tokio::time::timeout(Duration::from_secs(12), async {
+    let result = tokio::time::timeout(timeout, async {
         channel
             .exec(true, command)
             .await

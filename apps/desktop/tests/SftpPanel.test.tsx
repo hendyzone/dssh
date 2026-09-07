@@ -13,6 +13,18 @@ function setup(){ vi.mocked(invoke).mockImplementation(async(command,args:any)=>
   if(command === "sftp_save_text")return "backup";
   return [];
 }); render(<SftpPanel sessionId="session" onClose={()=>{}}/>); }
+it("enters a resolved directory link without downloading it",async()=>{
+ vi.mocked(invoke).mockClear();
+ vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
+  if(command === "sftp_home")return "/home/demo";
+  if(command === "sftp_list")return args.path === "/home/demo" ? [{name:"workspace",path:"/home/demo/workspace",isDir:true}] : [];
+  return [];
+ });
+ render(<SftpPanel sessionId="session" onClose={()=>{}}/>);
+ fireEvent.doubleClick(await screen.findByText("workspace"));
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_list",{sessionId:"session",path:"/home/demo/workspace"}));
+ expect(vi.mocked(invoke).mock.calls.some(([command])=>command === "sftp_download")).toBe(false);
+});
 it("opens the displayed remote folder with the selected saved connection",async()=>{
  vi.mocked(invoke).mockImplementation(async(command)=>command === "sftp_home" ? "/home/demo/project space" : []);
  render(<SftpPanel sessionId="session" serverId="saved-server" onClose={()=>{}}/>);

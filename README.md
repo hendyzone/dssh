@@ -5,7 +5,7 @@
 <h1 align="center">dssh</h1>
 
 <p align="center">把远程终端、文件和开发任务放在同一个工作区。</p>
-<p align="center"><strong>v1.0.2</strong> · Tauri SSH 客户端 · Windows / macOS</p>
+<p align="center"><strong>v1.1.2</strong> · Tauri SSH 客户端 · Windows / macOS</p>
 
 dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中运行长任务、编辑远程文件、查看代码差异，也能给远程 Codex、Claude 等工具粘贴截图路径。
 

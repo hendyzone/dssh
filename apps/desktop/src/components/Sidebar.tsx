@@ -501,8 +501,18 @@ export default function Sidebar({
                     key={s.id}
                     variant="ghost"
                     className="recent-connection"
-                    title={`连接 ${s.name} — ${s.username}@${s.host}:${s.port}`}
-                    onClick={() => onConnect(s)}
+                    title={`双击连接 ${s.name} — ${s.username}@${s.host}:${s.port}`}
+                    onClick={() => {
+                      setSelectedId(s.id);
+                      setContextMenu(undefined);
+                    }}
+                    onDoubleClick={() => onConnect(s)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        onConnect(s);
+                      }
+                    }}
                   >
                     <span>{s.name}</span>
                     <small>

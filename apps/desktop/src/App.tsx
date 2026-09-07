@@ -3,6 +3,7 @@ import { PositionedMenu, MenuItem } from "./components/ui/positioned-menu";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import TasksPanel, { useTasks } from "./components/TasksPanel";
+import { useClaudeStatus, claudeTaskId, type ClaudeHost } from "./lib/claudeStatus";
 import ChangesPanel from "./components/ChangesPanel";
 import { focusTask, taskLabels } from "./lib/taskStatus";
 import ToolRail from "./components/ToolRail";
@@ -96,7 +97,31 @@ export default function App() {
   );
   /** 每个标签页打开的侧面板 */
   const taskStates = useTasks();
+  const claudeHosts = new Map<string, ClaudeHost>();
+  tabs.forEach(tab => tab.panes.forEach(pane => {
+    const sessionId = backendIds[pane.id];
+    if (sessionId && !claudeHosts.has(pane.server.id)) claudeHosts.set(pane.server.id, {serverId:pane.server.id, name:pane.server.name, sessionId});
+  }));
+  const claudeSnapshots = useClaudeStatus([...claudeHosts.values()]);
+  useEffect(() => {
+    const tab = tabs.find(item => item.id === activeTabId);
+    const pane = tab?.panes[tab.activePane];
+    if (!pane?.tmux || document.hidden || !document.hasFocus()) return;
+    const task = claudeSnapshots[pane.server.id]?.tasks.find(item => item.tmux?.id === pane.tmux?.id);
+    if (task) focusTask(claudeTaskId(pane.server.id, task.id));
+  }, [claudeSnapshots, activeTabId, tabs]);
   const selectTask = (id: string) => {
+    if (id.startsWith("claude:")) {
+      for (const tab of tabs) for (const pane of tab.panes) {
+        const task = claudeSnapshots[pane.server.id]?.tasks.find(item => claudeTaskId(pane.server.id, item.id) === id);
+        if (task) {
+          focusTask(id);
+          if (task.tmux) connect(pane.server, tab.groupId, {...task.tmux, name:task.title});
+          else {setActiveTabId(tab.id); setSidePanels(old => ({...old, [tab.id]:"tasks"}));}
+          return;
+        }
+      }
+    }
     const tab = tabs.find((t) => t.panes.some((p) => p.id === id));
     if (tab) {
       setActiveTabId(tab.id);

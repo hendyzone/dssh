@@ -1,7 +1,11 @@
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+
 export type TaskPhase =
   | "running"
+  | "working"
   | "waiting"
   | "done"
+  | "idle"
   | "error"
   | "quiet"
   | "disconnected";
@@ -21,8 +25,10 @@ let focused = "";
 let desktop = false;
 export const taskLabels: Record<TaskPhase, string> = {
   running: "有新输出",
+  working: "处理中",
   waiting: "需要关注",
   done: "已完成",
+  idle: "本轮已结束",
   error: "出现错误",
   quiet: "暂时无输出",
   disconnected: "连接断开",
@@ -50,6 +56,11 @@ export function removeTask(id: string) {
   subscribers.forEach((fn) => fn());
 }
 export async function enableDesktopNotifications() {
+  if ("__TAURI_INTERNALS__" in window) {
+    desktop = await isPermissionGranted() || await requestPermission() === "granted";
+    if (!desktop) throw new Error("未授予通知权限，仍会显示应用内提醒");
+    return;
+  }
   if (typeof Notification === "undefined")
     throw new Error("此系统未提供桌面通知，仍会显示应用内提醒");
   const result = await Notification.requestPermission();
@@ -66,13 +77,15 @@ export function reportTask(
   phase: TaskPhase,
   message: string,
   estimated = false,
+  notify = true,
+  eventTime?: number,
 ) {
   const old = states.get(id);
   const background=focused !== id || document.hidden || !document.hasFocus();
-  const important = ["waiting", "done", "error", "disconnected"].includes(
+  const important = ["waiting", "done", "idle", "error", "disconnected"].includes(
     phase,
   );
-  const changed = !old || old.phase !== phase || old.message !== message;
+  const changed = !old || old.phase !== phase || old.message !== message || (eventTime !== undefined && old.updated !== eventTime);
   if (!changed && Date.now() - (old?.updated ?? 0) < 1500) return;
   states.set(id, {
     id,
@@ -80,19 +93,20 @@ export function reportTask(
     phase,
     message: message.slice(0, 240),
     estimated,
-    updated: Date.now(),
-    unread: important && background && (changed || !!old?.unread),
+    updated: eventTime ?? Date.now(),
+    unread: important && background && ((notify && changed) || !!old?.unread),
   });
   if (
     important &&
+    notify &&
     changed &&
     background &&
-    desktop &&
-    typeof Notification !== "undefined" &&
-    Notification.permission === "granted"
+    desktop
   ) {
     try {
-      new Notification(name, {
+      if ("__TAURI_INTERNALS__" in window) {
+        sendNotification({title:name, body:taskLabels[phase]});
+      } else if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(name, {
         body: taskLabels[phase] + (estimated ? "（推测）" : ""),
         tag: id,
       });
