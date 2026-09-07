@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window-close",
+  "description": "Allow the main window to complete a user-requested close after session confirmation.",
+  "windows": ["main"],
+  "permissions": ["core:window:allow-destroy", "dialog:allow-confirm"]
+}

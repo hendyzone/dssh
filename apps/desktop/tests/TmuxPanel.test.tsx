@@ -8,8 +8,8 @@ import {
 import { beforeEach, expect, test, vi } from "vitest";
 import TmuxPanel from "../src/components/TmuxPanel";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), confirm: vi.fn() }));
-vi.mock("../src/platform/core", () => ({ invoke: mocks.invoke }));
-vi.mock("../src/platform/dialog", () => ({ confirm: mocks.confirm }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ confirm: mocks.confirm }));
 const snapshot = {
   installed: true,
   version: "tmux 3.4",

@@ -869,19 +869,28 @@ var Te = new TextDecoder(), P = class e {
 		this.update(), this.zeroCellPool(), this.populateHandle((e) => this.exports.ghostty_render_state_get(this.renderHandle, m.ROW_ITERATOR, e), this.rowIter);
 		let e = this.exports.ghostty_wasm_alloc_u8_array(4), t = this.exports.ghostty_wasm_alloc_u8_array(3), n = this.exports.ghostty_wasm_alloc_u8(), r = this.exports.ghostty_wasm_alloc_u8_array(8), i = this.exports.ghostty_wasm_alloc_u8(), a = this.exports.ghostty_wasm_alloc_u8_array(72);
 		new DataView(this.memory.buffer).setUint32(a, 72, !0);
-		let o = this.exports.ghostty_wasm_alloc_u8_array(8), s = this.exports.ghostty_wasm_alloc_u8_array(4), c = Array(this._rows).fill(!1), l = Array(this._rows).fill(!1);
+		let o = this.exports.ghostty_wasm_alloc_u8_array(8), s = this.exports.ghostty_wasm_alloc_u8_array(4), c = 0, l = 0, u = Array(this._rows).fill(!1), d = Array(this._rows).fill(!1);
 		try {
-			let u = 0;
-			for (; u < this._rows && this.exports.ghostty_render_state_row_iterator_next(this.rowIter);) {
-				this.exports.ghostty_render_state_row_get(this.rowIter, w.DIRTY, n), c[u] = new DataView(this.memory.buffer).getUint8(n) !== 0, this.exports.ghostty_render_state_row_get(this.rowIter, w.RAW, r);
-				let d = new DataView(this.memory.buffer).getBigUint64(r, !0);
-				this.exports.ghostty_row_get(d, te.WRAP_CONTINUATION, i), l[u] = new DataView(this.memory.buffer).getUint8(i) !== 0, this.populateHandle((e) => this.exports.ghostty_render_state_row_get(this.rowIter, w.CELLS, e), this.rowCells);
-				let f = 0;
-				for (; f < this._cols && this.exports.ghostty_render_state_row_cells_next(this.rowCells);) {
-					let n = this.cellPool[u * this._cols + f];
+			let f = 0;
+			for (; f < this._rows && this.exports.ghostty_render_state_row_iterator_next(this.rowIter);) {
+				this.exports.ghostty_render_state_row_get(this.rowIter, w.DIRTY, n), u[f] = new DataView(this.memory.buffer).getUint8(n) !== 0, this.exports.ghostty_render_state_row_get(this.rowIter, w.RAW, r);
+				let p = new DataView(this.memory.buffer).getBigUint64(r, !0);
+				this.exports.ghostty_row_get(p, te.WRAP_CONTINUATION, i), d[f] = new DataView(this.memory.buffer).getUint8(i) !== 0, this.populateHandle((e) => this.exports.ghostty_render_state_row_get(this.rowIter, w.CELLS, e), this.rowCells);
+				let m = 0;
+				for (; m < this._cols && this.exports.ghostty_render_state_row_cells_next(this.rowCells);) {
+					let n = this.cellPool[f * this._cols + m];
 					this.exports.ghostty_render_state_row_cells_get(this.rowCells, E.GRAPHEMES_LEN, e);
 					let r = new DataView(this.memory.buffer).getUint32(e, !0);
-					if (n.grapheme_len = r > 0 ? r - 1 : 0, r > 0 ? (this.exports.ghostty_render_state_row_cells_get(this.rowCells, E.GRAPHEMES_BUF, e), n.codepoint = new DataView(this.memory.buffer).getUint32(e, !0)) : n.codepoint = 0, n.fg_r = n.fg_g = n.fg_b = 0, n.bg_r = n.bg_g = n.bg_b = 0, n.fgIsDefault = !0, n.bgIsDefault = !0, this.exports.ghostty_render_state_row_cells_get(this.rowCells, E.FG_COLOR, t) === 0) {
+					if (n.grapheme_len = r > 0 ? r - 1 : 0, r > 0) {
+						let e = r * 4;
+						if (e > l) {
+							let t = this.exports.ghostty_wasm_alloc_u8_array(e);
+							if (!t) throw Error("Unable to allocate viewport grapheme buffer");
+							c && this.exports.ghostty_wasm_free_u8_array(c, l), c = t, l = e;
+						}
+						this.exports.ghostty_render_state_row_cells_get(this.rowCells, E.GRAPHEMES_BUF, c), n.codepoint = new DataView(this.memory.buffer).getUint32(c, !0);
+					} else n.codepoint = 0;
+					if (n.fg_r = n.fg_g = n.fg_b = 0, n.bg_r = n.bg_g = n.bg_b = 0, n.fgIsDefault = !0, n.bgIsDefault = !0, this.exports.ghostty_render_state_row_cells_get(this.rowCells, E.FG_COLOR, t) === 0) {
 						let e = new Uint8Array(this.memory.buffer, t, 3);
 						n.fg_r = e[0], n.fg_g = e[1], n.fg_b = e[2], n.fgIsDefault = !1;
 					}
@@ -897,15 +906,15 @@ var Te = new TextDecoder(), P = class e {
 					this.exports.ghostty_render_state_row_cells_get(this.rowCells, E.RAW, o);
 					let i = new DataView(this.memory.buffer).getBigUint64(o, !0);
 					this.exports.ghostty_cell_get(i, O.WIDE, s);
-					let c = new DataView(this.memory.buffer).getUint32(s, !0);
-					n.width = c === k.WIDE ? 2 : c === k.SPACER_TAIL || c === k.SPACER_HEAD ? 0 : 1, this.exports.ghostty_cell_get(i, O.HAS_HYPERLINK, s), n.hyperlink_id = new DataView(this.memory.buffer).getUint8(s) === 0 ? 0 : 1, f++;
+					let u = new DataView(this.memory.buffer).getUint32(s, !0);
+					n.width = u === k.WIDE ? 2 : u === k.SPACER_TAIL || u === k.SPACER_HEAD ? 0 : 1, this.exports.ghostty_cell_get(i, O.HAS_HYPERLINK, s), n.hyperlink_id = new DataView(this.memory.buffer).getUint8(s) === 0 ? 0 : 1, m++;
 				}
-				u++;
+				f++;
 			}
 		} finally {
-			this.exports.ghostty_wasm_free_u8_array(e, 4), this.exports.ghostty_wasm_free_u8_array(t, 3), this.exports.ghostty_wasm_free_u8(n), this.exports.ghostty_wasm_free_u8_array(r, 8), this.exports.ghostty_wasm_free_u8(i), this.exports.ghostty_wasm_free_u8_array(a, 72), this.exports.ghostty_wasm_free_u8_array(o, 8), this.exports.ghostty_wasm_free_u8_array(s, 4);
+			c && this.exports.ghostty_wasm_free_u8_array(c, l), this.exports.ghostty_wasm_free_u8_array(e, 4), this.exports.ghostty_wasm_free_u8_array(t, 3), this.exports.ghostty_wasm_free_u8(n), this.exports.ghostty_wasm_free_u8_array(r, 8), this.exports.ghostty_wasm_free_u8(i), this.exports.ghostty_wasm_free_u8_array(a, 72), this.exports.ghostty_wasm_free_u8_array(o, 8), this.exports.ghostty_wasm_free_u8_array(s, 4);
 		}
-		return this.rowDirtyCache = c, this.rowWrapCache = l, this.viewportCache = this.cellPool, this.viewportCache;
+		return this.rowDirtyCache = u, this.rowWrapCache = d, this.viewportCache = this.cellPool, this.viewportCache;
 	}
 	populateHandle(e, t) {
 		let n = this.exports.ghostty_wasm_alloc_u8_array(4);
@@ -3445,7 +3454,7 @@ var We = class e {
 			let c = -1, l = o === t ? e : 0, u = o === r ? n : s.length - 1, d = "";
 			for (let e = l; e <= u; e++) {
 				let t = s[e];
-				if (t && t.codepoint !== 0) {
+				if (t?.width !== 0) if (t && t.codepoint !== 0) {
 					let n;
 					if (t.grapheme_len > 0) if (o < i) n = this.wasmTerm.getScrollbackGraphemeString(o, e);
 					else {

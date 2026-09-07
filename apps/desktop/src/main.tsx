@@ -2,9 +2,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import ImagePreview from "./components/ImagePreview";
+import AppErrorBoundary from "./components/AppErrorBoundary";
+import { installDiagnostics } from "./lib/diagnostics";
 import "./ui.css";
 import "./style.css";
 
+const disposeDiagnostics = installDiagnostics();
+if (import.meta.hot) import.meta.hot.dispose(disposeDiagnostics);
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("#root not found");
 
@@ -13,6 +17,6 @@ const previewMatch = location.hash.match(/^#\/preview\/(.+)$/);
 
 createRoot(rootEl).render(
   <StrictMode>
-    {previewMatch ? <ImagePreview id={previewMatch[1]} /> : <App />}
+    {previewMatch ? <ImagePreview id={previewMatch[1]} /> : <AppErrorBoundary><App /></AppErrorBoundary>}
   </StrictMode>,
 );

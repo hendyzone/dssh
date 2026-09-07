@@ -1,10 +1,10 @@
 import {render,screen,fireEvent,waitFor} from "@testing-library/react";
 import {it,expect,vi} from "vitest";
-import {invoke} from "../src/platform/core";
+import {invoke} from "@tauri-apps/api/core";
 import SftpPanel from "../src/components/SftpPanel";
-vi.mock("../src/platform/core",()=>({invoke:vi.fn()}));
-vi.mock("../src/platform/event",()=>({listen:vi.fn().mockResolvedValue(()=>{})}));
-vi.mock("../src/platform/dialog",()=>({open:vi.fn()}));
+vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn()}));
+vi.mock("@tauri-apps/api/event",()=>({listen:vi.fn().mockResolvedValue(()=>{})}));
+vi.mock("@tauri-apps/plugin-dialog",()=>({open:vi.fn()}));
 vi.mock("../src/lib/transfers",()=>({subscribeTransfers:()=>()=>{},createTransfer:()=>"transfer",waitForTransferListener:async()=>{},formatTransferSize:()=>"",transferPercent:()=>0}));
 function setup(){ vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
   if(command === "sftp_home")return "/home/demo";

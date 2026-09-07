@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { invoke } from "../src/platform/core";
+import { invoke } from "@tauri-apps/api/core";
 import SettingsModal from "../src/components/SettingsModal";
-vi.mock("../src/platform/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 function setup() {
   render(
     <SettingsModal

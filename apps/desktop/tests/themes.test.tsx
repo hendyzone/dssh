@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { THEMES, applyTheme, getTheme, themeCategory } from "../src/themes";
 import SettingsModal from "../src/components/SettingsModal";
-vi.mock("../src/platform/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 it("preserves legacy themes and applies separate UI and terminal palettes", () => {
   expect(new Set(THEMES.map((t) => t.id)).size).toBe(THEMES.length);

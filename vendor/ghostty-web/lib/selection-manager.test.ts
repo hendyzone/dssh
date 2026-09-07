@@ -299,6 +299,24 @@ describe('SelectionManager', () => {
       term.dispose();
     });
 
+    test('copies wide glyphs without spacer columns while preserving real spaces', async () => {
+      if (!container) return;
+      const term = await createIsolatedTerminal({ cols: 80, rows: 4, scrollback: 100 });
+      term.open(container);
+      const content = '中文  测试 ABC 😀';
+      term.write(`${content}\r\n`);
+      setSelectionAbsolute(term, 0, 0, 79, 0);
+      expect(term.getSelection()).toBe(content);
+      // Select backwards, including the trailing half of the first wide glyph.
+      setSelectionAbsolute(term, 3, 0, 0, 0);
+      expect(term.getSelection()).toBe('中文');
+      term.write('line 2\r\nline 3\r\nline 4\r\nline 5\r\n');
+      expect(term.wasmTerm!.getScrollbackLength()).toBeGreaterThan(0);
+      setSelectionAbsolute(term, 0, 0, 79, 0);
+      expect(term.getSelection()).toBe(content);
+      term.dispose();
+    });
+
     test('getSelection extracts text from scrollback', async () => {
       if (!container) return;
 

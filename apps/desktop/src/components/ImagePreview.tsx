@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { invoke } from "../platform/core";
-import { getCurrentWindow } from "../platform/window";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // 预览窗口页面：通过一次性槽位从主窗口取图
 export default function ImagePreview({ id }: { id: string }) {

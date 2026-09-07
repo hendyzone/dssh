@@ -1,7 +1,7 @@
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "../platform/core";
+import { invoke } from "@tauri-apps/api/core";
 import { IconClose } from "./Icons";
 interface Change {
   path: string;

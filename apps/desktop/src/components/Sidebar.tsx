@@ -2,14 +2,14 @@ import { PositionedMenu, MenuItem } from "./ui/positioned-menu";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { History } from "lucide-react";
-import { invoke } from "../platform/core";
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState, useRef } from "react";
 import type { MouseEvent } from "react";
 import { useServerTreeEditing } from "../lib/useServerTreeEditing";
 import { buildServerTree, type ServerGroupNode } from "../lib/serverGroups";
 import { useSidebarWidth } from "../lib/useSidebarWidth";
 import logoUrl from "../assets/logo.png";
-import { version } from "../../package.json";
+import { version } from "../../src-tauri/tauri.conf.json";
 import type { ServerEntry } from "../types";
 import {
   IconClose,

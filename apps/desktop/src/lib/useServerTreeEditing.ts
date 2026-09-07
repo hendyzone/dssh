@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "../platform/core";
+import { invoke } from "@tauri-apps/api/core";
 import type { ServerEntry } from "../types";
 import { groupParts } from "./serverGroups";
 

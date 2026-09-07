@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import ServerImport from "../src/components/ServerImport";
 import { parseServerImport } from "../src/lib/serverImport";
 import { upsertServer } from "../src/store";
-import { invoke } from "../src/platform/core";
-vi.mock("../src/platform/core", () => ({ invoke: vi.fn() }));
+import { invoke } from "@tauri-apps/api/core";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 vi.mock("../src/store", () => ({ upsertServer: vi.fn() }));
-vi.mock("../src/platform/dialog", () => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 const line =
   'host=example.com port=22 user=root authType=password password=synthetic=a title="测试  主机"';
 

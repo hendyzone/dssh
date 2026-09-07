@@ -188,6 +188,9 @@ export class SelectionManager {
       let lineText = '';
       for (let col = colStart; col <= colEnd; col++) {
         const cell = line[col];
+        // Wide glyphs occupy two columns; their width-zero spacer is not text.
+        // Keep real blank cells (width one), including intentional CJK spacing.
+        if (cell?.width === 0) continue;
         if (cell && cell.codepoint !== 0) {
           // Use grapheme lookup for cells with multi-codepoint characters
           let char: string;

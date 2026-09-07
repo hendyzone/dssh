@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import { useWindowClose } from "../src/lib/useWindowClose";
+import { readFileSync } from "node:fs";
 const mock = vi.hoisted(() => ({
   listen: vi.fn(),
   destroy: vi.fn(),
@@ -10,13 +11,13 @@ const mock = vi.hoisted(() => ({
     | null
     | ((e: { preventDefault: () => void }) => Promise<void>),
 }));
-vi.mock("../src/platform/window", () => ({
+vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     onCloseRequested: mock.listen,
     destroy: mock.destroy,
   }),
 }));
-vi.mock("../src/platform/dialog", () => ({ confirm: mock.confirm }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ confirm: mock.confirm }));
 beforeEach(() => {
   mock.handler = null;
   mock.listen.mockImplementation(async (handler) => {
@@ -118,4 +119,12 @@ test("a registration failure is visible", async () => {
   await waitFor(() =>
     expect(result.current).toContain("event listener failed"),
   );
+});
+test("the packaged main window has the destroy permission required by the close handler", () => {
+  const capability = JSON.parse(
+    readFileSync("src-tauri/capabilities/main-window-close.json", "utf8"),
+  );
+  expect(capability.windows).toEqual(["main"]);
+  expect(capability.permissions).toContain("core:window:allow-destroy");
+  expect(capability.permissions).toContain("dialog:allow-confirm");
 });

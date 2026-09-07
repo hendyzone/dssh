@@ -5,7 +5,7 @@
 <h1 align="center">dssh</h1>
 
 <p align="center">把远程终端、文件和开发任务放在同一个工作区。</p>
-<p align="center"><strong>v1.0.0</strong> · Electron SSH 客户端 · Windows / macOS / Linux</p>
+<p align="center"><strong>v1.0.2</strong> · Tauri SSH 客户端 · Windows / macOS</p>
 
 dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中运行长任务、编辑远程文件、查看代码差异，也能给远程 Codex、Claude 等工具粘贴截图路径。
 
@@ -93,25 +93,23 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 <details>
 <summary>从源码运行与构建</summary>
 
-主应用位于 `apps/desktop`，采用 Electron、React、ghostty-web 和独立 Rust / russh 后台。各平台使用随应用打包的同一版本 Chromium。
+主应用位于 `apps/desktop`，采用 Tauri 2、React、ghostty-web 和 russh。
 
-准备 Node.js 22、Rust stable 和本机 C/C++ 构建工具。Windows 还需 NASM（加入 PATH）；无需安装 WebView2 或 WebKitGTK 开发包。Linux 依赖列表见[构建工作流](.github/workflows/build-windows.yml)。
+准备 Node.js 22、Rust stable 和对应平台的 Tauri 2 系统构建依赖。Windows 还需 C++ 构建工具、WebView2 与 NASM；Linux 依赖列表见[构建工作流](.github/workflows/build-windows.yml)。
 
 ```bash
 cd apps/desktop
 npm ci
-npm run dev
+npm run tauri dev
 ```
 
 构建安装包：
 
 ```bash
-npm run dist
+npm run tauri build
 ```
 
-安装包输出到 `apps/desktop/release/`。`npm run pack` 生成可直接运行的应用目录。`npm test`、`npm run test:desktop` 和 `cargo test --manifest-path backend/Cargo.toml` 分别验证界面、桌面通信与后台。
-
-升级会沿用原有连接 JSON、私钥路径和系统凭据库。旧 WebView 的 localStorage 不会被 Chromium 自动读取，主题与布局可通过旧版完整加密同步备份恢复。详见 [Electron 迁移说明](docs/electron.md)。
+安装包输出到 `apps/desktop/src-tauri/target/release/bundle/`。
 
 </details>
 

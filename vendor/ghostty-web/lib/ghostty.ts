@@ -1365,6 +1365,8 @@ export class GhosttyTerminal {
     // enum is a 4-byte int.
     const cellRawPtr = this.exports.ghostty_wasm_alloc_u8_array(8);
     const widePtr = this.exports.ghostty_wasm_alloc_u8_array(4);
+    let graphemePtr = 0;
+    let graphemeBytes = 0;
     // Populate the row meta caches as a side effect — saves a redundant
     // iterator walk if the renderer also calls isRowDirty() / isRowWrapped()
     // on this snapshot.
@@ -1416,15 +1418,25 @@ export class GhosttyTerminal {
           cell.grapheme_len = graphemeLen > 0 ? graphemeLen - 1 : 0;
 
           if (graphemeLen > 0) {
-            // GRAPHEMES_BUF writes graphemeLen u32 codepoints. We only need
-            // the base codepoint here; multi-codepoint clusters go through
-            // getGrapheme() separately.
+            // GRAPHEMES_BUF writes the entire cluster even though the cell
+            // stores only its base codepoint. A single-u32 destination corrupts
+            // adjacent WASM allocations for combining text and ZWJ emoji.
+            const requiredBytes = graphemeLen * 4;
+            if (requiredBytes > graphemeBytes) {
+              const next = this.exports.ghostty_wasm_alloc_u8_array(requiredBytes);
+              if (!next) throw new Error('Unable to allocate viewport grapheme buffer');
+              if (graphemePtr) {
+                this.exports.ghostty_wasm_free_u8_array(graphemePtr, graphemeBytes);
+              }
+              graphemePtr = next;
+              graphemeBytes = requiredBytes;
+            }
             this.exports.ghostty_render_state_row_cells_get(
               this.rowCells,
               RowCellsData.GRAPHEMES_BUF,
-              u32Ptr
+              graphemePtr
             );
-            cell.codepoint = new DataView(this.memory.buffer).getUint32(u32Ptr, true);
+            cell.codepoint = new DataView(this.memory.buffer).getUint32(graphemePtr, true);
           } else {
             cell.codepoint = 0;
           }
@@ -1528,6 +1540,9 @@ export class GhosttyTerminal {
         row++;
       }
     } finally {
+      if (graphemePtr) {
+        this.exports.ghostty_wasm_free_u8_array(graphemePtr, graphemeBytes);
+      }
       this.exports.ghostty_wasm_free_u8_array(u32Ptr, 4);
       this.exports.ghostty_wasm_free_u8_array(rgbPtr, 3);
       this.exports.ghostty_wasm_free_u8(dirtyPtr);

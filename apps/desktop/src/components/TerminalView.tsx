@@ -7,8 +7,8 @@ import {
 } from "../lib/taskStatus";
 import { IconClose } from "./Icons";
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "../platform/core";
-import { listen, type UnlistenFn } from "../platform/event";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { FitAddon, Terminal, init } from "ghostty-web";
 import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 import { findImageAtPoint } from "../lib/kittyPreview";
@@ -245,7 +245,7 @@ export default function TerminalView({
       if (textarea === document.activeElement) textarea?.blur();
       return;
     }
-    // 等显示状态与分屏布局提交后再测量，直接聚焦 textarea 以兼容 WebView2 IME。
+    // 等显示状态与分屏布局提交后再测量，并聚焦真正的文本输入框。
     const frame = requestAnimationFrame(() => {
       fitRef.current?.fit();
       termRef.current?.focus();
@@ -335,7 +335,8 @@ export default function TerminalView({
         }
       };
       t.open(containerRef.current);
-      cleanups.push(trackTerminalIme(t, containerRef.current));
+      cleanups.push(trackTerminalIme(t, containerRef.current, () =>
+        !disposed && activeRef.current && inputEnabledRef.current));
       {
         const root = containerRef.current;
         let selectionStarted = false;
@@ -382,10 +383,7 @@ export default function TerminalView({
       fit.fit();
       fit.observeResize();
 
-      // IME 修复（WebView2/Windows）：ghostty-web 会给容器加 contenteditable，
-      // 而 WebView2 对 contentEditable 元素的 IME 组合提交有 bug（吃掉中文输入）。
-      // 移除 contenteditable，并把容器上的点击统一引导到隐藏 textarea 获得焦点。
-      // 参考: MicrosoftEdge/WebView2Feedback#5625
+      // 将点击统一引导到 textarea，让 Chromium 原生输入法接管组合输入。
       {
         const root = containerRef.current;
         root.removeAttribute("contenteditable");

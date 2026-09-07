@@ -3,8 +3,8 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { useRef, useState } from "react";
-import { open } from "../platform/dialog";
-import { invoke } from "../platform/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import type { ServerEntry } from "../types";
 import { upsertServer } from "../store";
 import {

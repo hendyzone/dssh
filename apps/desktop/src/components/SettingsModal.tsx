@@ -3,7 +3,7 @@ import { AppDialog } from "./ui/app-dialog";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { useRef, useState } from "react";
-import { invoke } from "../platform/core";
+import { invoke } from "@tauri-apps/api/core";
 import { THEMES, getTheme, themeCategory } from "../themes";
 import SyncGuide from "./SyncGuide";
 import {

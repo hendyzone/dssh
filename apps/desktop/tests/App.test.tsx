@@ -3,16 +3,16 @@ import { beforeEach, expect, it, vi } from "vitest";
 import App from "../src/App";
 import { deleteServer } from "../src/store";
 
-vi.mock("../src/platform/window", () => ({
+vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     onCloseRequested: async () => () => {},
     close: vi.fn(),
   }),
 }));
-vi.mock("../src/platform/core", () => ({
+vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue([]),
 }));
-vi.mock("../src/platform/dialog", () => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("../src/store", () => ({
   loadServers: async () => [
     {

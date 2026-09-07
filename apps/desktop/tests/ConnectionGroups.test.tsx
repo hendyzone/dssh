@@ -6,16 +6,16 @@ import { insertConnection, moveConnection } from "../src/lib/connectionGroups";
 import type { TabInfo } from "../src/types";
 
 const tracked = vi.hoisted(() => ({ mounted: vi.fn(), unmounted: vi.fn() }));
-vi.mock("../src/platform/window", () => ({
+vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     onCloseRequested: async () => () => {},
     close: vi.fn(),
   }),
 }));
-vi.mock("../src/platform/core", () => ({
+vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue([]),
 }));
-vi.mock("../src/platform/dialog", () => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("../src/store", () => ({
   loadServers: async () =>
     ["Alpha", "Beta", "Gamma"].map((name) => ({
