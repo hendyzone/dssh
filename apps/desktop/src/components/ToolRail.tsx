@@ -17,11 +17,13 @@ export default function ToolRail({
   side,
   active,
   onSelect,
+  collaborationEnabled = false,
 }: {
   side: "left" | "right";
   active: string | null;
+  collaborationEnabled?: boolean;
   onSelect: (
-    kind: "sftp" | "tmux" | "forward" | "tasks" | "changes" | "monitor",
+    kind: "sftp" | "tmux" | "forward" | "tasks" | "changes" | "monitor" | "collaboration",
   ) => void;
 }) {
   const [revision, setRevision] = useState(0);
@@ -37,7 +39,8 @@ export default function ToolRail({
         className={"tool-rail tool-rail-" + side}
         aria-label={side === "left" ? "左侧工具" : "右侧工具"}
       >
-        {(["sftp", "tmux", "forward", "tasks", "changes", "monitor"] as const)
+        {(["sftp", "tmux", "forward", "tasks", "changes", "monitor", "collaboration"] as const)
+          .filter(kind => kind !== "collaboration" || collaborationEnabled)
           .filter(
             (kind) =>
               (localStorage.getItem("dssh.panel-side." + kind) === "left"
@@ -60,6 +63,7 @@ export default function ToolRail({
                       tasks: "任务状态与提醒",
                       changes: "代码修改",
                       monitor: "服务器监控",
+                      collaboration: "Agent 协作",
                     }[kind]
                   }
                   onClick={() => onSelect(kind)}
@@ -77,7 +81,7 @@ export default function ToolRail({
                       ) : kind === "monitor" ? (
                         <IconMonitor />
                       ) : (
-                        <span>tm</span>
+                        <span>{kind === "collaboration" ? "协" : "tm"}</span>
                       )}
                     </>
                   )}
@@ -95,6 +99,7 @@ export default function ToolRail({
                     tasks: "任务状态与提醒",
                     changes: "代码修改",
                     monitor: "服务器监控",
+                    collaboration: "Agent 协作",
                   }[kind]
                 }
               </TooltipContent>
