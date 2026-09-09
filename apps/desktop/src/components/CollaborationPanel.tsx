@@ -70,6 +70,7 @@ export default function CollaborationPanel({sessionId,profile,onClose}:{sessionI
   return <aside className="workspace-panel collaboration-panel">
     <header data-panel-drag-handle tabIndex={0}><strong>Agent 协作 · {profile.project}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭 Agent 协作" onClick={onClose}><IconClose/></Button></header>
     <div className="collaboration-content">
+      <p>{profile.tmuxName || profile.tmuxId} · {profile.workdir}</p>
       {!sessionId&&<p role="status">SSH 已断开，请先连接此服务器。</p>}
       {error&&<p role="alert" className="collaboration-error">{error}</p>}
       {status&&<p role="status">{status}</p>}

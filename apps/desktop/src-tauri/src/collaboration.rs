@@ -1,7 +1,7 @@
 //! Optional collaboration through separate SSH exec channels; no terminal injection.
 use crate::{
     ssh::SshState,
-    tmux::{execute_with_timeout, quote},
+    tmux::{execute_with_timeout, quote, Target},
 };
 use serde::Deserialize;
 use std::time::Duration;
@@ -10,6 +10,8 @@ use tauri::State;
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Profile {
+    tmux_id: String,
+    tmux_created: u64,
     enabled: bool,
     taskboard_enabled: bool,
     mail_enabled: bool,
@@ -25,6 +27,8 @@ pub struct Profile {
 impl Default for Profile {
     fn default() -> Self {
         Self {
+            tmux_id: String::new(),
+            tmux_created: 0,
             enabled: false,
             taskboard_enabled: false,
             mail_enabled: false,
@@ -91,7 +95,18 @@ fn absolute_path(value: &str) -> Result<String, String> {
     literal(value)
 }
 
-fn build_command(profile: &Profile, request: &Request, session: &str) -> Result<String, String> {
+fn worktree_command(target: &Target) -> Result<String, String> {
+    if !target.id.starts_with('$')
+        || target.id.len() < 2
+        || !target.id[1..].bytes().all(|b| b.is_ascii_digit())
+        || target.created == 0
+    {
+        return Err("无效的 tmux 会话身份".into());
+    }
+    Ok(format!("[ \"$(tmux display-message -p -t {} '#{{session_created}}' 2>/dev/null)\" = {} ] || {{ echo 'tmux session changed; reconnect' >&2; exit 1; }}; dssh_collab_cwd=$(tmux display-message -p -t {} '#{{pane_current_path}}') || exit 1; dssh_collab_root=$(git -C \"$dssh_collab_cwd\" rev-parse --show-toplevel) || exit 1; cd \"$dssh_collab_root\" && pwd -P",quote(&target.id),quote(&target.created.to_string()),quote(&format!("{}:",target.id))))
+}
+
+fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result<String, String> {
     if !profile.enabled {
         return Err("Agent 协作未开启".into());
     }
@@ -99,12 +114,34 @@ fn build_command(profile: &Profile, request: &Request, session: &str) -> Result<
         return Err("项目编号格式无效".into());
     }
     let directory = absolute_path(&profile.workdir)?;
+    let resolve = worktree_command(&Target {
+        id: profile.tmux_id.clone(),
+        created: profile.tmux_created,
+    })?;
+    // Identity survives SSH reconnects and differs for each tmux incarnation and worktree.
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    profile.workdir.hash(&mut hash);
+    let actor = format!(
+        "dssh-tmux-{}-{}-{:016x}",
+        profile.tmux_id,
+        profile.tmux_created,
+        hash.finish()
+    );
     let mut args: Vec<String>;
     let mut environment = vec![
         format!("TASKBOARD_PROJECT={}", quote(&profile.project)),
         format!("TASKBOARD_TASK={}", quote(&request.task)),
-        format!("AMAIL_SESSION={}", literal(&format!("dssh-{session}"))?),
-        format!("AGENT_MAIL_HOME={}", directory),
+        format!("AMAIL_SESSION={}", literal(&actor)?),
+        format!(
+            "AGENT_MAIL_HOME={}",
+            quote(&format!(
+                "{}/.dssh/agents/tmux-{}-{}",
+                profile.workdir.trim_end_matches('/'),
+                &profile.tmux_id[1..],
+                profile.tmux_created
+            ))
+        ),
     ];
     if matches!(request.operation, Operation::Context) {
         if !profile.taskboard_enabled {
@@ -230,11 +267,27 @@ fn build_command(profile: &Profile, request: &Request, session: &str) -> Result<
         }
     }
     Ok(format!(
-        "cd {} && env {} {}",
+        "dssh_collab_actual=$({}) || exit 1; [ \"$dssh_collab_actual\" = {} ] || {{ echo 'worktree changed; select its collaboration configuration' >&2; exit 1; }}; cd {} && env {} {}",
+        resolve,
+        directory,
         directory,
         environment.join(" "),
         args.join(" ")
     ))
+}
+
+#[tauri::command]
+pub async fn collaboration_worktree(
+    ssh: State<'_, SshState>,
+    session_id: String,
+    target: Target,
+) -> Result<String, String> {
+    let command = worktree_command(&target)?;
+    let handle = ssh.get_handle(&session_id).await.ok_or("SSH 已断开")?;
+    let output = execute_with_timeout(&handle, &command, Duration::from_secs(15)).await?;
+    let root = output.trim_end_matches('\n').trim_end_matches('\r');
+    absolute_path(root)?;
+    Ok(root.to_string())
 }
 
 #[tauri::command]
@@ -259,6 +312,8 @@ mod tests {
     use super::*;
     fn profile() -> Profile {
         Profile {
+            tmux_id: "$1".into(),
+            tmux_created: 123,
             enabled: true,
             taskboard_enabled: true,
             mail_enabled: true,
@@ -279,6 +334,31 @@ mod tests {
             body: "hello".into(),
             preview: true,
         }
+    }
+    #[test]
+    fn session_worktree_guard_and_identity_survive_reconnect() {
+        let p = profile();
+        let a = build_command(&p, &request(Operation::Send), "ssh1").unwrap();
+        let b = build_command(&p, &request(Operation::Send), "ssh2").unwrap();
+        assert_eq!(a, b);
+        assert!(a.contains("#{session_created}"));
+        assert!(a.contains("git -C \"$dssh_collab_cwd\" rev-parse --show-toplevel"));
+        assert!(a.contains("[ \"$dssh_collab_actual\" = '/repo with space' ]"));
+        assert!(a.contains("/repo with space/.dssh/agents/tmux-1-123"));
+        let mut changed = p.clone();
+        changed.tmux_created += 1;
+        assert_ne!(
+            a,
+            build_command(&changed, &request(Operation::Send), "ssh1").unwrap()
+        );
+        changed = p.clone();
+        changed.workdir = "/another".into();
+        assert_ne!(
+            a,
+            build_command(&changed, &request(Operation::Send), "ssh1").unwrap()
+        );
+        changed.tmux_id = "$1; touch /tmp/oops".into();
+        assert!(build_command(&changed, &request(Operation::Send), "ssh1").is_err());
     }
     #[test]
     fn disabled_profiles_never_build_commands() {

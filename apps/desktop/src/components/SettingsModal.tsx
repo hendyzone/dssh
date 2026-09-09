@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { THEMES, getTheme, themeCategory } from "../themes";
 import SyncGuide from "./SyncGuide";
 import CollaborationSettings from "./CollaborationSettings";
+import type { CollaborationSession } from "../lib/collaboration";
 import {
   collectSyncUi,
   restoreSyncUi,
@@ -18,6 +19,7 @@ import { isComposingKey } from "../lib/keyboard";
 import { useDialogFocus } from "../lib/useDialogFocus";
 
 interface Props {
+  collaborationSessions?: CollaborationSession[];
   servers?: ServerEntry[];
   settings: AppSettings;
   onChange: (s: AppSettings) => void;
@@ -41,6 +43,7 @@ type SyncOperation = "sync_test" | "sync_upload" | "sync_download";
 /** 设置面板：主题 / 字号 / 字体 / GitHub 加密同步。 */
 export default function SettingsModal({
   servers = [],
+  collaborationSessions = [],
   settings,
   onChange,
   onClose,
@@ -151,7 +154,7 @@ export default function SettingsModal({
             <TabsTrigger value="collaboration">Agent 协作</TabsTrigger>
           </TabsList>
           <div className="settings-scroll">
-            <TabsContent value="collaboration"><CollaborationSettings servers={servers}/></TabsContent>
+            <TabsContent value="collaboration"><CollaborationSettings sessions={collaborationSessions}/></TabsContent>
             <TabsContent
               forceMount
               value="appearance"
