@@ -7,6 +7,8 @@ import { useClaudeStatus, claudeTaskId, type ClaudeHost } from "./lib/claudeStat
 import ChangesPanel from "./components/ChangesPanel";
 import { focusTask, taskLabels } from "./lib/taskStatus";
 import ToolRail from "./components/ToolRail";
+import CollaborationPanel from "./components/CollaborationPanel";
+import { useCollaboration } from "./lib/collaboration";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWindowClose } from "./lib/useWindowClose";
 import { preventBrowserContextMenu } from "./lib/contextMenu";
@@ -60,6 +62,7 @@ import { applyTheme, getTheme } from "./themes";
 import type { AppSettings, ServerEntry, SessionInfo, TabInfo } from "./types";
 
 type SidePanel =
+  | "collaboration"
   | "sftp"
   | "forward"
   | "tmux"
@@ -70,6 +73,7 @@ type SidePanel =
 type ContextMenu = { tabId: string; x: number; y: number };
 
 export default function App() {
+  const collaborationProfiles = useCollaboration();
   useEffect(() => {
     document.addEventListener("contextmenu", preventBrowserContextMenu, true);
     return () =>
@@ -804,6 +808,7 @@ export default function App() {
             const panel = sidePanels[t.id] ?? null;
             const activePaneBackend =
               backendIds[t.panes[t.activePane]?.id ?? ""] ?? null;
+            const collaboration = collaborationProfiles[t.panes[t.activePane]?.server.id ?? ""];
             return (
               <div
                 key={t.id}
@@ -813,11 +818,13 @@ export default function App() {
                 <div className="session-content">
                   <ToolRail
                     side="left"
+                    collaborationEnabled={!!collaboration?.enabled}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
                   />
                   <ToolRail
                     side="right"
+                    collaborationEnabled={!!collaboration?.enabled}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
                   />
@@ -871,6 +878,11 @@ export default function App() {
                         onClose={() => togglePanel(t.id, null)}
                         onSelect={selectTask}
                       />
+                    </PanelDock>
+                  )}
+                  {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
+                    <PanelDock kind="collaboration">
+                      <CollaborationPanel key={activePaneBackend ?? "disconnected"} sessionId={activePaneBackend ?? ""} profile={collaboration} onClose={()=>togglePanel(t.id,null)}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (
@@ -1110,6 +1122,7 @@ export default function App() {
       )}
       {showSettings && (
         <SettingsModal
+          servers={servers}
           settings={settings}
           onChange={updateSettings}
           onClose={() => setShowSettings(false)}
