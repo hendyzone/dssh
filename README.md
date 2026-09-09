@@ -77,6 +77,8 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 可选的 **Agent 协作** 可在「设置 → Agent 协作」按 tmux 会话 + worktree 配置并开启，查看 taskboard 的共享任务与交接，
 通过 amail 查询、预览发送或回复消息。默认关闭，凭据留在远端。详见 [Agent 协作接入](docs/agent-collaboration.md)。
 
+给 Claude Code、Codex CLI、pi 的创建 worktree、开箱、认领及交接流程见 [Agent 操作手册](docs/agent-playbook.md)。
+
 | 功能 | 使用方式 |
 | --- | --- |
 | **端口转发** | 创建本地 / 远程转发或动态 SOCKS5 代理；规则随服务器保存，支持编辑、启停及连接后自动启动。 |

@@ -1,5 +1,7 @@
 # 可选 Agent 协作：taskboard 与 amail
 
+从零创建 worktree、tmux 会话和独立邮箱，见 [Agent 操作手册](agent-playbook.md)。
+
 dssh 可通过现有 SSH 连接查看共享任务看板、交接记录和 agent 邮件，并预览、发送或回复结构化消息。
 此功能默认关闭，按 **tmux 会话 + Git worktree** 配置；任务看板和通信可分别启用。
 绑定键由服务器、tmux ID、会话创建时间和 worktree 的真实根目录组成。SSH 重连不会改变绑定；
