@@ -8,6 +8,143 @@
 taskboard 保存任务与交接，amail 负责消息，Git 保存代码，tmux 保持进程运行。
 dssh 是查看和操作入口；它不会把终端里的模型自动接入，也不会同步完整聊天记录。
 
+**先选择接入方式，不要一律新建：**
+
+| 当前状态 | 从哪里开始 |
+| --- | --- |
+| 尚无会话、worktree 或 agent | 第 1–6 节，新建并用 `agent run` 启动 |
+| 已有 tmux/worktree，但 agent 尚未启动 | 跳过第 1–2 节，核对现有目录后从第 3 节开始 |
+| agent 已在 tmux 内运行 | 使用下面的“接入运行中的 agent”，保留原进程、分支和会话 |
+
+## 接入运行中的 agent（无需重启）
+
+### A. 找到现有会话和实际 worktree
+
+从独立 SSH 连接只读列出窗格，选择确实运行目标 agent 的那一个：
+
+```bash
+tmux list-panes -a -F '#{session_id} #{session_created} #{session_name} #{pane_id} #{pane_current_command} #{pane_current_path}'
+```
+
+让运行中的 agent 通过自己的命令工具核对 `git rev-parse --show-toplevel`、`git branch --show-current`、
+`git status --short`。若工具没有继承 `TMUX_PANE`，使用上面确认过的窗格 ID，而不是猜会话名。
+在 dssh 的 tmux 列表中直接打开已有会话；不要把 `tmux new-session`、shell 命令或回车
+注入正在运行模型的终端，也不要 kill 会话后重新建立同名会话。
+
+主工作区也是合法 Git 工作树，不必为了接入把运行中的进程搬到新 worktree。
+但如果多个 agent 已在同一 worktree 写代码，应先明确修改范围；绑定不会自动隔离它们的文件。
+需要迁移到独立 worktree 时，安排明确交接，不通过修改外部 shell 的 cwd 假装已迁移模型进程。
+
+### B. 让现有 agent 配置自己的协作环境
+
+把本手册交给现有 agent，明确要求走“接入运行中的 agent”路径。
+它可以在自己的命令工具中执行第 3–4 节，建立当前绑定的私有目录和邮箱，**跳过第 6 节的 `agent run`**。
+若使用外部 SSH 协助初始化，必须针对确认过的目标窗格推导目录和身份：
+
+```bash
+set -e
+TARGET_PANE='%3'  # 替换为上一步核实的目标窗格
+TMUX_ID=$(tmux display-message -p -t "$TARGET_PANE" '#{session_id}')
+TMUX_CREATED=$(tmux display-message -p -t "$TARGET_PANE" '#{session_created}')
+TARGET_CWD=$(tmux display-message -p -t "$TARGET_PANE" '#{pane_current_path}')
+WT_ROOT=$(git -C "$TARGET_CWD" rev-parse --show-toplevel)
+cd "$WT_ROOT"
+WT_ROOT=$(pwd -P)
+export AGENT_MAIL_HOME="$WT_ROOT/.dssh/agents/tmux-${TMUX_ID#\$}-${TMUX_CREATED}"
+```
+
+外部 shell 的 `export`、`tmux set-environment` 或新窗口里的 `cd`，**不会修改已经运行的 agent
+进程的环境/cwd**。后续每次工具调用必须显式携带这些变量，或读取本绑定的环境文件。
+第 3–4 节完成后，可以在同一个初始化 shell 保存非秘密配置，供现有 agent 的 Bash 命令调用加载：
+
+```bash
+umask 077
+SESSION_ENV="$AGENT_MAIL_HOME/session.sh"
+for key in TASKBOARD_URL TASKBOARD_PROJECT TASKBOARD_TASK TASKBOARD_BIN MAILCTL \
+           TASKBOARD_TOKEN_FILE AGENT_MAIL_HOME AMAIL_SESSION TASKBOARD_ACTOR; do
+  printf 'export %s=%q\n' "$key" "${!key}"
+done > "$SESSION_ENV"
+printf 'unset TASKBOARD_TOKEN\n' >> "$SESSION_ENV"
+chmod 600 "$SESSION_ENV"
+```
+
+只传给 agent `session.sh` 的绝对路径，不传密码或 lease_id。该文件只保存当前绑定的路径和标识，
+不能装入另一个会话；即使两组都服务同一项目，也不能共用环境文件。
+如果 agent 的每次工具调用是新 shell，每次都加载；在某一次调用中 export 不能代替后续调用加载。
+所有下面的 `source` 示例都要求 Bash，并只加载由本流程生成、已经核对的本地文件。
+
+本会话若已有相同目录的 `.agent-mail/env`，复用它，不重复注册。
+若旧邮箱在其他目录，先核对归属和是否被其他活跃 agent 使用；不要直接复制整个身份目录作为新 agent 身份。
+创建新邮箱后，让现有 agent 后续邮件命令使用新 `AGENT_MAIL_HOME`，无需重启模型。
+
+### C. 已运行 agent 的领取与续租
+
+先检查 agent 是否本来就由 taskboard 包装器启动。若已有有效租约及续租进程，继续使用原流程，
+不要再次 claim，不要另起第二个续租器，也不要把另一个进程的 lease_id 复制过来。
+
+对于此前没有加入看板协作的进程，现有 agent 在核对上下文后，**仅领取一次**：
+
+```bash
+set -e
+source /实际绑定路径/session.sh
+test -s "$AGENT_MAIL_HOME/.agent-mail/env"
+"$TASKBOARD_BIN" agent context --task "$TASKBOARD_TASK"
+umask 077
+LEASE_FILE="$AGENT_MAIL_HOME/taskboard-lease.json"
+test ! -e "$LEASE_FILE"  # 已有文件时先核对当前租约，不覆盖、不盲目重复领取
+(set -o noclobber; "$TASKBOARD_BIN" agent claim --task "$TASKBOARD_TASK" \
+  --agent "$TASKBOARD_ACTOR" --ttl 3600 > "$LEASE_FILE")
+chmod 600 "$LEASE_FILE"
+```
+
+该 JSON 含租约凭证，不要打印或上传。claim 冲突时停止，不重启或抢占原领取者。
+claim 失败也可能留下空文件；先核对服务端状态，不能仅凭文件存在就宣称领取成功。
+
+后续每次 checkpoint/heartbeat/release 都在 agent 自己的命令调用中加载凭证：
+
+```bash
+set -e
+source /实际绑定路径/session.sh
+TASKBOARD_LEASE_ID=$(python3 - <<'PY'
+import json, os, pathlib
+p = pathlib.Path(os.environ['AGENT_MAIL_HOME']) / 'taskboard-lease.json'
+lease = json.loads(p.read_text())
+assert lease.get('lease_id')
+print(lease['lease_id'])
+PY
+)
+export TASKBOARD_LEASE_ID
+"$TASKBOARD_BIN" agent heartbeat --task "$TASKBOARD_TASK" --ttl 3600 > /dev/null
+# 然后按第 7 节保存真实交接（HANDOFF 为已编辑的 JSON 文件）：
+# "$TASKBOARD_BIN" agent checkpoint --file "$HANDOFF"
+```
+
+手动接入不会自动安装续租器。此例 TTL 为 1 小时，应至少每 20 分钟续租，并在关键写入前确认租约有效。
+若工具调用无法保证这个频率，不能把它当作持续占用：先暂停写入并安排受监控的续租方案，
+或在后续可重启的交接点改用包装器。不要启动脱离 agent 生命周期、永久续租的后台 while 循环。
+
+续租失败或过期时，现有进程不会被服务自动终止，agent 必须自行停止修改并协调接手。
+消息读取和 dssh 面板查看可以独立使用，不代表任务已领取。
+完成并保存 checkpoint 后，在上述已加载租约的 shell 中主动释放：
+
+```bash
+"$TASKBOARD_BIN" agent release --task "$TASKBOARD_TASK" > /dev/null
+mv "$AGENT_MAIL_HOME/taskboard-lease.json" "$AGENT_MAIL_HOME/taskboard-lease.released-$(date +%s).json"
+unset TASKBOARD_LEASE_ID
+```
+
+退出普通 agent 不会自动释放手动租约；退出前执行上面的 release。
+本节保留既有进程，不提供包装器才有的自动续租、子进程退出释放及续租失败取消功能。
+
+### D. 可直接交给已有 agent 的接入指令
+
+> 阅读 docs/agent-playbook.md 的“接入运行中的 agent”章节。保留当前 tmux、worktree、分支和模型进程，
+> 不新建会话、不重启、不运行嵌套的 taskboard agent run。先核对实际 tmux ID/创建时间、Git 根目录、
+> 项目任务和现有租约，再为本绑定配置/复用独立邮箱；每次命令调用加载本绑定的环境。
+> 没有租约时仅领取一次，按手册续租、记录交接并在结束前释放。凭据缺失或被其他 agent 占用时报告阻塞，
+> 不借用身份、不抢占。消息发送仍遵守本次任务授权。完成后报告会话、worktree、分支、任务和邮箱地址，
+> 不报告密码、令牌或 lease_id。
+
 ## 0. 开始前确认
 
 - 项目已经在 taskboard 建立，已有明确的任务编号。下文 `dssh`、`T1` 仅为示例，请使用实际分配的任务。
