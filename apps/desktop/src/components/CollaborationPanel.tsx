@@ -4,6 +4,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { IconClose } from "./Icons";
 import "./Collaboration.css";
+import AgentGuide from "./AgentGuide";
 
 type Row = Record<string, unknown>;
 const rows = (value:unknown):Row[] => Array.isArray(value) ? value.filter((v):v is Row=>!!v&&typeof v==="object"&&!Array.isArray(v)) : [];
@@ -71,6 +72,7 @@ export default function CollaborationPanel({sessionId,profile,onClose}:{sessionI
     <header data-panel-drag-handle tabIndex={0}><strong>Agent 协作 · {profile.project}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭 Agent 协作" onClick={onClose}><IconClose/></Button></header>
     <div className="collaboration-content">
       <p>{profile.tmuxName || profile.tmuxId} · {profile.workdir}</p>
+      <details><summary>发送接入手册给 Agent</summary><AgentGuide profile={profile}/></details>
       {!sessionId&&<p role="status">SSH 已断开，请先连接此服务器。</p>}
       {error&&<p role="alert" className="collaboration-error">{error}</p>}
       {status&&<p role="status">{status}</p>}
