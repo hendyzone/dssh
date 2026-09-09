@@ -68,7 +68,7 @@ export function useCollaboration() {
   }, []);
   return profiles;
 }
-export type CollaborationOperation = "context" | "roster" | "inbox" | "read" | "send" | "reply";
+export type CollaborationOperation = "context" | "inbox" | "read" | "send" | "reply";
 export interface CollaborationRequest {
   operation: CollaborationOperation;
   task?: string; uid?: string; to?: string; kind?: string; body?: string; preview?: boolean;

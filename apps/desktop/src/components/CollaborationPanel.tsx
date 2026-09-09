@@ -96,7 +96,6 @@ export default function CollaborationPanel({sessionId,profile,onClose}:{sessionI
       {profile.mailEnabled&&<section>
         <h4>Agent 通信</h4>
         <div className="collaboration-actions">
-          <Button size="sm" disabled={disabled} onClick={()=>void execute({operation:"roster"},setMailOutput)}>项目成员</Button>
           <Button size="sm" disabled={disabled} onClick={()=>void execute({operation:"inbox"},setMailOutput)}>最近邮件</Button>
         </div>
         <label className="collaboration-field">邮件 UID<Input disabled={disabled} value={uid} placeholder="从最近邮件中选择，例如 42" onChange={e=>edit(()=>setUid(e.target.value))}/></label>

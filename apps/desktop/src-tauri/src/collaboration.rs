@@ -43,7 +43,6 @@ impl Default for Profile {
 #[serde(rename_all = "camelCase")]
 pub enum Operation {
     Context,
-    Roster,
     Inbox,
     Read,
     Send,
@@ -155,9 +154,6 @@ fn build_command(profile: &Profile, request: &Request, session: &str) -> Result<
             absolute_path(&profile.mailctl_path)?,
         ];
         match request.operation {
-            Operation::Roster => {
-                args.extend(["roster".into(), "--project".into(), quote(&profile.project)])
-            }
             Operation::Inbox => args.extend(["inbox".into(), "--limit".into(), "20".into()]),
             Operation::Read | Operation::Reply => {
                 if request.uid.is_empty()
