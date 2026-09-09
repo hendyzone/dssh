@@ -78,6 +78,7 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 通过 amail 查询、预览发送或回复消息。默认关闭，凭据留在远端。详见 [Agent 协作接入](docs/agent-collaboration.md)。
 
 给 Claude Code、Codex CLI、pi 的创建 worktree、开箱、认领及交接流程见 [Agent 操作手册](docs/agent-playbook.md)。
+程序内「设置 → Agent 协作」支持离线查看、一键复制给 Agent，以及保存完整 Markdown 手册。
 
 | 功能 | 使用方式 |
 | --- | --- |

@@ -6,6 +6,36 @@ use crate::{
 use serde::Deserialize;
 use std::time::Duration;
 use tauri::State;
+use tauri_plugin_dialog::DialogExt;
+
+#[tauri::command]
+pub async fn collaboration_export_guide(
+    app: tauri::AppHandle,
+    content: String,
+) -> Result<Option<String>, String> {
+    if content.len() > 256 * 1024 {
+        return Err("手册超过 256 KiB".into());
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("Markdown", &["md"])
+        .set_file_name("dssh-agent-guide.md")
+        .save_file(move |file| {
+            let result = match file {
+                None => Ok(None),
+                Some(file) => file
+                    .into_path()
+                    .map_err(|e| e.to_string())
+                    .and_then(|path| {
+                        std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())?;
+                        Ok(Some(path.to_string_lossy().into_owned()))
+                    }),
+            };
+            let _ = tx.send(result);
+        });
+    rx.await.map_err(|e| e.to_string())?
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", default)]

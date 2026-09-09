@@ -58,6 +58,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             collaboration::collaboration_request,
             collaboration::collaboration_worktree,
+            collaboration::collaboration_export_guide,
             claude::claude_status,
             commands::desktop_devtools,
             commands::desktop_report_error,
