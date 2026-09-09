@@ -36,7 +36,19 @@ const eventMetrics = new Map<
   string,
   { at: number; bytes: number; speed: number }
 >();
+const dismissalTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let transferSequence = 0;
+
+/** Dismiss only finished transfers; active work must remain visible/cancelable. */
+export function dismissTransfer(transferId: string): void {
+  const transfer = transfers.get(transferId);
+  if (!transfer || transfer.status === "active") return;
+  clearTimeout(dismissalTimers.get(transferId));
+  dismissalTimers.delete(transferId);
+  transfers.delete(transferId);
+  eventMetrics.delete(transferId);
+  notify(transfer.sessionId);
+}
 
 function eventName(sessionId: string): string {
   return `sftp://${sessionId}/upload-progress`;
@@ -86,9 +98,15 @@ function ensureListener(sessionId: string): void {
         totalBytes: payload.totalBytes,
         speedBytesPerSecond: speed,
         status,
-        ...(status === "done" ? {completedAt:previous?.completedAt ?? Date.now()} : {}),
+        ...(status !== "active" ? {completedAt:previous?.completedAt ?? Date.now()} : {}),
         ...(payload.error ? { error: payload.error } : {}),
       });
+      if (status !== "active" && !dismissalTimers.has(payload.transferId)) {
+        dismissalTimers.set(payload.transferId, setTimeout(
+          () => dismissTransfer(payload.transferId),
+          status === "error" ? 10_000 : 5_000,
+        ));
+      }
       notify(sessionId);
     },
   )

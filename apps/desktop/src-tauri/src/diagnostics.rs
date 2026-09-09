@@ -5,6 +5,61 @@ use tauri_plugin_dialog::DialogExt;
 static LOG_LOCK: Mutex<()> = Mutex::new(());
 const LIMIT: u64 = 1024 * 1024;
 
+/// JS error handlers cannot run after a native WebView2 renderer crash.
+#[cfg(windows)]
+pub fn watch_webview_process(app: &tauri::AppHandle) {
+    use webview2_com::{
+        Microsoft::Web::WebView2::Win32::*,
+        ProcessFailedEventHandler,
+    };
+    use windows_core::Interface;
+    let Some(window) = app.get_webview_window("main") else { return };
+    let browser_args = app.config().app.windows.iter()
+        .find(|window| window.label == "main")
+        .and_then(|window| window.additional_browser_args.as_deref())
+        .unwrap_or("default");
+    let _ = record(app, "webview_configuration", browser_args, "");
+    let handle = app.clone();
+    let result = window.with_webview(move |webview| {
+        let event_app = handle.clone();
+        let registration = unsafe {
+            webview.controller().CoreWebView2().and_then(|view| {
+                let mut token = 0;
+                view.add_ProcessFailed(
+                    &ProcessFailedEventHandler::create(Box::new(move |_, args| {
+                        let mut details = String::from("WebView2 process failed");
+                        if let Some(args) = args {
+                            let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+                            if args.ProcessFailedKind(&mut kind).is_ok() {
+                                details.push_str(&format!("; kind={}", kind.0));
+                            }
+                            if let Ok(extra) = args.cast::<ICoreWebView2ProcessFailedEventArgs2>() {
+                                let mut reason = COREWEBVIEW2_PROCESS_FAILED_REASON::default();
+                                let mut exit_code = 0;
+                                if extra.Reason(&mut reason).is_ok() {
+                                    details.push_str(&format!("; reason={}", reason.0));
+                                }
+                                if extra.ExitCode(&mut exit_code).is_ok() {
+                                    details.push_str(&format!("; exit_code=0x{:08X}", exit_code as u32));
+                                }
+                            }
+                        }
+                        let _ = record(&event_app, "webview_process_failed", &details, "");
+                        Ok(())
+                    })),
+                    &mut token,
+                )
+            })
+        };
+        if let Err(error) = registration {
+            let _ = record(&handle, "webview_monitor_error", &error.to_string(), "");
+        }
+    });
+    if let Err(error) = result {
+        let _ = record(app, "webview_monitor_error", &error.to_string(), "");
+    }
+}
+
 pub fn record(app: &tauri::AppHandle, kind: &str, message: &str, stack: &str) -> Result<(), String> {
     let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
     let _guard = LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());

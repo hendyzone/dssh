@@ -21,6 +21,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   createTransfer,
+  dismissTransfer,
   formatTransferSize,
   subscribeTransfers,
   transferPercent,
@@ -169,42 +170,12 @@ export default function SftpPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
-  const [hiddenTransfers, setHiddenTransfers] = useState<Set<string>>(
-    new Set(),
-  );
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(null), 5000);
     return () => clearTimeout(timer);
   }, [notice]);
-  useEffect(() => {
-    const completed = transfers.filter(
-      (t) => t.status === "done" && !hiddenTransfers.has(t.transferId),
-    );
-    if (!completed.length) return;
-    const timer = setTimeout(
-      () =>
-        setHiddenTransfers(
-          (old) =>
-            new Set([
-              ...old,
-              ...completed
-                .filter((t) => Date.now() - (t.completedAt ?? 0) >= 5000)
-                .map((t) => t.transferId),
-            ]),
-        ),
-      Math.max(
-        0,
-        Math.min(
-          ...completed.map((t) => 5000 - (Date.now() - (t.completedAt ?? 0))),
-        ),
-      ),
-    );
-    return () => clearTimeout(timer);
-  }, [transfers, hiddenTransfers]);
-  const visibleTransfers = transfers.filter(
-    (t) => !hiddenTransfers.has(t.transferId),
-  );
+  const visibleTransfers = transfers;
   /** 跟随模式：终端 cd 时面板自动跳转 */
   const [followTerminal, setFollowTerminal] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -279,7 +250,7 @@ export default function SftpPanel({
           .filter((name) => existing.some((entry) => entry.name === name));
         if (
           conflicts.length &&
-          !window.confirm("以下文件已存在，覆盖？\n" + conflicts.join("\n"))
+          !window.confirm("以下文件或文件夹已存在，合并文件夹并覆盖同名文件？\n" + conflicts.join("\n"))
         )
           return;
       } catch (reason) {
@@ -844,6 +815,18 @@ export default function SftpPanel({
                       失败
                     </span>
                   )}
+                  {(finished || failed) && (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      type="button"
+                      aria-label={"关闭传输提示：" + transfer.fileName}
+                      title="关闭传输提示"
+                      onClick={() => dismissTransfer(transfer.transferId)}
+                    >
+                      <UiX size={14} />
+                    </Button>
+                  )}
                   {!finished && !failed && (
                     <Button
                       variant="destructive"
@@ -1065,7 +1048,7 @@ export default function SftpPanel({
           fontSize: 11,
         }}
       >
-        拖文件到此面板上传到当前路径 · 双击文件下载并打开
+        拖文件或文件夹到此面板上传到当前路径 · 双击文件下载并打开
       </div>
       {fileMenu &&
         createPortal(

@@ -790,12 +790,21 @@ export class CanvasRenderer {
       this.renderCellBackground(cell, x, y);
     }
 
-    // PASS 2: Draw all cell text and decorations
-    // Now text can safely extend beyond cell boundaries (for complex scripts)
-    for (let x = 0; x < line.length; x++) {
-      const cell = line[x];
-      if (cell.width === 0) continue; // Skip spacer cells for wide characters
-      this.renderCellText(cell, x, y);
+    // Keep fallback fonts and decorations inside the row we can clear on the
+    // next update. Horizontal overhang remains allowed for complex scripts,
+    // but vertical overhang leaves stale pixels during partial/cursor redraws.
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(0, lineY, lineWidth, this.metrics.height);
+    this.ctx.clip();
+    try {
+      for (let x = 0; x < line.length; x++) {
+        const cell = line[x];
+        if (cell.width === 0) continue; // Skip spacer cells for wide characters
+        this.renderCellText(cell, x, y);
+      }
+    } finally {
+      this.ctx.restore();
     }
   }
 

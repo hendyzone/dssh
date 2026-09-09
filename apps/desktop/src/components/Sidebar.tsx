@@ -1,7 +1,7 @@
 import { PositionedMenu, MenuItem } from "./ui/positioned-menu";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { History } from "lucide-react";
+import { History, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState, useRef } from "react";
 import type { MouseEvent } from "react";
@@ -45,6 +45,24 @@ export default function Sidebar({
   onOpenSettings,
   onServersChanged,
 }: Props) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("dssh.sidebar.collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggleSidebar = () => {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    setContextMenu(undefined);
+    setFolderMenu(null);
+    try {
+      localStorage.setItem("dssh.sidebar.collapsed", String(next));
+    } catch {
+      // Collapsing still works when storage is unavailable.
+    }
+  };
   const cloneBusy = useRef(false);
   const [grouping, setGrouping] = useState(false);
   const groupingLock = useRef(false);
@@ -323,8 +341,8 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`sidebar${dragging ? " sidebar-resizing" : ""}`}
-      style={{ width }}
+      className={`sidebar${dragging ? " sidebar-resizing" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
+      style={{ width: sidebarCollapsed ? 44 : width }}
       onClickCapture={(event) => {
         if (editing.suppressClick.current) {
           event.preventDefault();
@@ -345,6 +363,17 @@ export default function Sidebar({
           </span>
         </div>
         <div className="sidebar-actions">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="icon-btn sidebar-collapse-toggle"
+            title={sidebarCollapsed ? "展开连接栏" : "收起连接栏"}
+            aria-label={sidebarCollapsed ? "展开连接栏" : "收起连接栏"}
+            aria-expanded={!sidebarCollapsed}
+            onClick={toggleSidebar}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"

@@ -5,7 +5,7 @@
 <h1 align="center">dssh</h1>
 
 <p align="center">把远程终端、文件和开发任务放在同一个工作区。</p>
-<p align="center"><strong>v1.1.2</strong> · Tauri SSH 客户端 · Windows / macOS</p>
+<p align="center"><strong>v1.1.3</strong> · Tauri SSH 客户端 · Windows / macOS</p>
 
 dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中运行长任务、编辑远程文件、查看代码差异，也能给远程 Codex、Claude 等工具粘贴截图路径。
 
@@ -44,7 +44,7 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 - **在线编辑**：编辑不超过 1 MB 的 UTF-8 文本，保存前检查远端冲突并建立备份；Markdown 可切换渲染预览与源码编辑。
 - **本地打开**：双击文件下载并用本地应用打开；也可通过 VS Code Remote - SSH 打开当前远程目录。
 
-当前文件夹上传需要先打包；下载到本地应用后所做的修改不会自动回传。详见[文件工作区](docs/file-workspace.md)与 [VS Code 远程打开](docs/vscode-remote.md)。
+支持拖入文件夹递归上传，保留子目录和空目录；下载到本地应用后所做的修改不会自动回传。详见[文件工作区](docs/file-workspace.md)与 [VS Code 远程打开](docs/vscode-remote.md)。
 
 ## 🔁 用 tmux 留住工作现场
 

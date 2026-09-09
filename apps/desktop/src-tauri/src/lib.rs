@@ -21,6 +21,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let _ = diagnostics::record(app.handle(), "startup", "Tauri application started", "");
+            #[cfg(windows)]
+            diagnostics::watch_webview_process(app.handle());
             app.manage(ssh::SshState::default());
             app.manage(preview::PreviewState::default());
             app.manage(monitor::MonitorState::default());

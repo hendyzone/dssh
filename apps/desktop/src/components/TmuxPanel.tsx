@@ -3,6 +3,7 @@ import {
   Pencil as UiPencil,
   Download as UiDownload,
   RefreshCw as UiRefreshCw,
+  ChevronRight,
 } from "lucide-react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -29,6 +30,7 @@ export default function TmuxPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [edit, setEdit] = useState<{
     action: string;
     target?: string;
@@ -121,8 +123,8 @@ export default function TmuxPanel({
     }
   };
   const panes = snapshot?.panes.filter((p) => p.sessionId === selectedId) ?? [];
-  const windows = [...new Set(panes.map((p) => p.windowId))].map(
-    (id) => panes.find((p) => p.windowId === id)!,
+  const windows = [...new Set(panes.map((p) => p.windowId))].map((id) =>
+    panes.find((p) => p.windowId === id)!,
   );
   return (
     <aside className="tmux-panel" aria-label="tmux 管理">
@@ -291,157 +293,184 @@ export default function TmuxPanel({
                   结束会话
                 </Button>
               </div>
-              <div className="tmux-tools">
-                <strong>窗口与窗格</strong>
+              <section className="tmux-details">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  disabled={busy}
-                  onClick={() => setEdit({ action: "new-window", value: "" })}
+                  className="tmux-details-toggle"
+                  aria-expanded={detailsExpanded}
+                  onClick={() => setDetailsExpanded((expanded) => !expanded)}
                 >
-                  新建窗口
+                  <ChevronRight size={14} aria-hidden="true" />
+                  <strong>窗口与窗格</strong>
+                  <span>{detailsExpanded ? "收起" : "展开"}</span>
                 </Button>
-              </div>
-              <div className="tmux-tools">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void run("enable-mouse")}
-                >
-                  启用 tmux 鼠标
-                </Button>
-              </div>
-              <div className="tmux-windows">
-                {windows.map((w) => (
-                  <section key={w.windowId}>
-                    <div className="tmux-window-heading">
+                {detailsExpanded && (
+                  <div className="tmux-details-content">
+                    <div className="tmux-tools">
                       <Button
                         variant="outline"
                         size="sm"
                         disabled={busy}
-                        className={w.windowActive ? "selected" : ""}
-                        onClick={() => void run("select-window", w.windowId)}
-                      >
-                        {w.windowIndex}: {w.windowName}
-                        {w.windowActive ? " ●" : ""}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="重命名窗口"
-                        disabled={busy}
                         onClick={() =>
-                          setEdit({
-                            action: "rename-window",
-                            target: w.windowId,
-                            value: w.windowName,
-                          })
+                          setEdit({ action: "new-window", value: "" })
                         }
                       >
-                        改名
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="icon-sm"
-                        title="结束窗口"
-                        className="danger"
-                        disabled={busy}
-                        onClick={() => void run("kill-window", w.windowId)}
-                      >
-                        <UiX size={14} />
+                        新建窗口
                       </Button>
                     </div>
-                    {panes
-                      .filter((p) => p.windowId === w.windowId)
-                      .map((p) => (
-                        <div
-                          className={`tmux-pane ${p.active ? "active" : ""}`}
-                          key={p.id}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={busy}
-                            className="tmux-pane-select"
-                            onClick={() => void run("select-pane", p.id)}
-                            title="选择远端窗格"
-                          >
-                            <strong>
-                              {p.index}: {p.command || "shell"}
-                              {p.active ? " ●" : ""}
-                            </strong>
-                            <small title={p.path}>{p.path || "—"}</small>
-                          </Button>
-                          <div className="tmux-pane-actions">
+                    <div className="tmux-tools">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void run("enable-mouse")}
+                      >
+                        启用 tmux 鼠标
+                      </Button>
+                    </div>
+                    <div className="tmux-windows">
+                      {windows.map((w) => (
+                        <section key={w.windowId}>
+                          <div className="tmux-window-heading">
                             <Button
                               variant="outline"
                               size="sm"
                               disabled={busy}
-                              onClick={() => void run("copy-mode", p.id)}
+                              className={w.windowActive ? "selected" : ""}
+                              onClick={() =>
+                                void run("select-window", w.windowId)
+                              }
                             >
-                              复制模式
+                              {w.windowIndex}: {w.windowName}
+                              {w.windowActive ? " ●" : ""}
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
+                              title="重命名窗口"
                               disabled={busy}
-                              title="需要 tmux 3.3+ 及应用支持转义封装"
                               onClick={() =>
-                                void run("enable-passthrough", p.id)
+                                setEdit({
+                                  action: "rename-window",
+                                  target: w.windowId,
+                                  value: w.windowName,
+                                })
                               }
                             >
-                              图片透传
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => void run("split-horizontal", p.id)}
-                            >
-                              左右分屏
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => void run("split-vertical", p.id)}
-                            >
-                              上下分屏
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => void run("zoom-pane", p.id)}
-                            >
-                              {p.zoomed ? "还原" : "放大"}
+                              改名
                             </Button>
                             <Button
                               variant="destructive"
-                              size="sm"
-                              disabled={busy}
+                              size="icon-sm"
+                              title="结束窗口"
                               className="danger"
-                              onClick={() => void run("kill-pane", p.id)}
+                              disabled={busy}
+                              onClick={() =>
+                                void run("kill-window", w.windowId)
+                              }
                             >
-                              结束
+                              <UiX size={14} />
                             </Button>
                           </div>
-                        </div>
+                          {panes
+                            .filter((p) => p.windowId === w.windowId)
+                            .map((p) => (
+                              <div
+                                className={`tmux-pane ${p.active ? "active" : ""}`}
+                                key={p.id}
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={busy}
+                                  className="tmux-pane-select"
+                                  onClick={() => void run("select-pane", p.id)}
+                                  title="选择远端窗格"
+                                >
+                                  <strong>
+                                    {p.index}: {p.command || "shell"}
+                                    {p.active ? " ●" : ""}
+                                  </strong>
+                                  <small title={p.path}>{p.path || "—"}</small>
+                                </Button>
+                                <div className="tmux-pane-actions">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={() => void run("copy-mode", p.id)}
+                                  >
+                                    复制模式
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={busy}
+                                    title="需要 tmux 3.3+ 及应用支持转义封装"
+                                    onClick={() =>
+                                      void run("enable-passthrough", p.id)
+                                    }
+                                  >
+                                    图片透传
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void run("split-horizontal", p.id)
+                                    }
+                                  >
+                                    左右分屏
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void run("split-vertical", p.id)
+                                    }
+                                  >
+                                    上下分屏
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={() => void run("zoom-pane", p.id)}
+                                  >
+                                    {p.zoomed ? "还原" : "放大"}
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    disabled={busy}
+                                    className="danger"
+                                    onClick={() => void run("kill-pane", p.id)}
+                                  >
+                                    结束
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                        </section>
                       ))}
-                  </section>
-                ))}
-              </div>
+                    </div>
+                    <p className="tmux-note">
+                      管理当前用户的默认 tmux 服务，每 5
+                      秒刷新。选择窗口和窗格会影响共享此会话的客户端。
+                    </p>
+                    <p className="tmux-note">
+                      关闭附加标签只分离客户端；“结束”会终止远端任务。默认快捷键：Ctrl+B
+                      后按 D 分离、C 新窗口、[
+                      进入复制模式；自定义配置以远端设置为准。
+                    </p>
+                  </div>
+                )}
+              </section>
             </>
           )}
-          <p className="tmux-note">
-            管理当前用户的默认 tmux 服务，每 5
-            秒刷新。选择窗口和窗格会影响共享此会话的客户端。
-          </p>
-          <p className="tmux-note">
-            关闭附加标签只分离客户端；“结束”会终止远端任务。默认快捷键：Ctrl+B
-            后按 D 分离、C 新窗口、[ 进入复制模式；自定义配置以远端设置为准。
-          </p>
         </>
       )}
     </aside>

@@ -4,6 +4,19 @@
 @import "tw-animate-css";
 @source "./";
 
+.sidebar.sidebar-collapsed {
+  padding: 12px 7px;
+}
+.sidebar-collapsed > :not(.sidebar-header),
+.sidebar-collapsed .sidebar-brand,
+.sidebar-collapsed .sidebar-actions > :not(.sidebar-collapse-toggle) {
+  display: none;
+}
+.sidebar-collapsed .sidebar-header {
+  padding: 2px 0;
+  justify-content: center;
+}
+
 @layer base {
   [data-slot] {
     border-style: solid;
@@ -35,7 +48,8 @@
 }
 [data-slot="dialog-overlay"] {
   z-index: 1090;
-  backdrop-filter: blur(3px);
+  /* Live terminal canvases would force a full-window blur on every update. */
+  background: rgba(0, 0, 0, 0.5);
 }
 .app-dialog:has(.settings-modal) {
   width: min(940px, calc(100vw - 48px));
@@ -51,6 +65,8 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
+  /* Show the complete form immediately, without a second nested entrance. */
+  animation: none;
 }
 .app-dialog [data-slot="dialog-close"] {
   display: inline-flex;

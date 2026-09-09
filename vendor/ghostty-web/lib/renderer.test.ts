@@ -314,3 +314,45 @@ describe('CanvasRenderer – preedit overlay', () => {
     document.body.removeChild(parent);
   });
 });
+
+describe('CanvasRenderer – row damage boundaries', () => {
+  test('tall fallback glyphs cannot paint outside the row being cleared', () => {
+    const renderer = new CanvasRenderer(document.createElement('canvas'));
+    const internal = renderer as any;
+    const height = internal.metrics.height;
+    // A tiny raster context models a fallback glyph taller than the cell.
+    // Repainting row 1 must not alter either neighboring row, even though
+    // fillText asks to paint beyond both of its vertical boundaries.
+    const pixels = new Array(height * 3).fill('neighbor');
+    let clip = [0, pixels.length];
+    let rect = clip;
+    const stack: number[][] = [];
+    internal.ctx = {
+      save: () => stack.push([...clip]),
+      restore: () => {
+        clip = stack.pop()!;
+      },
+      beginPath: () => {},
+      rect: (_x: number, y: number, _w: number, h: number) => {
+        rect = [y, y + h];
+      },
+      clip: () => {
+        clip = rect;
+      },
+      clearRect: (_x: number, y: number, _w: number, h: number) => pixels.fill('clear', y, y + h),
+      fillRect: () => {},
+    };
+    internal.renderCellBackground = () => {};
+    internal.renderCellText = () => {
+      for (let y = height - 3; y < height * 2 + 3; y++) {
+        if (y >= clip[0] && y < clip[1]) pixels[y] = 'glyph';
+      }
+    };
+    internal.renderLine([{ width: 1 }], 1, 10);
+    expect(pixels.slice(0, height).every((p) => p === 'neighbor')).toBe(true);
+    expect(pixels.slice(height, height * 2).every((p) => p === 'glyph')).toBe(true);
+    expect(pixels.slice(height * 2).every((p) => p === 'neighbor')).toBe(true);
+    expect(clip).toEqual([0, pixels.length]);
+    renderer.dispose();
+  });
+});

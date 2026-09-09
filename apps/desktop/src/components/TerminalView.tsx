@@ -16,6 +16,7 @@ import { createEchoSuppressor, type EchoSuppressor } from "../lib/echoSuppress";
 import { isAppShortcut, isComposingKey } from "../lib/keyboard";
 import { OSC7_HOOK } from "../lib/shellIntegration";
 import { trackTerminalIme } from "../lib/terminalIme";
+import { createTerminalOutput } from "../lib/terminalOutput";
 import { getTheme } from "../themes";
 import type { AppSettings, SessionInfo } from "../types";
 import TerminalContextMenu, {
@@ -295,6 +296,7 @@ export default function TerminalView({
     };
     const cleanups: Array<() => void> = [];
     const backendListeners: UnlistenFn[] = [];
+    let output: ReturnType<typeof createTerminalOutput> | null = null;
 
     const updateState = (next: ConnectionState) => {
       if (connectionStateRef === next) return;
@@ -305,6 +307,7 @@ export default function TerminalView({
 
     const detachBackendListeners = () => {
       backendListeners.splice(0).forEach((unlisten) => unlisten());
+      output?.flush();
     };
 
     (async () => {
@@ -335,6 +338,8 @@ export default function TerminalView({
         }
       };
       t.open(containerRef.current);
+      output = createTerminalOutput((data) => t.write(data));
+      cleanups.push(() => output?.dispose());
       cleanups.push(trackTerminalIme(t, containerRef.current, () =>
         !disposed && activeRef.current && inputEnabledRef.current));
       {
@@ -563,7 +568,7 @@ export default function TerminalView({
             oscCarry = scanned.carry;
             if (scanned.path)
               onCwdChangeRef.current?.(session.id, scanned.path);
-            t.write(chunk);
+            output!.push(chunk);
           };
           const dataUnlisten = await listen<string>(
             `ssh://${newBackendId}/data`,

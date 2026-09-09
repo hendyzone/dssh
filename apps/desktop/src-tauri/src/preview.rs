@@ -50,15 +50,24 @@ pub async fn open_image_preview(
     let w = (width + 48).clamp(320, 1400) as f64;
     let h = (height + 88).clamp(240, 1000) as f64;
 
-    WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         &app,
         &label,
         WebviewUrl::App(format!("index.html#/preview/{id}").into()),
     )
     .title("dssh 图片预览")
     .inner_size(w, h)
-    .resizable(true)
-    .build()
+    .resizable(true);
+    // Windows webviews sharing a data directory must use matching browser args.
+    #[cfg(windows)]
+    let builder = if let Some(args) = app.config().app.windows.iter()
+        .find(|window| window.label == "main")
+        .and_then(|window| window.additional_browser_args.as_deref()) {
+        builder.additional_browser_args(args)
+    } else {
+        builder
+    };
+    builder.build()
     .map_err(|e| PreviewError::Other(e.to_string()))?;
 
     Ok(())

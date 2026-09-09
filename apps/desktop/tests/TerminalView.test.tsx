@@ -104,6 +104,28 @@ const settle = async () => {
   });
 };
 
+it("presents a split pi refresh atomically and flushes pending output before disconnect", async () => {
+  const callbacks = new Map<string, (event: { payload: any }) => void>();
+  mocks.listen.mockImplementation(async (event: string, callback: (event: { payload: any }) => void) => {
+    callbacks.set(event, callback);
+    return () => {};
+  });
+  const view = render(<TerminalView {...props} session={{ ...props.session, tmux: { name: "pi" } as any }} />);
+  await settle();
+  const write = mocks.instances[0].write;
+  const data = callbacks.get("ssh://backend/data")!;
+  const exit = callbacks.get("ssh://backend/exit")!;
+  act(() => data({ payload: "\x1b[?2026h\x1b[H\x1b[J" }));
+  expect(write).not.toHaveBeenCalled();
+  act(() => data({ payload: "complete frame\x1b[?2026l" }));
+  expect(write).toHaveBeenCalledExactlyOnceWith("\x1b[?2026h\x1b[H\x1b[Jcomplete frame\x1b[?2026l");
+  act(() => data({ payload: "\x1b[?2026hfinal output" }));
+  act(() => exit({ payload: 0 }));
+  expect(write.mock.calls[1][0]).toBe("\x1b[?2026hfinal output");
+  expect(write.mock.calls[2][0]).toContain("进程退出");
+  view.unmount();
+});
+
 it("confirms Shift selection only after clipboard write succeeds and dismisses the notice", async () => {
   let complete!: () => void;
   const writeText = vi.fn(() => new Promise<void>(resolve => { complete = resolve; }));

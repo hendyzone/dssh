@@ -2583,9 +2583,14 @@ var L = class {
 			let r = e[n];
 			r.width !== 0 && this.renderCellBackground(r, n, t);
 		}
-		for (let n = 0; n < e.length; n++) {
-			let r = e[n];
-			r.width !== 0 && this.renderCellText(r, n, t);
+		this.ctx.save(), this.ctx.beginPath(), this.ctx.rect(0, r, i, this.metrics.height), this.ctx.clip();
+		try {
+			for (let n = 0; n < e.length; n++) {
+				let r = e[n];
+				r.width !== 0 && this.renderCellText(r, n, t);
+			}
+		} finally {
+			this.ctx.restore();
 		}
 	}
 	renderCellBackground(e, t, n) {

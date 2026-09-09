@@ -76,7 +76,13 @@ test("discovers sessions and attaches by remote identity", async () => {
   await screen.findByText("work");
   fireEvent.click(screen.getByRole("button", { name: "进入会话" }));
   expect(onAttach).toHaveBeenCalledWith(snapshot.sessions[0]);
+  const toggle = screen.getByRole("button", { name: "窗口与窗格 展开" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("0: vim ●")).toBeNull();
+  fireEvent.click(toggle);
   expect(screen.getByText("0: vim ●")).toBeTruthy();
+  fireEvent.click(toggle);
+  expect(screen.queryByText("0: vim ●")).toBeNull();
   onAttach.mockClear();
   fireEvent.doubleClick(screen.getByText("work"));
   expect(onAttach).toHaveBeenCalledWith(snapshot.sessions[0]);
@@ -101,6 +107,7 @@ test("creates named sessions and scopes pane actions without typing in SSH", asy
     ),
   );
   await waitFor(() => expect(screen.queryByLabelText("tmux 名称")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "窗口与窗格 展开" }));
   fireEvent.click(screen.getByRole("button", { name: "左右分屏" }));
   await waitFor(() =>
     expect(mocks.invoke).toHaveBeenCalledWith("tmux_action", {

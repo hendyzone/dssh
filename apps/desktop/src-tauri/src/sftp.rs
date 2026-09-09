@@ -298,6 +298,131 @@ pub async fn sftp_download(
     result
 }
 
+#[derive(Debug)]
+struct UploadEntry {
+    local: PathBuf,
+    remote: String,
+    is_dir: bool,
+}
+
+// Inspect directories before opening files (opening a directory fails with
+// AccessDenied on Windows). Plan first so progress covers the complete tree.
+async fn plan_upload(
+    local: &Path,
+    remote: &str,
+    transfer_id: &str,
+) -> Result<(Vec<UploadEntry>, u64), Error> {
+    let mut pending = vec![(local.to_path_buf(), remote.to_owned())];
+    let mut entries = Vec::new();
+    let mut total = 0_u64;
+    while let Some((local, remote)) = pending.pop() {
+        if take_cancel_flag(transfer_id).await {
+            return Err(Error::Canceled);
+        }
+        let metadata = tokio::fs::symlink_metadata(&local)
+            .await
+            .map_err(|error| Error::Io(format!("{}: {error}", local.display())))?;
+        // Do not recurse through links, which can escape the dropped tree or loop.
+        if metadata.file_type().is_symlink() {
+            return Err(Error::Io(format!(
+                "暂不支持上传符号链接：{}",
+                local.display()
+            )));
+        }
+        let is_dir = metadata.is_dir();
+        if is_dir {
+            let mut children = tokio::fs::read_dir(&local)
+                .await
+                .map_err(|error| Error::Io(format!("{}: {error}", local.display())))?;
+            while let Some(child) = children.next_entry().await? {
+                if take_cancel_flag(transfer_id).await {
+                    return Err(Error::Canceled);
+                }
+                let name = child.file_name().into_string().map_err(|_| {
+                    Error::Io(format!("文件名不是有效 UTF-8：{}", child.path().display()))
+                })?;
+                pending.push((
+                    child.path(),
+                    format!("{}/{name}", remote.trim_end_matches('/')),
+                ));
+            }
+        } else if metadata.is_file() {
+            total = total
+                .checked_add(metadata.len())
+                .ok_or_else(|| Error::Io("上传文件夹总大小超出限制".into()))?;
+        } else {
+            return Err(Error::Io(format!(
+                "不支持上传此文件类型：{}",
+                local.display()
+            )));
+        }
+        // Parents precede children, including empty directories.
+        entries.push(UploadEntry {
+            local,
+            remote,
+            is_dir,
+        });
+    }
+    Ok((entries, total))
+}
+
+async fn upload_entries(
+    sftp: &SftpSession,
+    entries: &[UploadEntry],
+    transfer_id: &str,
+    mut progress: impl FnMut(u64),
+) -> Result<(), Error> {
+    let mut transferred = 0;
+    let mut buffer = vec![0_u8; 32 * 1024];
+    for entry in entries {
+        if take_cancel_flag(transfer_id).await {
+            return Err(Error::Canceled);
+        }
+        if entry.is_dir {
+            if let Err(error) = sftp.create_dir(&entry.remote).await {
+                // Confirmed overwrites merge directories, never regular files.
+                if !sftp
+                    .metadata(&entry.remote)
+                    .await
+                    .map(|m| m.is_dir())
+                    .unwrap_or(false)
+                {
+                    return Err(Error::Sftp(format!("创建目录 {}: {error}", entry.remote)));
+                }
+            }
+            continue;
+        }
+        let mut local = tokio::fs::File::open(&entry.local)
+            .await
+            .map_err(|error| Error::Io(format!("{}: {error}", entry.local.display())))?;
+        let mut remote = sftp.create(&entry.remote).await?;
+        let result = async {
+            loop {
+                if take_cancel_flag(transfer_id).await {
+                    return Err(Error::Canceled);
+                }
+                let read = local.read(&mut buffer).await?;
+                if read == 0 {
+                    break;
+                }
+                remote.write_all(&buffer[..read]).await?;
+                transferred += read as u64;
+                progress(transferred);
+            }
+            Ok::<(), Error>(())
+        }
+        .await;
+        let closed = remote.close().await;
+        if matches!(&result, Err(Error::Canceled)) {
+            // Only remove the interrupted file; leave completed files and directories.
+            let _ = sftp.remove_file(&entry.remote).await;
+        }
+        result?;
+        closed?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn sftp_upload(
     app: AppHandle,
@@ -318,15 +443,9 @@ pub async fn sftp_upload(
         if take_cancel_flag(&transfer_id).await {
             return Err(Error::Canceled);
         }
-        let mut local = tokio::fs::File::open(&local_path).await?;
-        let metadata = local.metadata().await?;
-        if !metadata.is_file() {
-            return Err(Error::Io("暂不支持上传文件夹，请先打包或选择文件".into()));
-        }
-        total_bytes = metadata.len();
-        let sftp = open_sftp(&state, &session_id).await?;
-        let mut remote = sftp.create(remote_path.clone()).await?;
-        let mut buffer = vec![0_u8; 32 * 1024];
+        let (entries, bytes) =
+            plan_upload(Path::new(&local_path), &remote_path, &transfer_id).await?;
+        total_bytes = bytes;
         emit_progress(
             &app,
             &session_id,
@@ -338,34 +457,26 @@ pub async fn sftp_upload(
             false,
             None,
         );
-        loop {
-            if take_cancel_flag(&transfer_id).await {
-                let _ = remote.shutdown().await;
-                let _ = remote.close().await;
-                let _ = sftp.remove_file(remote_path.clone()).await;
-                let _ = sftp.close().await;
-                return Err(Error::Canceled);
-            }
-            let read = local.read(&mut buffer).await?;
-            if read == 0 {
-                break;
-            }
-            remote.write_all(&buffer[..read]).await?;
-            transferred_bytes += read as u64;
+        let sftp = open_sftp(&state, &session_id).await?;
+        let uploaded = upload_entries(&sftp, &entries, &transfer_id, |bytes| {
+            transferred_bytes = bytes;
             emit_progress(
                 &app,
                 &session_id,
                 &transfer_id,
                 "upload",
                 &file_name,
-                transferred_bytes,
+                bytes,
                 total_bytes,
                 false,
                 None,
             );
-        }
-        remote.shutdown().await?;
-        sftp.close().await?;
+        })
+        .await;
+        // Close the SFTP channel on failure/cancellation too.
+        let closed = sftp.close().await;
+        uploaded?;
+        closed?;
         Ok::<(), Error>(())
     }
     .await;
@@ -643,6 +754,85 @@ async fn write_remote_file(
     Ok(())
 }
 
+#[cfg(test)]
+mod upload_tests {
+    use super::*;
+
+    pub(super) struct LocalTree(pub PathBuf);
+    impl LocalTree {
+        pub(super) fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("dssh-upload-test-{}", random_name()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for LocalTree {
+        fn drop(&mut self) {
+            let path = std::fs::canonicalize(&self.0).unwrap();
+            let root = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+            assert_eq!(path.parent(), Some(root.as_path()));
+            assert!(path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("dssh-upload-test-"));
+            std::fs::remove_dir_all(path).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn upload_plan_preserves_nested_unicode_and_empty_directories() {
+        let tree = LocalTree::new();
+        std::fs::create_dir_all(tree.0.join("子目录/空目录")).unwrap();
+        std::fs::write(tree.0.join("卡背图.png"), b"png").unwrap();
+        std::fs::write(tree.0.join("子目录/zero.txt"), b"").unwrap();
+        std::fs::write(tree.0.join("子目录/data.txt"), b"hello").unwrap();
+        let (entries, total) = plan_upload(&tree.0, "/remote/卡图", "plan-tree")
+            .await
+            .unwrap();
+        assert_eq!(total, 8);
+        assert_eq!(entries.len(), 6);
+        assert!(entries[0].is_dir);
+        for entry in entries.iter().skip(1) {
+            let parent = entry.remote.rsplit_once('/').unwrap().0;
+            let parent_index = entries
+                .iter()
+                .position(|e| e.remote == parent && e.is_dir)
+                .unwrap();
+            let index = entries
+                .iter()
+                .position(|e| e.remote == entry.remote)
+                .unwrap();
+            assert!(parent_index < index);
+        }
+        assert!(entries
+            .iter()
+            .any(|e| e.remote == "/remote/卡图/子目录/空目录" && e.is_dir));
+        let (single, size) = plan_upload(&tree.0.join("卡背图.png"), "/single.png", "plan-file")
+            .await
+            .unwrap();
+        assert_eq!(size, 3);
+        assert_eq!(single.len(), 1);
+        assert!(!single[0].is_dir);
+    }
+
+    #[tokio::test]
+    async fn upload_plan_checks_cancellation_and_reports_missing_path() {
+        let tree = LocalTree::new();
+        cancel_upload("plan-cancel".into()).await.unwrap();
+        assert!(matches!(
+            plan_upload(&tree.0, "/remote", "plan-cancel").await,
+            Err(Error::Canceled)
+        ));
+        let missing = tree.0.join("missing");
+        let error = plan_upload(&missing, "/remote", "plan-missing")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("missing"));
+    }
+}
+
 #[cfg(all(test, windows))]
 mod file_write_tests {
     use super::*;
@@ -670,6 +860,86 @@ mod file_write_tests {
         let sftp = SftpSession::new(stream).await.unwrap();
         let dir = format!("/tmp/dssh-sftp-test-{}", random_name());
         sftp.create_dir(dir.clone()).await.unwrap();
+        // Exercise the exact backend helpers used by drag/drop against OpenSSH.
+        let local = upload_tests::LocalTree::new();
+        std::fs::create_dir_all(local.0.join("子目录/空目录")).unwrap();
+        std::fs::write(local.0.join("卡背图.png"), b"png").unwrap();
+        std::fs::write(local.0.join("子目录/zero.txt"), b"").unwrap();
+        let remote_root = format!("{dir}/卡图");
+        let (entries, total) = plan_upload(&local.0, &remote_root, "live-tree")
+            .await
+            .unwrap();
+        let mut progress = Vec::new();
+        upload_entries(&sftp, &entries, "live-tree", |bytes| progress.push(bytes))
+            .await
+            .unwrap();
+        assert_eq!(progress.last(), Some(&total));
+        assert_eq!(
+            sftp.read(format!("{remote_root}/卡背图.png"))
+                .await
+                .unwrap(),
+            b"png"
+        );
+        assert!(sftp
+            .metadata(format!("{remote_root}/子目录/空目录"))
+            .await
+            .unwrap()
+            .is_dir());
+        assert!(sftp
+            .read(format!("{remote_root}/子目录/zero.txt"))
+            .await
+            .unwrap()
+            .is_empty());
+        // Merge existing directories and truncate overwritten files.
+        std::fs::write(local.0.join("卡背图.png"), b"x").unwrap();
+        upload_entries(&sftp, &entries, "live-tree", |_| {})
+            .await
+            .unwrap();
+        assert_eq!(
+            sftp.read(format!("{remote_root}/卡背图.png"))
+                .await
+                .unwrap(),
+            b"x"
+        );
+        // Cancel mid-file, checking both stopping and removal of the partial file.
+        std::fs::write(local.0.join("large.bin"), vec![7; 100_000]).unwrap();
+        let canceled_path = format!("{dir}/canceled.bin");
+        let (single, _) = plan_upload(&local.0.join("large.bin"), &canceled_path, "live-cancel")
+            .await
+            .unwrap();
+        let result = upload_entries(&sftp, &single, "live-cancel", |_| {
+            canceled_transfers()
+                .try_lock()
+                .unwrap()
+                .insert("live-cancel".into());
+        })
+        .await;
+        assert!(matches!(result, Err(Error::Canceled)));
+        assert!(sftp.metadata(&canceled_path).await.is_err());
+        // An existing file cannot silently swallow a directory upload.
+        let conflict = format!("{dir}/conflict");
+        write_remote_file(&sftp, &conflict, b"keep", true)
+            .await
+            .unwrap();
+        let (conflicting, _) = plan_upload(&local.0, &conflict, "live-conflict")
+            .await
+            .unwrap();
+        assert!(upload_entries(&sftp, &conflicting, "live-conflict", |_| {})
+            .await
+            .is_err());
+        assert_eq!(sftp.read(&conflict).await.unwrap(), b"keep");
+        sftp.remove_file(conflict).await.unwrap();
+        for name in ["卡背图.png", "子目录/zero.txt"] {
+            sftp.remove_file(format!("{remote_root}/{name}"))
+                .await
+                .unwrap();
+        }
+        for name in ["子目录/空目录", "子目录"] {
+            sftp.remove_dir(format!("{remote_root}/{name}"))
+                .await
+                .unwrap();
+        }
+        sftp.remove_dir(remote_root).await.unwrap();
         let target = format!("{dir}/target");
         sftp.create_dir(target.clone()).await.unwrap();
         write_remote_file(&sftp, &format!("{target}/child.txt"), b"child", true)
