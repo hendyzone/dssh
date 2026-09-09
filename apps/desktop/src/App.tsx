@@ -8,7 +8,7 @@ import ChangesPanel from "./components/ChangesPanel";
 import { focusTask, taskLabels } from "./lib/taskStatus";
 import ToolRail from "./components/ToolRail";
 import CollaborationPanel from "./components/CollaborationPanel";
-import { useCollaboration } from "./lib/collaboration";
+import { collaborationKey, useActiveCollaboration, useCollaboration } from "./lib/collaboration";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWindowClose } from "./lib/useWindowClose";
 import { preventBrowserContextMenu } from "./lib/contextMenu";
@@ -206,6 +206,8 @@ export default function App() {
 
   /** 各窗格远端 shell 的当前目录（TerminalView 经 OSC 7 上报） */
   const [paneCwds, setPaneCwds] = useState<Record<string, string>>({});
+  const collaborationPane=tabs.find(t=>t.id===activeTabId)?.panes[tabs.find(t=>t.id===activeTabId)?.activePane??0];
+  const activeCollaboration=useActiveCollaboration(collaborationProfiles,collaborationPane,backendIds[collaborationPane?.id??""],paneCwds[collaborationPane?.id??""]);
   const setPaneCwd = useCallback((paneId: string, cwd: string) => {
     setPaneCwds((prev) =>
       prev[paneId] === cwd ? prev : { ...prev, [paneId]: cwd },
@@ -808,7 +810,7 @@ export default function App() {
             const panel = sidePanels[t.id] ?? null;
             const activePaneBackend =
               backendIds[t.panes[t.activePane]?.id ?? ""] ?? null;
-            const collaboration = collaborationProfiles[t.panes[t.activePane]?.server.id ?? ""];
+            const collaboration = t.id === activeTabId ? activeCollaboration : undefined;
             return (
               <div
                 key={t.id}
@@ -882,7 +884,7 @@ export default function App() {
                   )}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
                     <PanelDock kind="collaboration">
-                      <CollaborationPanel key={activePaneBackend ?? "disconnected"} sessionId={activePaneBackend ?? ""} profile={collaboration} onClose={()=>togglePanel(t.id,null)}/>
+                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} onClose={()=>togglePanel(t.id,null)}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (
@@ -1122,6 +1124,7 @@ export default function App() {
       )}
       {showSettings && (
         <SettingsModal
+          collaborationSessions={tabs.flatMap(t=>t.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""})))}
           servers={servers}
           settings={settings}
           onChange={updateSettings}

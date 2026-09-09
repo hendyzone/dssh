@@ -74,7 +74,7 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 
 ## 🌐 转发、监控与同步
 
-可选的 **Agent 协作** 可在「设置 → Agent 协作」按服务器配置并开启，查看 taskboard 的共享任务与交接，
+可选的 **Agent 协作** 可在「设置 → Agent 协作」按 tmux 会话 + worktree 配置并开启，查看 taskboard 的共享任务与交接，
 通过 amail 查询、预览发送或回复消息。默认关闭，凭据留在远端。详见 [Agent 协作接入](docs/agent-collaboration.md)。
 
 | 功能 | 使用方式 |
