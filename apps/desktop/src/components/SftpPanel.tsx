@@ -1,4 +1,5 @@
 import { AppDialog } from "./ui/app-dialog";
+import "./SftpPanel.css";
 import { Alert } from "./ui/alert";
 import { PositionedMenu, MenuItem } from "./ui/positioned-menu";
 import {
@@ -128,6 +129,12 @@ export default function SftpPanel({
     };
   }, [fileMenu]);
   const panelRef = useRef<HTMLElement>(null);
+  const [dropDirectory, setDropDirectory] = useState<string | null>(null);
+  const remoteDrag = useRef<{
+    entry: FileEntry; x: number; y: number; pointerId: number; active: boolean;
+  } | null>(null);
+  const suppressDragClick = useRef(false);
+  const movePending = useRef(false);
   const [showHidden, setShowHidden] = useState(
     () => localStorage.getItem("dssh.sftp.hidden") !== "false",
   );
@@ -236,14 +243,14 @@ export default function SftpPanel({
   }, [followTerminal, terminalCwd, loadDirectory]);
 
   const uploadFiles = useCallback(
-    async (paths: string[]) => {
+    async (paths: string[], destination = currentPathRef.current) => {
       if (paths.length === 0) return;
       setError(null);
       setNotice(null);
       try {
         const existing = await invoke<FileEntry[]>("sftp_list", {
           sessionId,
-          path: currentPathRef.current,
+          path: destination,
         });
         const conflicts = paths
           .map(basename)
@@ -259,7 +266,7 @@ export default function SftpPanel({
       }
       const queued = paths.map((localPath) => ({
         localPath,
-        remotePath: joinRemotePath(currentPathRef.current, basename(localPath)),
+        remotePath: joinRemotePath(destination, basename(localPath)),
         transferId: createTransfer(sessionId, basename(localPath), "upload"),
       }));
       let failed = false;
@@ -287,39 +294,87 @@ export default function SftpPanel({
     [loadDirectory, sessionId],
   );
 
+  // Both native file drops and remote moves use viewport CSS coordinates.
+  const directoryAtPoint = useCallback((x: number, y: number) => {
+    const panel = panelRef.current;
+    const hit = document.elementFromPoint(x, y);
+    if (!panel || !hit || !panel.contains(hit)) return null;
+    return hit.closest<HTMLElement>("[data-sftp-drop-directory]")
+      ?.dataset.sftpDropDirectory ?? currentPathRef.current;
+  }, []);
+
   useEffect(() => {
     let disposed = false;
-    let unlisten: (() => void) | undefined;
-    const registration = listen<DragDropPayload>(
-      "tauri://drag-drop",
-      (event) => {
-        const rect = panelRef.current?.getBoundingClientRect();
-        const point = event.payload.position;
+    const cleanups: (() => void)[] = [];
+    for (const name of ["enter", "over", "leave", "drop"]) {
+      void listen<DragDropPayload>(`tauri://drag-${name}`, (event) => {
+        if (disposed) return;
+        const point = event.payload?.position;
         const ratio = window.devicePixelRatio || 1;
-        if (
-          !disposed &&
-          rect &&
-          rect.width > 0 &&
-          rect.height > 0 &&
-          point &&
-          point.x / ratio >= rect.left &&
-          point.x / ratio <= rect.right &&
-          point.y / ratio >= rect.top &&
-          point.y / ratio <= rect.bottom
-        )
-          void uploadFiles(event.payload.paths ?? []);
-      },
-    );
-    void registration.then((cleanup) => {
-      if (disposed) cleanup();
-      else unlisten = cleanup;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-      void registration.then((cleanup) => cleanup());
+        const destination = name !== "leave" && point
+          ? directoryAtPoint(point.x / ratio, point.y / ratio) : null;
+        setDropDirectory(name === "drop" ? null : destination);
+        if (name === "drop" && destination !== null)
+          void uploadFiles(event.payload.paths ?? [], destination);
+      }).then((cleanup) => {
+        if (disposed) cleanup();
+        else cleanups.push(cleanup);
+      }).catch((reason) => { if (!disposed) setError(String(reason)); });
+    }
+    return () => { disposed = true; cleanups.forEach((cleanup) => cleanup()); };
+  }, [directoryAtPoint, uploadFiles]);
+
+  const moveEntry = async (entry: FileEntry, destination: string) => {
+    const newPath = joinRemotePath(destination, entry.name);
+    if (newPath === entry.path || movePending.current) return;
+    if (entry.isDir && (destination === entry.path || destination.startsWith(`${entry.path}/`))) {
+      setError("不能将文件夹移动到自身或其子目录中。");
+      return;
+    }
+    movePending.current = true;
+    setError(null);
+    setNotice(null);
+    try {
+      const existing = await invoke<FileEntry[]>("sftp_list", { sessionId, path: destination });
+      if (existing.some((item) => item.name === entry.name)) {
+        setError(`目标目录已存在“${entry.name}”，请先重命名后再移动。`);
+        return;
+      }
+      await invoke("sftp_rename", { sessionId, oldPath: entry.path, newPath });
+      await loadDirectory(currentPathRef.current);
+      setNotice(`已将“${entry.name}”移动到 ${destination}`);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      movePending.current = false;
+    }
+  };
+
+  const cancelRemoteDrag = () => {
+    const drag = remoteDrag.current;
+    remoteDrag.current = null;
+    setDropDirectory(null);
+    if (drag && panelRef.current?.hasPointerCapture(drag.pointerId))
+      panelRef.current.releasePointerCapture(drag.pointerId);
+  };
+
+  useEffect(() => {
+    const cancel = () => {
+      const drag = remoteDrag.current;
+      remoteDrag.current = null;
+      setDropDirectory(null);
+      if (drag && panelRef.current?.hasPointerCapture(drag.pointerId))
+        panelRef.current.releasePointerCapture(drag.pointerId);
     };
-  }, [uploadFiles]);
+    const keydown = (event: KeyboardEvent) => { if (event.key === "Escape") cancel(); };
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", keydown);
+    return () => {
+      cancel();
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", keydown);
+    };
+  }, [sessionId]);
 
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split("/").filter(Boolean);
@@ -468,7 +523,38 @@ export default function SftpPanel({
   };
   flatten(entries);
   return (
-    <aside ref={panelRef} className="sftp-panel" style={panelStyle}>
+    <aside
+      ref={panelRef}
+      className="sftp-panel"
+      style={panelStyle}
+      onPointerMove={(event) => {
+        const drag = remoteDrag.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        if (!drag.active && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return;
+        drag.active = true;
+        suppressDragClick.current = true;
+        panelRef.current?.setPointerCapture(event.pointerId);
+        setDropDirectory(directoryAtPoint(event.clientX, event.clientY));
+        event.preventDefault();
+      }}
+      onPointerUp={(event) => {
+        const drag = remoteDrag.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        const destination = drag.active ? directoryAtPoint(event.clientX, event.clientY) : null;
+        cancelRemoteDrag();
+        if (destination !== null) void moveEntry(drag.entry, destination);
+      }}
+      onPointerCancel={cancelRemoteDrag}
+      onLostPointerCapture={cancelRemoteDrag}
+      onClickCapture={(event) => {
+        if (suppressDragClick.current) {
+          suppressDragClick.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+      onPointerDownCapture={() => { suppressDragClick.current = false; }}
+    >
       <div
         data-panel-drag-handle
         tabIndex={0}
@@ -554,6 +640,8 @@ export default function SftpPanel({
               </span>
             )}
             <Button
+              data-sftp-drop-directory={crumb.path}
+              data-sftp-drop-active={dropDirectory === crumb.path || undefined}
               variant="outline"
               size="sm"
               type="button"
@@ -900,7 +988,7 @@ export default function SftpPanel({
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "0 5px 8px" }}>
+      <div data-sftp-drop-directory={currentPath} style={{ flex: 1, overflowY: "auto", padding: "0 5px 8px" }}>
         {loading ? (
           <div style={{ padding: 14, color: "var(--ui-muted)" }}>
             正在读取目录…
@@ -914,6 +1002,14 @@ export default function SftpPanel({
             <div
               key={entry.path}
               className={`sftp-tree-row${selectedPath === entry.path ? " selected" : ""}`}
+              data-sftp-drop-directory={entry.isDir ? entry.path : entry.path.slice(0, entry.path.lastIndexOf("/")) || "/"}
+              data-sftp-drop-active={entry.isDir && dropDirectory === entry.path || undefined}
+              onDragStart={(event) => event.preventDefault()}
+              onPointerDown={(event) => {
+                if (event.button !== 0 || event.pointerType === "touch" ||
+                  (event.target as Element).closest("button, input, textarea") || movePending.current) return;
+                remoteDrag.current = { entry, x: event.clientX, y: event.clientY, pointerId: event.pointerId, active: false };
+              }}
               title={`${entry.name} · ${formatSize(entry.size, entry.isDir)} · ${formatTime(entry.mtime)}`}
               onClick={() => setSelectedPath(entry.path)}
               onDoubleClick={() => enter(entry)}
@@ -936,6 +1032,7 @@ export default function SftpPanel({
                     ? "var(--ui-border)"
                     : "transparent",
                 cursor: "default",
+                userSelect: "none",
               }}
             >
               {entry.isDir && treeMode && (
@@ -1048,7 +1145,7 @@ export default function SftpPanel({
           fontSize: 11,
         }}
       >
-        拖文件或文件夹到此面板上传到当前路径 · 双击文件下载并打开
+        {dropDirectory ? `目标目录：${dropDirectory}` : "拖入本地文件上传 · 拖动远端文件移动 · 放到文件夹内或空白处当前目录"}
       </div>
       {fileMenu &&
         createPortal(

@@ -1,6 +1,6 @@
 [package]
 name = "dssh"
-version = "1.2.0"
+version = "1.2.1"
 description = "Personal modern SSH client"
 edition = "2021"
 rust-version = "1.77"
