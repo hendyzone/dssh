@@ -11,3 +11,6 @@
 .collaboration-content select,.collaboration-settings select{padding:6px;background:var(--ui-panel);color:var(--ui-fg);border:1px solid var(--ui-border);border-radius:4px}
 .collaboration-actions{display:flex;flex-wrap:wrap;gap:6px}
 .collaboration-error{color:var(--ui-danger,#e06c75)}
+.agent-guide{display:flex;flex-direction:column;gap:10px;border:1px solid var(--ui-border);border-radius:8px;padding:12px}
+.agent-guide textarea{box-sizing:border-box;width:100%;min-height:180px;resize:vertical;padding:8px;background:var(--ui-panel);color:var(--ui-fg);border:1px solid var(--ui-border);border-radius:4px;font-family:monospace;font-size:12px}
+.agent-guide summary{cursor:pointer;font-size:12px;margin:6px 0}

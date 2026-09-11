@@ -6,6 +6,36 @@ use crate::{
 use serde::Deserialize;
 use std::time::Duration;
 use tauri::State;
+use tauri_plugin_dialog::DialogExt;
+
+#[tauri::command]
+pub async fn collaboration_export_guide(
+    app: tauri::AppHandle,
+    content: String,
+) -> Result<Option<String>, String> {
+    if content.len() > 256 * 1024 {
+        return Err("手册超过 256 KiB".into());
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("Markdown", &["md"])
+        .set_file_name("dssh-agent-guide.md")
+        .save_file(move |file| {
+            let result = match file {
+                None => Ok(None),
+                Some(file) => file
+                    .into_path()
+                    .map_err(|e| e.to_string())
+                    .and_then(|path| {
+                        std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())?;
+                        Ok(Some(path.to_string_lossy().into_owned()))
+                    }),
+            };
+            let _ = tx.send(result);
+        });
+    rx.await.map_err(|e| e.to_string())?
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -129,6 +159,12 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
         hash.finish()
     );
     let mut args: Vec<String>;
+    let mail_home = format!(
+        "{}/.dssh/agents/tmux-{}-{}",
+        profile.workdir.trim_end_matches('/'),
+        &profile.tmux_id[1..],
+        profile.tmux_created
+    );
     let mut environment = vec![
         format!("TASKBOARD_PROJECT={}", quote(&profile.project)),
         format!("TASKBOARD_TASK={}", quote(&request.task)),
@@ -266,10 +302,16 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
             }
         }
     }
+    let mailbox_guard = if matches!(request.operation, Operation::Context) {
+        String::new()
+    } else {
+        format!("[ -f {} ] || {{ echo 'this tmux/worktree mailbox is not provisioned' >&2; exit 1; }}; ", quote(&format!("{mail_home}/.agent-mail/env")))
+    };
     Ok(format!(
-        "dssh_collab_actual=$({}) || exit 1; [ \"$dssh_collab_actual\" = {} ] || {{ echo 'worktree changed; select its collaboration configuration' >&2; exit 1; }}; cd {} && env {} {}",
+        "dssh_collab_actual=$({}) || exit 1; [ \"$dssh_collab_actual\" = {} ] || {{ echo 'worktree changed; select its collaboration configuration' >&2; exit 1; }}; {}cd {} && env {} {}",
         resolve,
         directory,
+        mailbox_guard,
         directory,
         environment.join(" "),
         args.join(" ")
@@ -345,6 +387,10 @@ mod tests {
         assert!(a.contains("git -C \"$dssh_collab_cwd\" rev-parse --show-toplevel"));
         assert!(a.contains("[ \"$dssh_collab_actual\" = '/repo with space' ]"));
         assert!(a.contains("/repo with space/.dssh/agents/tmux-1-123"));
+        assert!(a.contains("[ -f '/repo with space/.dssh/agents/tmux-1-123/.agent-mail/env' ]"));
+        assert!(!build_command(&p, &request(Operation::Context), "ssh1")
+            .unwrap()
+            .contains("mailbox is not provisioned"));
         let mut changed = p.clone();
         changed.tmux_created += 1;
         assert_ne!(

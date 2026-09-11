@@ -2,6 +2,7 @@ import { useState } from "react";
 import { collaborationKey, collaborationMailHome, emptyProfile, loadCollaboration, resolveWorktree, saveCollaboration, useCollaboration, type CollaborationSession, type CollaborationProfile } from "../lib/collaboration";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import AgentGuide from "./AgentGuide";
 import "./Collaboration.css";
 
 export default function CollaborationSettings({sessions=[]}: {sessions?:CollaborationSession[]}) {
@@ -22,6 +23,7 @@ export default function CollaborationSettings({sessions=[]}: {sessions?:Collabor
     <label className="collaboration-field" key={key}>{label}<Input value={String(profile[key])} placeholder={placeholder} onChange={e=>update({[key]:e.target.value})}/></label>
   );
   return <div className="collaboration-settings">
+    <AgentGuide profile={selected?profile:undefined}/>
     <p>可选功能，默认关闭。每个 tmux 会话 + worktree 独立绑定项目和邮箱。</p>
     {!choices.length ? <p>请先连接并打开一个 tmux 会话，再配置它的 worktree 协作。</p> : <>
       <label className="collaboration-field">tmux 会话<select disabled={busy} value={paneId} onChange={e=>{setPaneId(e.target.value);setProfile(bound(e.target.value));setMessage("");}}>
