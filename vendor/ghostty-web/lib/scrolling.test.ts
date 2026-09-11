@@ -30,6 +30,17 @@ describe('Terminal Scrolling', () => {
   });
 
   describe('Normal Screen Mode', () => {
+    test('returning to input cancels an in-flight wheel animation', async () => {
+      for (let i = 0; i < 80; i++) terminal.write(`Line ${i}\r\n`);
+      container.dispatchEvent(new WheelEvent('wheel', {
+        deltaY: -200, bubbles: true, cancelable: true,
+      }));
+      expect(terminal.viewportY).toBeGreaterThan(0);
+      terminal.scrollToBottom();
+      expect(terminal.viewportY).toBe(0);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(terminal.viewportY).toBe(0);
+    });
     test('should scroll viewport on wheel event in normal mode', async () => {
       // Fill with enough lines to create scrollback
       for (let i = 0; i < 50; i++) {

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
+import { PositionedMenu, MenuItem } from "./ui/positioned-menu";
 import { IconClose } from "./Icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -31,6 +32,24 @@ export default function TmuxPanel({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    connectionId: string;
+    session: TmuxSession;
+  } | null>(null);
+  useEffect(() => {
+    if (
+      contextMenu &&
+      (contextMenu.connectionId !== sessionId ||
+        !snapshot?.sessions.some(
+          (s) =>
+            s.id === contextMenu.session.id &&
+            s.created === contextMenu.session.created,
+        ))
+    )
+      setContextMenu(null);
+  }, [contextMenu, sessionId, snapshot]);
   const [edit, setEdit] = useState<{
     action: string;
     target?: string;
@@ -78,19 +97,22 @@ export default function TmuxPanel({
       clearInterval(timer);
     };
   }, [refresh]);
-  const run = async (action: string, target?: string, value?: string) => {
+  const run = async (
+    action: string,
+    target?: string,
+    value?: string,
+    subject = selected,
+  ) => {
     if (writing.current || !sessionId) return;
     writing.current = true;
     setBusy(true);
     setError(null);
-    const scope = selected
-      ? { id: selected.id, created: selected.created }
-      : null;
+    const scope = subject ? { id: subject.id, created: subject.created } : null;
     try {
       if (
         action.startsWith("kill-") &&
         !(await confirm(
-          `确定结束此 tmux ${action === "kill-session" ? "会话" : action === "kill-window" ? "窗口" : "窗格"}吗？其中正在运行的进程将被终止。`,
+          `确定结束此 tmux ${action === "kill-session" ? `会话「${subject?.name ?? ""}」` : action === "kill-window" ? "窗口" : "窗格"}吗？其中正在运行的进程将被终止。`,
           {
             title: "结束 tmux 任务",
             kind: "warning",
@@ -243,7 +265,21 @@ export default function TmuxPanel({
                   if (!busy) onAttach(s);
                 }}
                 disabled={busy}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (busy) return;
+                  setSelectedId(s.id);
+                  setEdit(null);
+                  setContextMenu({
+                    x: event.clientX,
+                    y: event.clientY,
+                    connectionId: sessionId,
+                    session: s,
+                  });
+                }}
                 onClick={() => {
+                  setContextMenu(null);
                   setSelectedId(s.id);
                   setEdit(null);
                 }}
@@ -472,6 +508,27 @@ export default function TmuxPanel({
             </>
           )}
         </>
+      )}
+      {contextMenu && contextMenu.connectionId === sessionId && (
+        <PositionedMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          label="tmux 会话操作"
+          onClose={() => setContextMenu(null)}
+        >
+          <MenuItem
+            variant="destructive"
+            disabled={busy}
+            onClick={() => {
+              const subject = contextMenu.session;
+              setContextMenu(null);
+              void run("kill-session", undefined, undefined, subject);
+            }}
+          >
+            <UiX size={14} />
+            结束会话
+          </MenuItem>
+        </PositionedMenu>
       )}
     </aside>
   );

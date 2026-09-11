@@ -1256,6 +1256,10 @@ export class Terminal implements ITerminalCore {
    * Scroll viewport to the bottom (current output)
    */
   public scrollToBottom(): void {
+    // Typing can return to the cursor during a wheel animation. Stop its old
+    // target from pulling the viewport back into history on the next frame.
+    this.cancelScrollAnimation();
+    this.targetViewportY = 0;
     if (this.viewportY !== 0) {
       this.viewportY = 0;
       this.scrollEmitter.fire(this.viewportY);

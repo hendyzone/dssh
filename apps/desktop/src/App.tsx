@@ -7,6 +7,8 @@ import { useClaudeStatus, claudeTaskId, type ClaudeHost } from "./lib/claudeStat
 import ChangesPanel from "./components/ChangesPanel";
 import { focusTask, taskLabels } from "./lib/taskStatus";
 import ToolRail from "./components/ToolRail";
+import CollaborationPanel from "./components/CollaborationPanel";
+import { collaborationKey, useActiveCollaboration, useCollaboration } from "./lib/collaboration";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWindowClose } from "./lib/useWindowClose";
 import { preventBrowserContextMenu } from "./lib/contextMenu";
@@ -60,6 +62,7 @@ import { applyTheme, getTheme } from "./themes";
 import type { AppSettings, ServerEntry, SessionInfo, TabInfo } from "./types";
 
 type SidePanel =
+  | "collaboration"
   | "sftp"
   | "forward"
   | "tmux"
@@ -70,6 +73,7 @@ type SidePanel =
 type ContextMenu = { tabId: string; x: number; y: number };
 
 export default function App() {
+  const collaborationProfiles = useCollaboration();
   useEffect(() => {
     document.addEventListener("contextmenu", preventBrowserContextMenu, true);
     return () =>
@@ -202,6 +206,8 @@ export default function App() {
 
   /** 各窗格远端 shell 的当前目录（TerminalView 经 OSC 7 上报） */
   const [paneCwds, setPaneCwds] = useState<Record<string, string>>({});
+  const collaborationPane=tabs.find(t=>t.id===activeTabId)?.panes[tabs.find(t=>t.id===activeTabId)?.activePane??0];
+  const activeCollaboration=useActiveCollaboration(collaborationProfiles,collaborationPane,backendIds[collaborationPane?.id??""],paneCwds[collaborationPane?.id??""]);
   const setPaneCwd = useCallback((paneId: string, cwd: string) => {
     setPaneCwds((prev) =>
       prev[paneId] === cwd ? prev : { ...prev, [paneId]: cwd },
@@ -396,13 +402,6 @@ export default function App() {
       [tabId]: prev[tabId] === panel ? null : panel,
     }));
   };
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const closeMenu = () => setContextMenu(null);
-    document.addEventListener("mousedown", closeMenu);
-    return () => document.removeEventListener("mousedown", closeMenu);
-  }, [contextMenu]);
 
   // 全局快捷键：不处理复制、粘贴等文本快捷键，终端焦点也能响应本应用快捷键。
   useEffect(() => {
@@ -804,6 +803,7 @@ export default function App() {
             const panel = sidePanels[t.id] ?? null;
             const activePaneBackend =
               backendIds[t.panes[t.activePane]?.id ?? ""] ?? null;
+            const collaboration = t.id === activeTabId ? activeCollaboration : undefined;
             return (
               <div
                 key={t.id}
@@ -813,11 +813,13 @@ export default function App() {
                 <div className="session-content">
                   <ToolRail
                     side="left"
+                    collaborationEnabled={!!collaboration?.enabled}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
                   />
                   <ToolRail
                     side="right"
+                    collaborationEnabled={!!collaboration?.enabled}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
                   />
@@ -871,6 +873,11 @@ export default function App() {
                         onClose={() => togglePanel(t.id, null)}
                         onSelect={selectTask}
                       />
+                    </PanelDock>
+                  )}
+                  {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
+                    <PanelDock kind="collaboration">
+                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} onClose={()=>togglePanel(t.id,null)}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (
@@ -962,11 +969,11 @@ export default function App() {
               }
               onClick={() => moveToGroup(contextMenu.tabId, group.id)}
             >
+              移入：{group.name}
               <span
                 className="connection-menu-dot"
                 style={{ background: group.color }}
               />
-              移入：{group.name}
             </MenuItem>
           ))}
           {tabs.find((t) => t.id === contextMenu.tabId)?.groupId && (
@@ -1110,6 +1117,8 @@ export default function App() {
       )}
       {showSettings && (
         <SettingsModal
+          collaborationSessions={tabs.flatMap(t=>t.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""})))}
+          servers={servers}
           settings={settings}
           onChange={updateSettings}
           onClose={() => setShowSettings(false)}

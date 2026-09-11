@@ -48,9 +48,11 @@ vi.mock("ghostty-web", () => ({
       setTimeout(() => this.root?.focus(), 0);
     }
     write = vi.fn();
+    scrollToBottom = vi.fn();
     getSelection = vi.fn(() => "selected terminal text");
     hasMouseTracking = vi.fn(() => false);
-    paste = vi.fn();
+    pastedData = vi.fn();
+    paste = this.pastedData;
     selectAll = vi.fn();
     attachCustomKeyEventHandler(
       handler: (event: KeyboardEvent) => boolean | undefined,
@@ -207,7 +209,7 @@ it("replaces canvas browser menus and pastes through terminal bracketed-paste ha
   expect(screen.getByRole("menu", { name: "终端操作" })).toBeTruthy();
   fireEvent.click(screen.getByRole("menuitem", { name: "粘贴" }));
   await settle();
-  expect(mocks.instances[0].paste).toHaveBeenCalledWith("synthetic paste");
+  expect(mocks.instances[0].pastedData).toHaveBeenCalledWith("synthetic paste");
   expect(screen.queryByRole("menu")).toBeNull();
   fireEvent.contextMenu(canvas);
   fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
@@ -440,7 +442,7 @@ it("uploads a clipboard screenshot and inserts only its remote path", async () =
   fireEvent.contextMenu(view.container.querySelector("canvas")!);
   fireEvent.click(screen.getByRole("menuitem",{name:"粘贴截图（上传到远程）"})); await settle();
   expect(mocks.invoke).toHaveBeenCalledWith("sftp_clipboard_image",{sessionId:"backend",data:[137,80,78,71,13,10,26,10]});
-  expect(mocks.instances[0].paste).toHaveBeenCalledWith('"/home/demo/.dssh-image-test/screenshot.png" ');
+  expect(mocks.instances[0].pastedData).toHaveBeenCalledWith('"/home/demo/.dssh-image-test/screenshot.png" ');
   Reflect.deleteProperty(navigator,"clipboard");
 });
 

@@ -5,7 +5,7 @@
 <h1 align="center">dssh</h1>
 
 <p align="center">把远程终端、文件和开发任务放在同一个工作区。</p>
-<p align="center"><strong>v1.1.3</strong> · Tauri SSH 客户端 · Windows / macOS</p>
+<p align="center"><strong>v1.2.0</strong> · Tauri SSH 客户端 · Windows / macOS</p>
 
 dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中运行长任务、编辑远程文件、查看代码差异，也能给远程 Codex、Claude 等工具粘贴截图路径。
 
@@ -73,6 +73,9 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 详见[工作区工具](docs/workspace-tools.md)。
 
 ## 🌐 转发、监控与同步
+
+可选的 **Agent 协作** 可在「设置 → Agent 协作」按 tmux 会话 + worktree 配置并开启，查看 taskboard 的共享任务与交接，
+通过 amail 查询、预览发送或回复消息。默认关闭，凭据留在远端。详见 [Agent 协作接入](docs/agent-collaboration.md)。
 
 | 功能 | 使用方式 |
 | --- | --- |

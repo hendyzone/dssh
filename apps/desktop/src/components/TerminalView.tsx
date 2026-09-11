@@ -16,6 +16,7 @@ import { createEchoSuppressor, type EchoSuppressor } from "../lib/echoSuppress";
 import { isAppShortcut, isComposingKey } from "../lib/keyboard";
 import { OSC7_HOOK } from "../lib/shellIntegration";
 import { trackTerminalIme } from "../lib/terminalIme";
+import { trackTerminalInputScroll } from "../lib/terminalInputScroll";
 import { createTerminalOutput } from "../lib/terminalOutput";
 import { getTheme } from "../themes";
 import type { AppSettings, SessionInfo } from "../types";
@@ -338,6 +339,8 @@ export default function TerminalView({
         }
       };
       t.open(containerRef.current);
+      cleanups.push(trackTerminalInputScroll(t, containerRef.current, () =>
+        !disposed && activeRef.current && inputEnabledRef.current && connectionStateRef === "connected"));
       output = createTerminalOutput((data) => t.write(data));
       cleanups.push(() => output?.dispose());
       cleanups.push(trackTerminalIme(t, containerRef.current, () =>

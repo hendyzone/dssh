@@ -172,20 +172,21 @@
 .connection-group-actions .danger {
   color: var(--ui-danger);
 }
-.tab-context-menu .connection-menu-label {
+[data-slot="dropdown-menu-content"] .connection-menu-label {
   display: block;
   color: var(--ui-muted);
   font-size: 11px;
-  padding: 9px 10px 4px;
+  padding: 9px 8px 4px;
   border-top: 1px solid var(--ui-border);
   margin-top: 4px;
 }
-.tab-context-menu .connection-menu-dot {
+[data-slot="dropdown-menu-content"] .connection-menu-dot {
   display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-right: 7px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 .tab-context-menu {
   max-height: min(560px, calc(100vh - 20px));

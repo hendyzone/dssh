@@ -72,6 +72,15 @@ async function setup() {
 function tab(name: string) {
   return screen.getByRole("tab", { name: new RegExp(name) });
 }
+function clickMenuItem(name: string) {
+  const item = screen.getByRole("menuitem", { name });
+  fireEvent.pointerDown(item, { button: 0, pointerType: "mouse" });
+  fireEvent.mouseDown(item, { button: 0 });
+  expect(item.isConnected).toBe(true);
+  fireEvent.pointerUp(item, { button: 0, pointerType: "mouse" });
+  fireEvent.mouseUp(item, { button: 0 });
+  fireEvent.click(item);
+}
 function createGroup(name: string) {
   fireEvent.click(screen.getByRole("button", { name: "新建分组" }));
   fireEvent.change(screen.getByLabelText("分组名称"), {
@@ -81,8 +90,54 @@ function createGroup(name: string) {
 }
 function move(name: string, group: string) {
   fireEvent.contextMenu(tab(name));
-  fireEvent.click(screen.getByRole("menuitem", { name: `移入：${group}` }));
+  clickMenuItem(`移入：${group}`);
 }
+it("renames a tab through a full mouse click", async () => {
+  await setup();
+  const targetTab = tab("Alpha");
+  fireEvent.contextMenu(targetTab);
+  clickMenuItem("重命名");
+  const input = within(targetTab).getByRole("textbox");
+  fireEvent.change(input, { target: { value: "工作连接" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(tab("工作连接")).toBeTruthy();
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+it("creates a group for the context-clicked tab", async () => {
+  await setup();
+  fireEvent.contextMenu(tab("Alpha"));
+  clickMenuItem("加入新分组…");
+  fireEvent.change(screen.getByLabelText("分组名称"), {
+    target: { value: "运维" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "创建分组" }));
+  const group = screen.getByRole("button", { name: "管理分组 运维" })
+    .closest(".connection-group")!;
+  expect(within(group as HTMLElement).getByRole("tab", { name: /Alpha/ })).toBeTruthy();
+});
+it.each([
+  ["关闭其他", ["Beta"]],
+  ["关闭右侧", ["Alpha", "Beta"]],
+  ["关闭标签", ["Alpha", "Gamma"]],
+])("executes %s after mouse down and up", async (action, remaining) => {
+  const view = await setup();
+  fireEvent.contextMenu(tab("Beta"));
+  clickMenuItem(action);
+  expect(view.container.querySelectorAll(".tab")).toHaveLength(remaining.length);
+  for (const name of remaining) expect(tab(name)).toBeTruthy();
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+it("dismisses the tab menu on an outside pointer press or Escape", async () => {
+  await setup();
+  fireEvent.contextMenu(tab("Alpha"));
+  // Radix registers its outside-pointer listener on the next task.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  fireEvent.pointerDown(document.body, { button: 0, pointerType: "mouse" });
+  expect(screen.queryByRole("menu")).toBeNull();
+  fireEvent.contextMenu(tab("Alpha"));
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  expect(screen.queryByRole("menu")).toBeNull();
+});
 it("creates groups, moves connections, collapses and preserves terminal instances", async () => {
   await setup();
   createGroup("生产");
@@ -146,13 +201,13 @@ it("keeps duplicate connections in their source group and supports moving out", 
   await setup();
   createGroup("生产");
   fireEvent.contextMenu(tab("Gamma"));
-  fireEvent.click(screen.getByRole("menuitem", { name: "复制此会话" }));
+  clickMenuItem("复制此会话");
   const group = screen
     .getByRole("button", { name: "管理分组 生产" })
     .closest(".connection-group")!;
   expect(within(group as HTMLElement).getAllByRole("tab", { hidden: true })).toHaveLength(2);
   fireEvent.contextMenu(tab("Gamma #2"));
-  fireEvent.click(screen.getByRole("menuitem", { name: "移出分组" }));
+  clickMenuItem("移出分组");
   expect(within(group as HTMLElement).getAllByRole("tab", { hidden: true })).toHaveLength(1);
 });
 it("does not commit group names or close the dialog during IME composition", async () => {

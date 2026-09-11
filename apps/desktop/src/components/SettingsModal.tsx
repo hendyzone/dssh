@@ -6,17 +6,21 @@ import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { THEMES, getTheme, themeCategory } from "../themes";
 import SyncGuide from "./SyncGuide";
+import CollaborationSettings from "./CollaborationSettings";
+import type { CollaborationSession } from "../lib/collaboration";
 import {
   collectSyncUi,
   restoreSyncUi,
   type SyncRestoreResult,
 } from "../lib/syncUi";
 import { loadSettings } from "../store";
-import type { AppSettings, SyncTestResult } from "../types";
+import type { AppSettings, SyncTestResult, ServerEntry } from "../types";
 import { isComposingKey } from "../lib/keyboard";
 import { useDialogFocus } from "../lib/useDialogFocus";
 
 interface Props {
+  collaborationSessions?: CollaborationSession[];
+  servers?: ServerEntry[];
   settings: AppSettings;
   onChange: (s: AppSettings) => void;
   onClose: () => void;
@@ -38,12 +42,14 @@ type SyncOperation = "sync_test" | "sync_upload" | "sync_download";
 
 /** 设置面板：主题 / 字号 / 字体 / GitHub 加密同步。 */
 export default function SettingsModal({
+  servers = [],
+  collaborationSessions = [],
   settings,
   onChange,
   onClose,
   onServersChanged,
 }: Props) {
-  const [section, setSection] = useState<"appearance" | "sync">("appearance");
+  const [section, setSection] = useState<"appearance" | "sync" | "collaboration">("appearance");
   const [themeFilter, setThemeFilter] = useState("all");
   const [themeQuery, setThemeQuery] = useState("");
   const visibleThemes = THEMES.filter(
@@ -139,14 +145,16 @@ export default function SettingsModal({
         <h3 id="settings-title">设置</h3>
         <Tabs
           value={section}
-          onValueChange={(value) => setSection(value as "appearance" | "sync")}
+          onValueChange={(value) => setSection(value as "appearance" | "sync" | "collaboration")}
           className="settings-tabs"
         >
           <TabsList className="settings-nav" aria-label="设置分类">
             <TabsTrigger value="appearance">外观</TabsTrigger>
             <TabsTrigger value="sync">同步</TabsTrigger>
+            <TabsTrigger value="collaboration">Agent 协作</TabsTrigger>
           </TabsList>
           <div className="settings-scroll">
+            <TabsContent value="collaboration"><CollaborationSettings sessions={collaborationSessions}/></TabsContent>
             <TabsContent
               forceMount
               value="appearance"

@@ -5771,7 +5771,7 @@ var Ut = class e {
 		e > 0 && this.viewportY !== e && (this.viewportY = e, this.scrollEmitter.fire(this.viewportY), this.showScrollbar(), this.requestRender());
 	}
 	scrollToBottom() {
-		this.viewportY !== 0 && (this.viewportY = 0, this.scrollEmitter.fire(this.viewportY), this.getScrollbackLength() > 0 && this.showScrollbar(), this.requestRender());
+		this.cancelScrollAnimation(), this.targetViewportY = 0, this.viewportY !== 0 && (this.viewportY = 0, this.scrollEmitter.fire(this.viewportY), this.getScrollbackLength() > 0 && this.showScrollbar(), this.requestRender());
 	}
 	scrollToLine(e) {
 		if (!Number.isFinite(e)) return;

@@ -133,6 +133,38 @@ test("canceling session termination never issues a destructive command", async (
     false,
   );
 });
+
+test("right-click termination targets the clicked session and refreshes the list", async () => {
+  const other = { ...snapshot.sessions[0], id: "$1", name: "nanoclaw", created: 456 };
+  let current = { ...snapshot, sessions: [...snapshot.sessions, other] };
+  mocks.invoke.mockImplementation(async (command) => {
+    if (command === "tmux_snapshot") return current;
+    if (command === "tmux_action") current = snapshot;
+  });
+  render(<TmuxPanel sessionId="ssh" onAttach={() => {}} onClose={() => {}} />);
+  const card = await screen.findByText("nanoclaw");
+  fireEvent.contextMenu(card, { clientX: 80, clientY: 140 });
+  fireEvent.click(await screen.findByRole("menuitem", { name: "结束会话" }));
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("tmux_action", {
+    sessionId: "ssh",
+    request: { action: "kill-session", target: null, name: null, session: { id: "$1", created: 456 } },
+  }));
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("nanoclaw"), expect.anything());
+  await waitFor(() => expect(screen.queryByText("nanoclaw")).toBeNull());
+  expect(screen.getByText("work")).toBeTruthy();
+});
+
+test("canceling right-click termination leaves the session running", async () => {
+  mocks.confirm.mockResolvedValue(false);
+  render(<TmuxPanel sessionId="ssh" onAttach={() => {}} onClose={() => {}} />);
+  fireEvent.contextMenu(await screen.findByText("work"));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "结束会话" }));
+  await act(async () => {});
+  expect(mocks.confirm).toHaveBeenCalled();
+  expect(mocks.invoke.mock.calls.some(([command]) => command === "tmux_action")).toBe(false);
+  expect(screen.getByText("work")).toBeTruthy();
+  expect(screen.queryByRole("menu")).toBeNull();
+});
 test("shows missing tmux and fetch errors rather than an empty valid server", async () => {
   mocks.invoke.mockResolvedValueOnce({
     installed: false,
