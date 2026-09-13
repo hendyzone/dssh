@@ -74,7 +74,7 @@ test("discovers sessions and attaches by remote identity", async () => {
   const onAttach = vi.fn();
   render(<TmuxPanel sessionId="ssh" onAttach={onAttach} onClose={() => {}} />);
   await screen.findByText("work");
-  fireEvent.click(screen.getByRole("button", { name: "进入会话" }));
+  fireEvent.doubleClick(screen.getByText("work"));
   expect(onAttach).toHaveBeenCalledWith(snapshot.sessions[0]);
   const toggle = screen.getByRole("button", { name: "窗口与窗格 展开" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -126,12 +126,167 @@ test("canceling session termination never issues a destructive command", async (
   mocks.confirm.mockResolvedValue(false);
   render(<TmuxPanel sessionId="ssh" onAttach={() => {}} onClose={() => {}} />);
   await screen.findByText("work");
-  fireEvent.click(screen.getByRole("button", { name: "结束会话" }));
+  fireEvent.contextMenu(screen.getByText("work"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "结束会话" }));
   await act(async () => {});
   expect(mocks.confirm).toHaveBeenCalled();
   expect(mocks.invoke.mock.calls.some((c) => c[0] === "tmux_action")).toBe(
     false,
   );
+});
+
+test("remote aliases are visible on another SSH connection and can be cleared", async () => {
+  let current = { ...snapshot, sessions: [{ ...snapshot.sessions[0], alias: "" }] };
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === "tmux_snapshot") return current;
+    if (command === "tmux_action") {
+      current = { ...current, sessions: [{ ...current.sessions[0], alias: args.request.name }] };
+    }
+  });
+  const view = render(<TmuxPanel sessionId="ssh-a" onAttach={() => {}} onClose={() => {}} />);
+  fireEvent.contextMenu(await screen.findByText("work"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "设置别名" }));
+  fireEvent.change(screen.getByLabelText("tmux 别名"), { target: { value: "开发任务" } });
+  fireEvent.click(screen.getByRole("button", { name: "确定" }));
+  await screen.findByText("开发任务");
+  expect(mocks.invoke).toHaveBeenCalledWith("tmux_action", {
+    sessionId: "ssh-a",
+    request: { action: "set-alias", target: null, name: "开发任务", session: { id: "$0", created: 123 } },
+  });
+  view.unmount();
+  render(<TmuxPanel sessionId="ssh-b" onAttach={() => {}} onClose={() => {}} />);
+  await screen.findByText("开发任务");
+  expect(screen.getByText("原名：work")).toBeTruthy();
+  fireEvent.contextMenu(screen.getByText("开发任务"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "设置别名" }));
+  fireEvent.change(screen.getByLabelText("tmux 别名"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "确定" }));
+  await screen.findByText("work");
+  expect(screen.queryByText("开发任务")).toBeNull();
+});
+
+test("groups share remote membership, collapse, and allow returning to ungrouped", async () => {
+  let current = { ...snapshot, sessions: [
+    { ...snapshot.sessions[0], group: "项目甲" },
+    { ...snapshot.sessions[0], id: "$1", name: "other", created: 456, group: "" },
+  ] };
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === "tmux_snapshot") return current;
+    if (command === "tmux_action") current = { ...current, sessions: current.sessions.map((s) =>
+      s.id === args.request.session.id ? { ...s, group: args.request.name } : s,
+    ) };
+  });
+  const view = render(<TmuxPanel sessionId="ssh-a" onAttach={() => {}} onClose={() => {}} />);
+  await screen.findByText("work");
+  fireEvent.click(screen.getByRole("button", { name: "项目甲 1" }));
+  expect(screen.queryByText("work")).toBeNull();
+  fireEvent.contextMenu(screen.getByText("other"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "设置分组" }));
+  const input = screen.getByLabelText("tmux 分组");
+  expect(document.querySelector('datalist option')?.getAttribute("value")).toBe("项目甲");
+  fireEvent.change(input, { target: { value: "项目甲" } });
+  fireEvent.click(screen.getByRole("button", { name: "确定" }));
+  await screen.findByRole("button", { name: "项目甲 2" });
+  expect(screen.getByText("work")).toBeTruthy();
+  expect(screen.getByText("other")).toBeTruthy();
+  expect(mocks.invoke).toHaveBeenCalledWith("tmux_action", {
+    sessionId: "ssh-a",
+    request: { action: "set-group", target: null, name: "项目甲", session: { id: "$1", created: 456 } },
+  });
+  view.unmount();
+  render(<TmuxPanel sessionId="ssh-b" onAttach={() => {}} onClose={() => {}} />);
+  await screen.findByRole("button", { name: "项目甲 2" });
+  fireEvent.contextMenu(screen.getByText("other"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "设置分组" }));
+  fireEvent.change(screen.getByLabelText("tmux 分组"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "确定" }));
+  await screen.findByRole("button", { name: "未分组 1" });
+  expect(screen.getByRole("button", { name: "项目甲 1" })).toBeTruthy();
+});
+
+test("pointer dragging moves the dragged session into a collapsed folder and back to ungrouped", async () => {
+  let current = { ...snapshot, sessions: [
+    { ...snapshot.sessions[0], group: "项目甲" },
+    { ...snapshot.sessions[0], id: "$1", name: "other", created: 456, group: "" },
+  ] };
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === "tmux_snapshot") return current;
+    if (command === "tmux_action") current = { ...current, sessions: current.sessions.map((s) =>
+      s.id === args.request.session.id ? { ...s, group: args.request.name } : s,
+    ) };
+  });
+  const onAttach = vi.fn();
+  render(<TmuxPanel sessionId="ssh" onAttach={onAttach} onClose={() => {}} />);
+  await screen.findByText("work");
+  const folder = screen.getByRole("button", { name: "项目甲 1" });
+  fireEvent.click(folder);
+  const original = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+  const hitTest = vi.fn().mockReturnValue(folder);
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: hitTest });
+  const move = (target: HTMLElement) => {
+    const card = screen.getByText("other").closest("button")!;
+    card.setPointerCapture = vi.fn();
+    hitTest.mockReturnValue(target);
+    fireEvent(card, new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 10, clientY: 10 }));
+    fireEvent(card, new MouseEvent("pointermove", { bubbles: true, clientX: 50, clientY: 50 }));
+    expect(target.closest("section")?.classList.contains("drop-target")).toBe(true);
+    fireEvent(card, new MouseEvent("pointerup", { bubbles: true, clientX: 50, clientY: 50 }));
+    fireEvent.click(card);
+    fireEvent.doubleClick(card);
+  };
+  try {
+    move(folder);
+    await screen.findByRole("button", { name: "项目甲 2" });
+    expect(screen.getByText("work")).toBeTruthy();
+    expect(onAttach).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("tmux_action", {
+      sessionId: "ssh",
+      request: { action: "set-group", target: null, name: "项目甲", session: { id: "$1", created: 456 } },
+    });
+    move(screen.getByRole("button", { name: "未分组 0" }));
+    await screen.findByRole("button", { name: "未分组 1" });
+    expect(screen.getByRole("button", { name: "项目甲 1" })).toBeTruthy();
+    const actionCount = mocks.invoke.mock.calls.filter(([command]) => command === "tmux_action").length;
+    move(screen.getByRole("button", { name: "未分组 1" }));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "tmux_action")).toHaveLength(actionCount);
+  } finally {
+    if (original) Object.defineProperty(document, "elementFromPoint", original);
+    else Reflect.deleteProperty(document, "elementFromPoint");
+  }
+});
+
+test("dragging onto a sibling swaps remote positions and a fresh connection reads the order", async () => {
+  let current = { ...snapshot, sessions: [
+    { ...snapshot.sessions[0], order: 0 },
+    { ...snapshot.sessions[0], id: "$1", name: "other", created: 456, order: 1 },
+  ] };
+  mocks.invoke.mockImplementation(async (command) => {
+    if (command === "tmux_snapshot") return current;
+    if (command === "tmux_action") current = { ...current, sessions: current.sessions.map((s) => ({ ...s, order: 1 - s.order })) };
+  });
+  const view = render(<TmuxPanel sessionId="ssh-a" onAttach={() => {}} onClose={() => {}} />);
+  const source = (await screen.findByText("work")).closest("button")!;
+  const target = screen.getByText("other").closest("button")!;
+  source.setPointerCapture = vi.fn();
+  const original = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => target });
+  try {
+    fireEvent(source, new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 10, clientY: 10 }));
+    fireEvent(source, new MouseEvent("pointermove", { bubbles: true, clientX: 50, clientY: 50 }));
+    expect(target.classList.contains("swap-target")).toBe(true);
+    fireEvent(source, new MouseEvent("pointerup", { bubbles: true, clientX: 50, clientY: 50 }));
+    await waitFor(() => expect(document.querySelector(".tmux-session-card")?.textContent).toContain("other"));
+    expect(mocks.invoke).toHaveBeenCalledWith("tmux_action", {
+      sessionId: "ssh-a", request: { action: "swap-session", target: "$1", name: "456", session: { id: "$0", created: 123 } },
+    });
+    view.unmount();
+    render(<TmuxPanel sessionId="ssh-b" onAttach={() => {}} onClose={() => {}} />);
+    await screen.findByText("work");
+    expect(document.querySelector(".tmux-session-card")?.textContent).toContain("other");
+  } finally {
+    if (original) Object.defineProperty(document, "elementFromPoint", original);
+    else Reflect.deleteProperty(document, "elementFromPoint");
+  }
 });
 
 test("right-click termination targets the clicked session and refreshes the list", async () => {

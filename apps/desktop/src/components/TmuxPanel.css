@@ -112,6 +112,43 @@
   text-align: left;
   padding: 10px;
 }
+.tmux-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 10px;
+}
+.tmux-group-sessions {
+  display: grid;
+  gap: 6px;
+  margin-left: 15px;
+  padding-left: 12px;
+  border-left: 1px solid var(--ui-border);
+}
+.tmux-group-empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+.tmux-panel .tmux-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ui-muted);
+  padding: 8px 2px;
+}
+.tmux-group-toggle strong {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+}
+.tmux-group-toggle[aria-expanded="true"] .tmux-group-chevron {
+  transform: rotate(90deg);
+}
 .tmux-session-list strong,
 .tmux-session-list small {
   display: block;

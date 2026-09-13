@@ -15,6 +15,9 @@ pub struct Target {
 pub struct TmuxSession {
     pub id: String,
     pub name: String,
+    pub alias: String,
+    pub group: String,
+    pub order: u64,
     pub windows: u32,
     pub attached: u32,
     pub created: u64,
@@ -76,7 +79,7 @@ export LC_ALL=C
 if ! command -v tmux >/dev/null 2>&1; then printf 'DSSH_TMUX_MISSING\n'; exit 0; fi
 printf 'DSSH_TMUX_VERSION\n'; tmux -V
 printf 'DSSH_TMUX_SESSIONS\n'
-dssh_tmux_sessions=$(tmux list-sessions -F '#{session_id}\t#{session_name}\t#{session_windows}\t#{session_attached}\t#{session_created}' 2>&1)
+dssh_tmux_sessions=$(tmux -u list-sessions -F '#{session_id}\t#{session_name}\t#{session_windows}\t#{session_attached}\t#{session_created}\t#{@dssh_order}\t#{@dssh_group}\t#{@dssh_alias}' 2>&1)
 dssh_tmux_exit_code=$?
 if [ "$dssh_tmux_exit_code" -ne 0 ]; then
   case "$dssh_tmux_sessions" in
@@ -157,13 +160,16 @@ fn parse_snapshot(text: &str) -> Result<Snapshot, String> {
         let c: Vec<_> = line.split(SEPARATOR).collect();
         match section {
             "DSSH_TMUX_VERSION" => snapshot.version = line.into(),
-            "DSSH_TMUX_SESSIONS" if c.len() == 5 && valid_id(c[0], '$') => {
+            "DSSH_TMUX_SESSIONS" if c.len() >= 5 && valid_id(c[0], '$') => {
                 if let (Ok(windows), Ok(attached), Ok(created)) =
                     (c[2].parse(), c[3].parse(), c[4].parse())
                 {
                     snapshot.sessions.push(TmuxSession {
                         id: c[0].into(),
                         name: c[1].into(),
+                        order: c.get(5).and_then(|value| value.parse().ok()).unwrap_or_else(|| c[0][1..].parse().unwrap_or(0)),
+                        group: c.get(6).unwrap_or(&"").to_string(),
+                        alias: c.get(7..).unwrap_or_default().join(SEPARATOR),
                         windows,
                         attached,
                         created,
@@ -234,6 +240,36 @@ fn action_command(action: &Action) -> Result<String, String> {
     let target = action.target.as_deref().unwrap_or("");
     let mut guard = identity_guard(session);
     let cmd = match action.action.as_str() {
+        "swap-session" => {
+            if !valid_id(target, '$') || target == session.id {
+                return Err("无效的目标会话".into());
+            }
+            let other = Target {
+                id: target.into(),
+                created: action.name.as_deref().and_then(|value| value.parse().ok()).ok_or("无效的目标会话创建时间")?,
+            };
+            guard.push_str(&identity_guard(&other));
+            let tid = quote(target);
+            guard.push_str(&format!("[ \"$(tmux -u display-message -p -t {sid} '#{{@dssh_group}}')\" = \"$(tmux -u display-message -p -t {tid} '#{{@dssh_group}}')\" ] || {{ printf '会话分组已变化，请刷新后重试\\n' >&2; exit 1; }}; "));
+            for (variable, id) in [("dssh_order_a", session.id.as_str()), ("dssh_order_b", target)] {
+                guard.push_str(&format!("{variable}=$(tmux display-message -p -t {} '#{{@dssh_order}}') || exit 1; case \"${variable}\" in ''|*[!0-9]*) {variable}={} ;; esac; ", quote(id), &id[1..]));
+            }
+            format!("set-option -t {sid} @dssh_order \"$dssh_order_b\" && tmux set-option -t {tid} @dssh_order \"$dssh_order_a\"")
+        }
+        "set-group" => {
+            let group = action.name.as_deref().unwrap_or("").trim();
+            if group.chars().count() > 64 || group.chars().any(char::is_control) || group.contains(SEPARATOR) {
+                return Err("分组最多 64 个字符，不能包含控制字符或 |DSSH-TMUX|".into());
+            }
+            format!("set-option -t {sid} @dssh_group {}", quote(group))
+        }
+        "set-alias" => {
+            let alias = action.name.as_deref().unwrap_or("").trim();
+            if alias.chars().count() > 64 || alias.chars().any(char::is_control) {
+                return Err("别名最多 64 个字符，不能包含控制字符".into());
+            }
+            format!("set-option -t {sid} @dssh_alias {}", quote(alias))
+        }
         "rename-session" => format!("rename-session -t {sid} {}", name(action.name.as_deref())?),
         "enable-mouse" => format!("set-option -t {sid} mouse on"),
         "kill-session" => {
@@ -309,6 +345,24 @@ mod tests {
     fn escapes_shell_names() {
         assert_eq!(quote("a'b; $(id)"), "'a'\"'\"'b; $(id)'");
         assert!(name(Some("bad\nname")).is_err());
+    }
+    #[test]
+    fn aliases_validate_input_and_preserve_session_identity() {
+        let mut action = Action {
+            action: "set-alias".into(),
+            session: Some(Target { id: "$0".into(), created: 123 }),
+            target: None,
+            name: Some("开发: v1.0 ' $(id)".into()),
+        };
+        let command = action_command(&action).unwrap();
+        assert!(command.contains("session_created"));
+        assert!(command.contains(&format!("set-option -t '$0' @dssh_alias {}", quote(action.name.as_deref().unwrap()))));
+        action.name = Some("bad\nvalue".into());
+        assert!(action_command(&action).is_err());
+        action.name = Some("a".repeat(65));
+        assert!(action_command(&action).is_err());
+        action.name = Some(String::new());
+        assert!(action_command(&action).unwrap().ends_with("@dssh_alias ''"));
     }
     #[test]
     fn rejects_invalid_targets() {
@@ -439,6 +493,46 @@ mod live_tests {
             id: session.id.clone(),
             created: session.created,
         });
+        action.action = "set-alias".into();
+        action.name = Some("中文项目: v1.0 ' $(id) |DSSH-TMUX|".into());
+        sandbox.run(&action_command(&action).unwrap()).unwrap();
+        // Each run opens a separate shell, like another SSH exec connection.
+        assert_eq!(sandbox.snapshot().sessions[0].alias, action.name.as_ref().unwrap().as_str());
+        assert_eq!(sandbox.snapshot().sessions[0].name, session.name);
+        let alias = action.name.clone().unwrap();
+        action.action = "set-group".into();
+        action.name = Some("协作项目 ' $(id)".into());
+        sandbox.run(&action_command(&action).unwrap()).unwrap();
+        assert_eq!(sandbox.snapshot().sessions[0].group, action.name.as_ref().unwrap().as_str());
+        assert_eq!(sandbox.snapshot().sessions[0].alias, alias);
+        action.name = Some("bad\nname".into());
+        assert!(action_command(&action).is_err());
+        action.name = Some(SEPARATOR.into());
+        assert!(action_command(&action).is_err());
+        action.name = Some("a".repeat(65));
+        assert!(action_command(&action).is_err());
+        action.name = Some(String::new());
+        sandbox.run(&action_command(&action).unwrap()).unwrap();
+        assert_eq!(sandbox.snapshot().sessions[0].group, "");
+        assert_eq!(sandbox.snapshot().sessions[0].alias, alias);
+        action.action = "set-alias".into();
+        action.name = Some(String::new());
+        sandbox.run(&action_command(&action).unwrap()).unwrap();
+        assert_eq!(sandbox.snapshot().sessions[0].alias, "");
+        sandbox.run("tmux new-session -d -s swap-test").unwrap();
+        let before_swap = sandbox.snapshot();
+        let other = before_swap.sessions.iter().find(|s| s.id != session.id).unwrap();
+        action.action = "swap-session".into();
+        action.target = Some(other.id.clone());
+        action.name = Some(other.created.to_string());
+        sandbox.run(&action_command(&action).unwrap()).unwrap();
+        let after_swap = sandbox.snapshot();
+        assert_eq!(after_swap.sessions.iter().find(|s| s.id == session.id).unwrap().order, other.order);
+        assert_eq!(after_swap.sessions.iter().find(|s| s.id == other.id).unwrap().order, before_swap.sessions.iter().find(|s| s.id == session.id).unwrap().order);
+        action.name = Some((other.created + 1).to_string());
+        assert!(sandbox.run(&action_command(&action).unwrap()).is_err());
+        sandbox.run(&format!("tmux kill-session -t {}", quote(&other.id))).unwrap();
+        action.target = None;
         action.action = "new-window".into();
         action.name = Some("editor".into());
         sandbox.run(&action_command(&action).unwrap()).unwrap();

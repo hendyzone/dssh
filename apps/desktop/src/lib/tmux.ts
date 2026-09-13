@@ -1,6 +1,9 @@
 export interface TmuxSession {
   id: string;
   name: string;
+  alias?: string;
+  group?: string;
+  order?: number;
   windows: number;
   attached: number;
   created: number;

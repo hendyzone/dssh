@@ -160,7 +160,7 @@
 .sidebar-search [data-slot="input"] {
   padding-left: 30px;
 }
-.tmux-session-list [data-slot="button"],
+.tmux-session-card[data-slot="button"],
 .tmux-pane-select[data-slot="button"] {
   height: auto;
   min-height: 48px;
@@ -172,8 +172,41 @@
   padding: 10px;
   gap: 3px;
 }
-.tmux-session-list [data-slot="button"] {
+.tmux-session-card[data-slot="button"] {
   background: var(--color-background);
+}
+.tmux-panel .tmux-group-toggle[data-slot="button"] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  height: auto;
+  min-height: 36px;
+  text-align: left;
+  padding: 7px 8px;
+  gap: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ui-fg);
+}
+.tmux-group-toggle .tmux-group-icon { color: var(--ui-accent); }
+.tmux-group-toggle .tmux-group-count {
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--color-accent);
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+.tmux-group.drop-target > .tmux-group-toggle[data-slot="button"] {
+  border-color: var(--ui-accent);
+  background: var(--color-accent);
+}
+.tmux-session-card[data-slot="button"] { cursor: grab; touch-action: none; user-select: none; }
+.tmux-session-card.dragging[data-slot="button"] { opacity: 0.45; cursor: grabbing; }
+.tmux-session-card.swap-target[data-slot="button"] {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+  background: var(--color-accent);
 }
 .tmux-panel [data-slot="button"].selected {
   border-color: var(--ui-accent);
