@@ -24,6 +24,7 @@ import {
 } from "./components/Icons";
 import MonitorBar from "./components/MonitorBar";
 import TmuxPanel from "./components/TmuxPanel";
+import { findTmuxTab } from "./lib/tmuxTabs";
 import type { TmuxSession } from "./lib/tmux";
 import {
   ConnectionGroupEditor,
@@ -907,14 +908,27 @@ export default function App() {
                         key={activePaneBackend ?? "disconnected"}
                         sessionId={activePaneBackend ?? ""}
                         attachedId={t.panes[t.activePane]?.tmux?.id}
+                        reuseTabs={settings.reuseTmuxTabs !== false}
+                        onReuseTabsChange={(enabled) => updateSettings({ ...settings, reuseTmuxTabs: enabled })}
                         onClose={() => togglePanel(t.id, null)}
-                        onAttach={(remote: TmuxSession) =>
+                        onAttach={(remote: TmuxSession, forceNew = false) => {
+                          const existing = !forceNew && settings.reuseTmuxTabs !== false
+                            ? findTmuxTab(tabs, t.panes[t.activePane].server, remote, activeTabId)
+                            : null;
+                          if (existing) {
+                            setActiveTabId(existing.tab.id);
+                            focusPane(existing.tab.id, existing.paneIndex);
+                            if (existing.tab.groupId) setConnectionGroups((previous) => previous.map((group) =>
+                              group.id === existing.tab.groupId ? { ...group, collapsed: false } : group,
+                            ));
+                            return;
+                          }
                           connect(t.panes[t.activePane].server, t.groupId, {
                             id: remote.id,
                             created: remote.created,
                             name: remote.name,
-                          })
-                        }
+                          });
+                        }}
                       />
                     </PanelDock>
                   )}

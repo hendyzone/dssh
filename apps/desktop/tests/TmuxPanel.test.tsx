@@ -70,6 +70,22 @@ test("background polling keeps the refresh button stable while manual refresh sh
     vi.useRealTimers();
   }
 });
+test("exposes the reuse preference and an explicit new-tab override", async () => {
+  const onAttach = vi.fn();
+  const onReuseTabsChange = vi.fn();
+  render(<TmuxPanel sessionId="ssh" onAttach={onAttach} onClose={() => {}} onReuseTabsChange={onReuseTabsChange} />);
+  await screen.findByText("work");
+  const toggle = screen.getByRole("checkbox", { name: "复用已打开的 tmux 标签页" }) as HTMLInputElement;
+  expect(toggle.checked).toBe(true);
+  fireEvent.click(toggle);
+  expect(onReuseTabsChange).toHaveBeenCalledWith(false);
+  fireEvent.doubleClick(screen.getByText("work"));
+  expect(onAttach).toHaveBeenLastCalledWith(snapshot.sessions[0]);
+  fireEvent.contextMenu(screen.getByText("work"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "在新标签页中打开" }));
+  expect(onAttach).toHaveBeenLastCalledWith(snapshot.sessions[0], true);
+});
+
 test("discovers sessions and attaches by remote identity", async () => {
   const onAttach = vi.fn();
   render(<TmuxPanel sessionId="ssh" onAttach={onAttach} onClose={() => {}} />);

@@ -571,6 +571,125 @@ fn random_name() -> String {
 }
 
 #[tauri::command]
+pub fn clipboard_file_paths() -> Result<Vec<String>, Error> {
+    #[cfg(windows)]
+    unsafe {
+        use std::ffi::c_void;
+        #[link(name = "user32")]
+        extern "system" {
+            fn OpenClipboard(window: *mut c_void) -> i32;
+            fn CloseClipboard() -> i32;
+            fn IsClipboardFormatAvailable(format: u32) -> i32;
+            fn GetClipboardData(format: u32) -> *mut c_void;
+        }
+        #[link(name = "shell32")]
+        extern "system" {
+            fn DragQueryFileW(drop: *mut c_void, index: u32, buffer: *mut u16, length: u32) -> u32;
+        }
+        if IsClipboardFormatAvailable(15) == 0 { return Ok(vec![]); }
+        if OpenClipboard(std::ptr::null_mut()) == 0 { return Err(Error::Io("剪贴板忙，请重试".into())); }
+        struct Clipboard;
+        impl Drop for Clipboard { fn drop(&mut self) { unsafe { CloseClipboard(); } } }
+        let _clipboard = Clipboard;
+        let drop = GetClipboardData(15);
+        if drop.is_null() { return Err(Error::Io("无法读取剪贴板文件".into())); }
+        let count = DragQueryFileW(drop, u32::MAX, std::ptr::null_mut(), 0);
+        let mut paths = Vec::new();
+        for index in 0..count {
+            let length = DragQueryFileW(drop, index, std::ptr::null_mut(), 0);
+            let mut buffer = vec![0; length as usize + 1];
+            let copied = DragQueryFileW(drop, index, buffer.as_mut_ptr(), length + 1);
+            paths.push(String::from_utf16(&buffer[..copied as usize]).map_err(|_| Error::Io("文件路径不是有效 Unicode".into()))?);
+        }
+        return Ok(paths);
+    }
+    #[cfg(not(windows))]
+    Ok(vec![])
+}
+
+fn clipboard_filename(name: &str) -> Result<&str, Error> {
+    if name.is_empty() || name == "." || name == ".." || name.chars().any(|c| c.is_control() || c == '/' || c == '\\') {
+        return Err(Error::Io("无效的剪贴板文件名".into()));
+    }
+    Ok(name)
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+    #[test]
+    fn accepts_literal_names_but_rejects_path_traversal() {
+        for name in ["../file", "..", "", "/file", "a\\b", "bad\nname"] {
+            assert!(clipboard_filename(name).is_err());
+        }
+        for name in ["报告.pdf", "a'$(id).txt", "empty.bin"] {
+            assert_eq!(clipboard_filename(name).unwrap(), name);
+        }
+    }
+}
+
+async fn clipboard_directory(sftp: &SftpSession) -> Result<String, Error> {
+    let home = sftp.canonicalize(".").await?;
+    let dir = format!("{}/.dssh-files-{}", home.trim_end_matches('/'), random_name());
+    sftp.create_dir(&dir).await?;
+    let mut attrs = russh_sftp::protocol::FileAttributes::default();
+    attrs.permissions = Some(0o700);
+    sftp.set_metadata(&dir, attrs).await?;
+    Ok(dir)
+}
+
+#[tauri::command]
+pub async fn sftp_clipboard_file(state: State<'_, SshState>, session_id: String, name: String, data: Vec<u8>) -> Result<String, Error> {
+    clipboard_filename(&name)?;
+    if data.len() > 100 * 1024 * 1024 { return Err(Error::Io("浏览器剪贴板文件超过 100 MB，请从资源管理器复制或使用 SFTP 上传".into())); }
+    let sftp = open_sftp(&state, &session_id).await?;
+    let result = async {
+        let dir = clipboard_directory(&sftp).await?;
+        let path = format!("{dir}/{name}");
+        if let Err(error) = write_remote_file(&sftp, &path, &data, true).await {
+            let _ = sftp.remove_file(&path).await;
+            let _ = sftp.remove_dir(&dir).await;
+            return Err(Error::Io(error.to_string()));
+        }
+        Ok(path)
+    }.await;
+    let _ = sftp.close().await;
+    result
+}
+
+#[tauri::command]
+pub async fn sftp_clipboard_upload(state: State<'_, SshState>, session_id: String, paths: Vec<String>) -> Result<Vec<String>, Error> {
+    let sftp = open_sftp(&state, &session_id).await?;
+    let result = async {
+        let mut uploaded = Vec::new();
+        for local in paths {
+            let local = Path::new(&local);
+            let name = local.file_name().and_then(|v| v.to_str()).ok_or_else(|| Error::Io("无效的文件路径".into()))?;
+            clipboard_filename(name)?;
+            let dir = clipboard_directory(&sftp).await?;
+            let remote = format!("{dir}/{name}");
+            let transfer = random_name();
+            let (entries, _) = match plan_upload(local, &remote, &transfer).await {
+                Ok(plan) => plan,
+                Err(error) => { let _ = sftp.remove_dir(&dir).await; return Err(error); }
+            };
+            if let Err(error) = upload_entries(&sftp, &entries, &transfer, |_| {}).await {
+                for entry in entries.iter().rev() {
+                    if entry.is_dir { let _ = sftp.remove_dir(&entry.remote).await; }
+                    else { let _ = sftp.remove_file(&entry.remote).await; }
+                }
+                let _ = sftp.remove_dir(&dir).await;
+                return Err(Error::Io(format!("{error}；此前完成的文件：{}", uploaded.join("、"))));
+            }
+            uploaded.push(remote);
+        }
+        Ok(uploaded)
+    }.await;
+    let _ = sftp.close().await;
+    result
+}
+
+#[tauri::command]
 pub async fn sftp_home(state: State<'_, SshState>, session_id: String) -> Result<String, Error> {
     let sftp = open_sftp(&state, &session_id).await?;
     let path = sftp.canonicalize(".").await?;

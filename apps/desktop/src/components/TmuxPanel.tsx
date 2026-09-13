@@ -21,9 +21,13 @@ export default function TmuxPanel({
   onAttach,
   onClose,
   attachedId,
+  reuseTabs = true,
+  onReuseTabsChange,
 }: {
   sessionId: string;
-  onAttach: (session: TmuxSession) => void;
+  onAttach: (session: TmuxSession, forceNew?: boolean) => void;
+  reuseTabs?: boolean;
+  onReuseTabsChange?: (enabled: boolean) => void;
   onClose: () => void;
   attachedId?: string;
 }) {
@@ -213,6 +217,12 @@ export default function TmuxPanel({
           新建会话
         </Button>
       </div>
+      {onReuseTabsChange && (
+        <label className="tmux-reuse-toggle">
+          <input type="checkbox" checked={reuseTabs} onChange={(event) => onReuseTabsChange(event.target.checked)} />
+          复用已打开的 tmux 标签页
+        </label>
+      )}
       {!sessionId && <p className="tmux-note">连接服务器后可管理 tmux。</p>}
       {error && (
         <p className="tmux-error" role="alert">
@@ -608,6 +618,12 @@ export default function TmuxPanel({
           label="tmux 会话操作"
           onClose={() => setContextMenu(null)}
         >
+          <MenuItem disabled={busy} onClick={() => {
+            onAttach(contextMenu.session, true);
+            setContextMenu(null);
+          }}>
+            在新标签页中打开
+          </MenuItem>
           <MenuItem
             disabled={busy}
             onClick={() => {

@@ -434,6 +434,45 @@ it("automatically recovers network loss but does not reattach after an intention
   }
 });
 
+it("uploads copied local files on Ctrl+V and quotes paths without executing them", async () => {
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === "ssh_connect") return "backend";
+    if (command === "clipboard_file_paths") return ["C:\\报告.pdf", "C:\\data.csv"];
+    if (command === "sftp_clipboard_upload") return ["/home/demo/报告.pdf", "/home/demo/a'$(id).csv"];
+  });
+  render(<TerminalView {...props} />); await settle();
+  fireEvent.keyDown(screen.getByLabelText("Terminal input"), { key: "v", ctrlKey: true });
+  await settle();
+  expect(mocks.invoke).toHaveBeenCalledWith("sftp_clipboard_upload", { sessionId: "backend", paths: ["C:\\报告.pdf", "C:\\data.csv"] });
+  expect(mocks.instances[0].pastedData).toHaveBeenCalledWith("'/home/demo/报告.pdf' '/home/demo/a'\"'\"'$(id).csv' ");
+});
+
+it("uploads non-image paste files instead of sending clipboard text to the terminal", async () => {
+  mocks.invoke.mockImplementation(async (command: string) => command === "ssh_connect" ? "backend" : command === "sftp_clipboard_file" ? "/home/demo/report.pdf" : undefined);
+  render(<TerminalView {...props} />); await settle();
+  const file = { name: "report.pdf", type: "application/pdf", size: 3, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
+  fireEvent.paste(screen.getByLabelText("Terminal input"), { clipboardData: { files: [file], items: [] } });
+  await settle();
+  expect(mocks.invoke).toHaveBeenCalledWith("sftp_clipboard_file", { sessionId: "backend", name: "report.pdf", data: [1, 2, 3] });
+  expect(mocks.instances[0].pastedData).toHaveBeenCalledWith("'/home/demo/report.pdf' ");
+  expect(mocks.invoke.mock.calls.some(([command, args]) => command === "ssh_write" && args.data === "pasted text")).toBe(false);
+});
+
+it("does not insert uploaded file paths after the terminal becomes inactive", async () => {
+  let finish!: (paths: string[]) => void;
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === "ssh_connect") return "backend";
+    if (command === "clipboard_file_paths") return ["C:\\data.csv"];
+    if (command === "sftp_clipboard_upload") return new Promise<string[]>((resolve) => { finish = resolve; });
+  });
+  const view = render(<TerminalView {...props} />); await settle();
+  fireEvent.keyDown(screen.getByLabelText("Terminal input"), { key: "v", ctrlKey: true });
+  await settle();
+  view.rerender(<TerminalView {...props} active={false} />);
+  await act(async () => finish(["/home/demo/data.csv"]));
+  expect(mocks.instances[0].pastedData).not.toHaveBeenCalled();
+});
+
 it("uploads a clipboard screenshot and inserts only its remote path", async () => {
   const png = {size:8,arrayBuffer:async()=>new Uint8Array([137,80,78,71,13,10,26,10]).buffer};
   Object.defineProperty(navigator,"clipboard",{configurable:true,value:{read:vi.fn().mockResolvedValue([{types:["image/png"],getType:async()=>png}])}});

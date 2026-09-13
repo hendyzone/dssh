@@ -50,6 +50,7 @@ export interface TabInfo {
 }
 
 export interface AppSettings {
+  reuseTmuxTabs?: boolean;
   themeId: string;
   fontSize: number;
   fontFamily: string;

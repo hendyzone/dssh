@@ -174,20 +174,60 @@ export default function TerminalView({
       imageBusy.current = false;
     }
   };
+  const pasteFiles = async (files: File[] = [], localPaths: string[] = []) => {
+    const target = backendRef.current;
+    if (!target || imageBusy.current || !activeRef.current || !inputEnabledRef.current) return;
+    imageBusy.current = true;
+    setClipboardError("正在上传文件…");
+    try {
+      const paths: string[] = [];
+      if (localPaths.length) {
+        paths.push(...await invoke<string[]>("sftp_clipboard_upload", { sessionId: target, paths: localPaths }));
+      } else {
+        for (const file of files) {
+          if (file.size > 100 * 1024 * 1024) throw new Error("文件超过 100 MB，请从资源管理器复制或使用 SFTP 上传");
+          paths.push(await invoke<string>("sftp_clipboard_file", {
+            sessionId: target, name: file.name,
+            data: Array.from(new Uint8Array(await file.arrayBuffer())),
+          }));
+        }
+      }
+      if (backendRef.current === target && activeRef.current && inputEnabledRef.current) {
+        // Single-quote paths so spaces, $, backticks and quotes remain literal shell input.
+        termRef.current?.paste(paths.map((path) => "'" + path.replace(/'/g, "'\"'\"'") + "'").join(" ") + " ");
+        setClipboardError("文件已上传并插入路径，确认后按回车发送。");
+      } else setClipboardError("文件已上传：" + paths.join("、") + "（焦点已切换，未插入）");
+    } catch (reason) {
+      setClipboardError(String(reason));
+    } finally {
+      imageBusy.current = false;
+    }
+  };
   const pasteClipboard = async () => {
     const terminal = termRef.current;
+    const target = backendRef.current;
+    if (!target || imageBusy.current || !activeRef.current || !inputEnabledRef.current) return;
     try {
+      const paths = await invoke<string[]>("clipboard_file_paths");
+      if (target !== backendRef.current || !activeRef.current || !inputEnabledRef.current) return;
+      if (paths?.length) {
+        await pasteFiles([], paths);
+        return;
+      }
       if (navigator.clipboard.read) {
         const items = await navigator.clipboard.read();
         const item = items.find((item) => item.types.includes("image/png"));
         if (item) {
-          await pasteImage(await item.getType("image/png"));
+          const image = await item.getType("image/png");
+          if (target !== backendRef.current || !activeRef.current || !inputEnabledRef.current) return;
+          await pasteImage(image);
           return;
         }
       }
       const text = await navigator.clipboard.readText();
       if (
         terminal === termRef.current &&
+        target === backendRef.current &&
         activeRef.current &&
         inputEnabledRef.current
       )
@@ -203,10 +243,11 @@ export default function TerminalView({
   const [clipboardError, setClipboardError] = useState<string | null>(null);
   const [clipboardNoticeVersion, setClipboardNoticeVersion] = useState(0);
   const clipboardSuccess =
+    clipboardError === "文件已上传并插入路径，确认后按回车发送。" ||
     clipboardError === "截图已上传并插入路径，确认后按回车发送。" ||
     clipboardError === "已复制到本机剪贴板，可直接 Ctrl+V 粘贴。";
   const clipboardPending =
-    clipboardError === "正在上传截图…" || clipboardError === "正在复制…";
+    clipboardError === "正在上传文件…" || clipboardError === "正在上传截图…" || clipboardError === "正在复制…";
   useEffect(() => {
     if (!clipboardSuccess) return;
     const timer = window.setTimeout(() => setClipboardError(null), 4000);
@@ -723,7 +764,6 @@ export default function TerminalView({
           }
           if (
             (event.ctrlKey || event.metaKey) &&
-            event.shiftKey &&
             event.key.toLowerCase() === "v" &&
             active &&
             inputEnabled
@@ -734,6 +774,13 @@ export default function TerminalView({
           }
         }}
         onPasteCapture={(event) => {
+          const files = Array.from(event.clipboardData?.files ?? []);
+          if (files.length && !(files.length === 1 && files[0].type === "image/png") && active && inputEnabled) {
+            event.preventDefault();
+            event.stopPropagation();
+            void pasteFiles(files);
+            return;
+          }
           const image = [...(event.clipboardData?.items ?? [])]
             .find((item) => item.type === "image/png")
             ?.getAsFile();

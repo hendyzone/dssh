@@ -41,6 +41,7 @@ export function loadSettings(): AppSettings {
 
 export function defaultSettings(): AppSettings {
   return {
+    reuseTmuxTabs: true,
     themeId: "tokyo-night",
     fontSize: 14,
     fontFamily: "JetBrains Mono, SF Mono, Consolas, monospace",
