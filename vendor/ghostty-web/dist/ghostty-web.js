@@ -867,18 +867,21 @@ var Te = new TextDecoder(), P = class e {
 	getViewport() {
 		if (this.viewportCache) return this.viewportCache;
 		this.update(), this.zeroCellPool(), this.populateHandle((e) => this.exports.ghostty_render_state_get(this.renderHandle, m.ROW_ITERATOR, e), this.rowIter);
-		let e = this.exports.ghostty_wasm_alloc_u8_array(4), t = this.exports.ghostty_wasm_alloc_u8_array(3), n = this.exports.ghostty_wasm_alloc_u8(), r = this.exports.ghostty_wasm_alloc_u8_array(8), i = this.exports.ghostty_wasm_alloc_u8(), a = this.exports.ghostty_wasm_alloc_u8_array(72);
-		new DataView(this.memory.buffer).setUint32(a, 72, !0);
-		let o = this.exports.ghostty_wasm_alloc_u8_array(8), s = this.exports.ghostty_wasm_alloc_u8_array(4), c = 0, l = 0, u = Array(this._rows).fill(!1), d = Array(this._rows).fill(!1);
+		let e = 0, t = 0, n = 0, r = 0, i = 0, a = 0, o = 0, s = 0, c = 0, l = 0, u = Array(this._rows).fill(!1), d = Array(this._rows).fill(!1);
 		try {
-			let f = 0;
-			for (; f < this._rows && this.exports.ghostty_render_state_row_iterator_next(this.rowIter);) {
-				this.exports.ghostty_render_state_row_get(this.rowIter, w.DIRTY, n), u[f] = new DataView(this.memory.buffer).getUint8(n) !== 0, this.exports.ghostty_render_state_row_get(this.rowIter, w.RAW, r);
-				let p = new DataView(this.memory.buffer).getBigUint64(r, !0);
-				this.exports.ghostty_row_get(p, te.WRAP_CONTINUATION, i), d[f] = new DataView(this.memory.buffer).getUint8(i) !== 0, this.populateHandle((e) => this.exports.ghostty_render_state_row_get(this.rowIter, w.CELLS, e), this.rowCells);
+			let f = (e) => {
+				if (!e) throw Error("Unable to allocate viewport scratch buffer");
+				return e;
+			};
+			e = f(this.exports.ghostty_wasm_alloc_u8_array(4)), t = f(this.exports.ghostty_wasm_alloc_u8_array(3)), n = f(this.exports.ghostty_wasm_alloc_u8()), r = f(this.exports.ghostty_wasm_alloc_u8_array(8)), i = f(this.exports.ghostty_wasm_alloc_u8()), a = f(this.exports.ghostty_wasm_alloc_u8_array(72)), o = f(this.exports.ghostty_wasm_alloc_u8_array(8)), s = f(this.exports.ghostty_wasm_alloc_u8_array(4)), new DataView(this.memory.buffer).setUint32(a, 72, !0);
+			let p = 0;
+			for (; p < this._rows && this.exports.ghostty_render_state_row_iterator_next(this.rowIter);) {
+				this.exports.ghostty_render_state_row_get(this.rowIter, w.DIRTY, n), u[p] = new DataView(this.memory.buffer).getUint8(n) !== 0, this.exports.ghostty_render_state_row_get(this.rowIter, w.RAW, r);
+				let f = new DataView(this.memory.buffer).getBigUint64(r, !0);
+				this.exports.ghostty_row_get(f, te.WRAP_CONTINUATION, i), d[p] = new DataView(this.memory.buffer).getUint8(i) !== 0, this.populateHandle((e) => this.exports.ghostty_render_state_row_get(this.rowIter, w.CELLS, e), this.rowCells);
 				let m = 0;
 				for (; m < this._cols && this.exports.ghostty_render_state_row_cells_next(this.rowCells);) {
-					let n = this.cellPool[f * this._cols + m];
+					let n = this.cellPool[p * this._cols + m];
 					this.exports.ghostty_render_state_row_cells_get(this.rowCells, E.GRAPHEMES_LEN, e);
 					let r = new DataView(this.memory.buffer).getUint32(e, !0);
 					if (n.grapheme_len = r > 0 ? r - 1 : 0, r > 0) {
@@ -909,16 +912,23 @@ var Te = new TextDecoder(), P = class e {
 					let u = new DataView(this.memory.buffer).getUint32(s, !0);
 					n.width = u === k.WIDE ? 2 : u === k.SPACER_TAIL || u === k.SPACER_HEAD ? 0 : 1, this.exports.ghostty_cell_get(i, O.HAS_HYPERLINK, s), n.hyperlink_id = new DataView(this.memory.buffer).getUint8(s) === 0 ? 0 : 1, m++;
 				}
-				f++;
+				p++;
 			}
 		} finally {
-			c && this.exports.ghostty_wasm_free_u8_array(c, l), this.exports.ghostty_wasm_free_u8_array(e, 4), this.exports.ghostty_wasm_free_u8_array(t, 3), this.exports.ghostty_wasm_free_u8(n), this.exports.ghostty_wasm_free_u8_array(r, 8), this.exports.ghostty_wasm_free_u8(i), this.exports.ghostty_wasm_free_u8_array(a, 72), this.exports.ghostty_wasm_free_u8_array(o, 8), this.exports.ghostty_wasm_free_u8_array(s, 4);
+			c && this.exports.ghostty_wasm_free_u8_array(c, l), e && this.exports.ghostty_wasm_free_u8_array(e, 4), t && this.exports.ghostty_wasm_free_u8_array(t, 3), n && this.exports.ghostty_wasm_free_u8(n), r && this.exports.ghostty_wasm_free_u8_array(r, 8), i && this.exports.ghostty_wasm_free_u8(i), a && this.exports.ghostty_wasm_free_u8_array(a, 72), o && this.exports.ghostty_wasm_free_u8_array(o, 8), s && this.exports.ghostty_wasm_free_u8_array(s, 4);
 		}
 		return this.rowDirtyCache = u, this.rowWrapCache = d, this.viewportCache = this.cellPool, this.viewportCache;
 	}
 	populateHandle(e, t) {
 		let n = this.exports.ghostty_wasm_alloc_u8_array(4);
-		new DataView(this.memory.buffer).setUint32(n, t, !0), e(n), this.exports.ghostty_wasm_free_u8_array(n, 4);
+		if (!n) throw Error("Unable to allocate render iterator slot");
+		try {
+			new DataView(this.memory.buffer).setUint32(n, t, !0);
+			let r = e(n);
+			if (r !== 0) throw Error(`Unable to populate render iterator: ${r}`);
+		} finally {
+			this.exports.ghostty_wasm_free_u8_array(n, 4);
+		}
 	}
 	zeroCellPool() {
 		for (let e = 0; e < this.cellPool.length; e++) {

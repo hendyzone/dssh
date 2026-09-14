@@ -185,12 +185,16 @@ it("closes only group members and honors connection close cancellation", async (
   move("Alpha", "生产");
   fireEvent.click(screen.getByRole("button", { name: "管理分组 生产" }));
   vi.mocked(window.confirm).mockReturnValueOnce(false);
-  fireEvent.click(screen.getByRole("button", { name: "关闭组内全部连接" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "关闭组内全部连接" }));
+  });
   expect(
     screen.getAllByRole("tab", { hidden: true }).filter((el) => el.classList.contains("tab")),
   ).toHaveLength(3);
   expect(screen.getByRole("dialog")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "关闭组内全部连接" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "关闭组内全部连接" }));
+  });
   expect(
     screen.getAllByRole("tab", { hidden: true }).filter((el) => el.classList.contains("tab")),
   ).toHaveLength(1);

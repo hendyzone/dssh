@@ -1354,17 +1354,16 @@ export class GhosttyTerminal {
     //   bold@56, italic@57, faint@58, blink@59, inverse@60,
     //   invisible@61, strikethrough@62, overline@63, underline@64 (i32))
     const STYLE_SIZE = 72;
-    const u32Ptr = this.exports.ghostty_wasm_alloc_u8_array(4);
-    const rgbPtr = this.exports.ghostty_wasm_alloc_u8_array(3);
-    const dirtyPtr = this.exports.ghostty_wasm_alloc_u8();
-    const rawPtr = this.exports.ghostty_wasm_alloc_u8_array(8);
-    const wrapPtr = this.exports.ghostty_wasm_alloc_u8();
-    const stylePtr = this.exports.ghostty_wasm_alloc_u8_array(STYLE_SIZE);
-    new DataView(this.memory.buffer).setUint32(stylePtr, STYLE_SIZE, true);
+    let u32Ptr = 0;
+    let rgbPtr = 0;
+    let dirtyPtr = 0;
+    let rawPtr = 0;
+    let wrapPtr = 0;
+    let stylePtr = 0;
     // Per-cell RAW + WIDE scratch. Cells are 8 bytes (u64); the WIDE
     // enum is a 4-byte int.
-    const cellRawPtr = this.exports.ghostty_wasm_alloc_u8_array(8);
-    const widePtr = this.exports.ghostty_wasm_alloc_u8_array(4);
+    let cellRawPtr = 0;
+    let widePtr = 0;
     let graphemePtr = 0;
     let graphemeBytes = 0;
     // Populate the row meta caches as a side effect — saves a redundant
@@ -1373,6 +1372,20 @@ export class GhosttyTerminal {
     const dirtyCache = new Array<boolean>(this._rows).fill(false);
     const wrapCache = new Array<boolean>(this._rows).fill(false);
     try {
+      // Allocate inside the cleanup scope and never pass a null destination to WASM.
+      const checked = (ptr: number): number => {
+        if (!ptr) throw new Error('Unable to allocate viewport scratch buffer');
+        return ptr;
+      };
+      u32Ptr = checked(this.exports.ghostty_wasm_alloc_u8_array(4));
+      rgbPtr = checked(this.exports.ghostty_wasm_alloc_u8_array(3));
+      dirtyPtr = checked(this.exports.ghostty_wasm_alloc_u8());
+      rawPtr = checked(this.exports.ghostty_wasm_alloc_u8_array(8));
+      wrapPtr = checked(this.exports.ghostty_wasm_alloc_u8());
+      stylePtr = checked(this.exports.ghostty_wasm_alloc_u8_array(STYLE_SIZE));
+      cellRawPtr = checked(this.exports.ghostty_wasm_alloc_u8_array(8));
+      widePtr = checked(this.exports.ghostty_wasm_alloc_u8_array(4));
+      new DataView(this.memory.buffer).setUint32(stylePtr, STYLE_SIZE, true);
       let row = 0;
       while (
         row < this._rows &&
@@ -1543,14 +1556,14 @@ export class GhosttyTerminal {
       if (graphemePtr) {
         this.exports.ghostty_wasm_free_u8_array(graphemePtr, graphemeBytes);
       }
-      this.exports.ghostty_wasm_free_u8_array(u32Ptr, 4);
-      this.exports.ghostty_wasm_free_u8_array(rgbPtr, 3);
-      this.exports.ghostty_wasm_free_u8(dirtyPtr);
-      this.exports.ghostty_wasm_free_u8_array(rawPtr, 8);
-      this.exports.ghostty_wasm_free_u8(wrapPtr);
-      this.exports.ghostty_wasm_free_u8_array(stylePtr, STYLE_SIZE);
-      this.exports.ghostty_wasm_free_u8_array(cellRawPtr, 8);
-      this.exports.ghostty_wasm_free_u8_array(widePtr, 4);
+      if (u32Ptr) this.exports.ghostty_wasm_free_u8_array(u32Ptr, 4);
+      if (rgbPtr) this.exports.ghostty_wasm_free_u8_array(rgbPtr, 3);
+      if (dirtyPtr) this.exports.ghostty_wasm_free_u8(dirtyPtr);
+      if (rawPtr) this.exports.ghostty_wasm_free_u8_array(rawPtr, 8);
+      if (wrapPtr) this.exports.ghostty_wasm_free_u8(wrapPtr);
+      if (stylePtr) this.exports.ghostty_wasm_free_u8_array(stylePtr, STYLE_SIZE);
+      if (cellRawPtr) this.exports.ghostty_wasm_free_u8_array(cellRawPtr, 8);
+      if (widePtr) this.exports.ghostty_wasm_free_u8_array(widePtr, 4);
     }
 
     this.rowDirtyCache = dirtyCache;
@@ -1567,9 +1580,14 @@ export class GhosttyTerminal {
    */
   private populateHandle(populator: (slotPtr: number) => number, handle: number): void {
     const slot = this.exports.ghostty_wasm_alloc_u8_array(4);
-    new DataView(this.memory.buffer).setUint32(slot, handle, true);
-    populator(slot);
-    this.exports.ghostty_wasm_free_u8_array(slot, 4);
+    if (!slot) throw new Error('Unable to allocate render iterator slot');
+    try {
+      new DataView(this.memory.buffer).setUint32(slot, handle, true);
+      const result = populator(slot);
+      if (result !== 0) throw new Error(`Unable to populate render iterator: ${result}`);
+    } finally {
+      this.exports.ghostty_wasm_free_u8_array(slot, 4);
+    }
   }
 
   /**

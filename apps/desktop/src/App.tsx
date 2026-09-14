@@ -11,6 +11,7 @@ import CollaborationPanel from "./components/CollaborationPanel";
 import { collaborationKey, useActiveCollaboration, useCollaboration } from "./lib/collaboration";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWindowClose } from "./lib/useWindowClose";
+import { confirmAction } from "./lib/confirm";
 import { preventBrowserContextMenu } from "./lib/contextMenu";
 import logoUrl from "./assets/logo.png";
 import PanelDock from "./components/PanelDock";
@@ -245,9 +246,9 @@ export default function App() {
     return tab?.panes.some((pane) => Boolean(backendIds[pane.id])) ?? false;
   };
 
-  const confirmClose = (tabIds: string[], message: string) => {
+  const confirmClose = async (tabIds: string[], message: string) => {
     const hasActiveSession = tabIds.some(hasActiveConnection);
-    return !hasActiveSession || window.confirm(message);
+    return !hasActiveSession || await confirmAction(message);
   };
 
   const removeTabs = (tabIds: string[], focusTabId?: string) => {
@@ -281,20 +282,20 @@ export default function App() {
     });
   };
 
-  const closeTab = (tabId: string) => {
-    if (!confirmClose([tabId], "此标签仍有 SSH 会话连接中，确定要关闭吗？"))
+  const closeTab = async (tabId: string) => {
+    if (!(await confirmClose([tabId], "此标签仍有 SSH 会话连接中，确定要关闭吗？")))
       return;
     removeTabs([tabId]);
   };
 
-  const closePane = (tabId: string, paneIndex: number) => {
+  const closePane = async (tabId: string, paneIndex: number) => {
     const tab = tabs.find((item) => item.id === tabId);
     if (!tab) return;
     const pane = tab.panes[paneIndex];
     if (!pane) return;
     if (
       backendIds[pane.id] &&
-      !window.confirm("此窗格仍有 SSH 会话连接中，确定要关闭吗？")
+      !(await confirmAction("此窗格仍有 SSH 会话连接中，确定要关闭吗？"))
     )
       return;
     if (tab.panes.length === 1) {
@@ -347,19 +348,19 @@ export default function App() {
     setContextMenu(null);
   };
 
-  const closeOtherTabs = (tabId: string) => {
+  const closeOtherTabs = async (tabId: string) => {
     const ids = tabs.filter((tab) => tab.id !== tabId).map((tab) => tab.id);
-    if (!confirmClose(ids, "其他标签仍有 SSH 会话连接中，确定要关闭吗？"))
+    if (!(await confirmClose(ids, "其他标签仍有 SSH 会话连接中，确定要关闭吗？")))
       return;
     removeTabs(ids, tabId);
     setContextMenu(null);
   };
 
-  const closeTabsToRight = (tabId: string) => {
+  const closeTabsToRight = async (tabId: string) => {
     const index = tabs.findIndex((tab) => tab.id === tabId);
     if (index < 0) return;
     const ids = tabs.slice(index + 1).map((tab) => tab.id);
-    if (!confirmClose(ids, "右侧标签仍有 SSH 会话连接中，确定要关闭吗？"))
+    if (!(await confirmClose(ids, "右侧标签仍有 SSH 会话连接中，确定要关闭吗？")))
       return;
     removeTabs(ids, tabId);
     setContextMenu(null);
@@ -573,13 +574,13 @@ export default function App() {
     setConnectionGroups((prev) => prev.filter((g) => g.id !== id));
     setGroupEditor(null);
   };
-  const closeConnectionGroup = (id: string) => {
+  const closeConnectionGroup = async (id: string) => {
     const ids = tabs.filter((t) => t.groupId === id).map((t) => t.id);
     if (
-      !confirmClose(
+      !(await confirmClose(
         ids,
         "此分组仍有 SSH 会话连接中，确定要关闭组内全部连接吗？",
-      )
+      ))
     )
       return;
     removeTabs(ids);

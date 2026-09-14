@@ -13,6 +13,7 @@ pub fn watch_webview_process(app: &tauri::AppHandle) {
         ProcessFailedEventHandler,
     };
     use windows_core::Interface;
+    use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
     let Some(window) = app.get_webview_window("main") else { return };
     let browser_args = app.config().app.windows.iter()
         .find(|window| window.label == "main")
@@ -20,6 +21,7 @@ pub fn watch_webview_process(app: &tauri::AppHandle) {
         .unwrap_or("default");
     let _ = record(app, "webview_configuration", browser_args, "");
     let handle = app.clone();
+    let recovery_pending = Arc::new(AtomicBool::new(false));
     let result = window.with_webview(move |webview| {
         let event_app = handle.clone();
         let registration = unsafe {
@@ -28,10 +30,12 @@ pub fn watch_webview_process(app: &tauri::AppHandle) {
                 view.add_ProcessFailed(
                     &ProcessFailedEventHandler::create(Box::new(move |_, args| {
                         let mut details = String::from("WebView2 process failed");
+                        let mut renderer_exited = false;
                         if let Some(args) = args {
                             let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
                             if args.ProcessFailedKind(&mut kind).is_ok() {
                                 details.push_str(&format!("; kind={}", kind.0));
+                                renderer_exited = kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED;
                             }
                             if let Ok(extra) = args.cast::<ICoreWebView2ProcessFailedEventArgs2>() {
                                 let mut reason = COREWEBVIEW2_PROCESS_FAILED_REASON::default();
@@ -45,6 +49,24 @@ pub fn watch_webview_process(app: &tauri::AppHandle) {
                             }
                         }
                         let _ = record(&event_app, "webview_process_failed", &details, "");
+                        // A crashed renderer cannot run React error handling. Ask from
+                        // the native host, and keep existing SSH sessions until accepted.
+                        if renderer_exited && !recovery_pending.swap(true, Ordering::SeqCst) {
+                            let recovery_app = event_app.clone();
+                            let pending = recovery_pending.clone();
+                            event_app.dialog()
+                                .message("终端界面进程已崩溃，诊断日志已记录。重启将关闭当前 SSH 连接；远端 tmux 会话可在重连后恢复，普通会话可能丢失。是否重启应用？")
+                                .title("dssh 界面崩溃")
+                                .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+                                .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("重启应用".into(), "暂不重启".into()))
+                                .show(move |restart| {
+                                    let _ = record(&recovery_app, "webview_recovery", if restart { "restart accepted" } else { "restart declined" }, "");
+                                    if restart {
+                                        recovery_app.restart();
+                                    }
+                                    pending.store(false, Ordering::SeqCst);
+                                });
+                        }
                         Ok(())
                     })),
                     &mut token,

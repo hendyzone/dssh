@@ -1,4 +1,5 @@
 import { AppDialog } from "./ui/app-dialog";
+import { confirmAction } from "../lib/confirm";
 import "./SftpPanel.css";
 import { Alert } from "./ui/alert";
 import { PositionedMenu, MenuItem } from "./ui/positioned-menu";
@@ -257,7 +258,7 @@ export default function SftpPanel({
           .filter((name) => existing.some((entry) => entry.name === name));
         if (
           conflicts.length &&
-          !window.confirm("以下文件或文件夹已存在，合并文件夹并覆盖同名文件？\n" + conflicts.join("\n"))
+          !(await confirmAction("以下文件或文件夹已存在，合并文件夹并覆盖同名文件？\n" + conflicts.join("\n")))
         )
           return;
       } catch (reason) {
@@ -456,8 +457,8 @@ export default function SftpPanel({
     });
   };
 
-  const remove = (entry: FileEntry) => {
-    if (!window.confirm(`确定删除“${entry.name}”吗？`)) return;
+  const remove = async (entry: FileEntry) => {
+    if (!(await confirmAction(`确定删除“${entry.name}”吗？`))) return;
     void runAction(async () => {
       await invoke("sftp_delete", {
         sessionId,
@@ -1193,10 +1194,10 @@ export default function SftpPanel({
           <AppDialog
             title="远程文本编辑"
             busy={saving}
-            onClose={() => {
+            onClose={async () => {
               if (
                 editor.original === editor.content ||
-                window.confirm("放弃未保存的修改？")
+                await confirmAction("放弃未保存的修改？")
               )
                 setEditor(null);
             }}
@@ -1297,10 +1298,10 @@ export default function SftpPanel({
                   variant="outline"
                   size="sm"
                   disabled={saving}
-                  onClick={() => {
+                  onClick={async () => {
                     if (
                       editor.original === editor.content ||
-                      window.confirm("放弃未保存的修改？")
+                      await confirmAction("放弃未保存的修改？")
                     )
                       setEditor(null);
                   }}
