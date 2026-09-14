@@ -282,9 +282,7 @@ export default function App() {
     });
   };
 
-  const closeTab = async (tabId: string) => {
-    if (!(await confirmClose([tabId], "此标签仍有 SSH 会话连接中，确定要关闭吗？")))
-      return;
+  const closeTab = (tabId: string) => {
     removeTabs([tabId]);
   };
 
