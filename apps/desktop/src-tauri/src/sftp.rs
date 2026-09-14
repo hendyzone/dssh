@@ -572,6 +572,28 @@ fn random_name() -> String {
 
 #[tauri::command]
 pub fn clipboard_file_paths() -> Result<Vec<String>, Error> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSPasteboard;
+        use objc2_foundation::{NSString, NSURL};
+
+        // Finder publishes one public.file-url per copied file or folder.
+        // WebKit may omit these URLs from ClipboardEvent for privacy.
+        let pasteboard = NSPasteboard::generalPasteboard();
+        let mut paths = Vec::new();
+        if let Some(items) = pasteboard.pasteboardItems() {
+            let file_type = NSString::from_str("public.file-url");
+            for item in items.iter() {
+                let Some(value) = item.stringForType(&file_type) else { continue };
+                let Some(url) = NSURL::URLWithString(&value) else { continue };
+                if !url.isFileURL() { continue; }
+                if let Some(path) = url.path() {
+                    paths.push(path.to_string());
+                }
+            }
+        }
+        return Ok(paths);
+    }
     #[cfg(windows)]
     unsafe {
         use std::ffi::c_void;
@@ -603,7 +625,7 @@ pub fn clipboard_file_paths() -> Result<Vec<String>, Error> {
         }
         return Ok(paths);
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     Ok(vec![])
 }
 

@@ -208,23 +208,35 @@ export default function TerminalView({
     const target = backendRef.current;
     if (!target || imageBusy.current || !activeRef.current || !inputEnabledRef.current) return;
     try {
-      const paths = await invoke<string[]>("clipboard_file_paths");
+      // Start browser reads in the user gesture, before awaiting native IPC.
+      // WebKit may reject image reads even when plain text can be read.
+      const [itemsResult, textResult, pathsResult] = await Promise.allSettled([
+        navigator.clipboard?.read?.() ?? Promise.resolve([]),
+        navigator.clipboard?.readText?.() ?? Promise.reject(new Error("Text clipboard unavailable")),
+        invoke<string[]>("clipboard_file_paths"),
+      ]);
       if (target !== backendRef.current || !activeRef.current || !inputEnabledRef.current) return;
+      const paths = pathsResult.status === "fulfilled" ? pathsResult.value : [];
       if (paths?.length) {
         await pasteFiles([], paths);
         return;
       }
-      if (navigator.clipboard.read) {
-        const items = await navigator.clipboard.read();
+      if (itemsResult.status === "fulfilled") {
+        const items = itemsResult.value;
         const item = items.find((item) => item.types.includes("image/png"));
         if (item) {
-          const image = await item.getType("image/png");
+          let image: Blob | undefined;
+          try { image = await item.getType("image/png"); }
+          catch { /* A denied image representation may still contain readable text. */ }
           if (target !== backendRef.current || !activeRef.current || !inputEnabledRef.current) return;
-          await pasteImage(image);
-          return;
+          if (image) {
+            await pasteImage(image);
+            return;
+          }
         }
       }
-      const text = await navigator.clipboard.readText();
+      if (textResult.status === "rejected") throw textResult.reason;
+      const text = textResult.value;
       if (
         terminal === termRef.current &&
         target === backendRef.current &&
@@ -233,8 +245,23 @@ export default function TerminalView({
       )
         terminal?.paste(text);
     } catch {
-      setClipboardError("无法读取剪贴板，请使用 Ctrl+V，或右键选择粘贴截图。");
+      setClipboardError("无法读取剪贴板，请使用系统“编辑 → 粘贴”重试。");
     }
+  };
+  const pasteMacData = async (files: File[], image: Blob | null, text: string) => {
+    const terminal = termRef.current;
+    const target = backendRef.current;
+    if (!target || imageBusy.current || !activeRef.current || !inputEnabledRef.current) return;
+    // Finder file URLs may be hidden from WebKit's ClipboardEvent. Capture the
+    // event's other formats before awaiting the native pasteboard lookup.
+    let paths: string[] = [];
+    try { paths = await invoke<string[]>("clipboard_file_paths") ?? []; }
+    catch { /* Native file lookup must not block event-provided text/images. */ }
+    if (terminal !== termRef.current || target !== backendRef.current || !activeRef.current || !inputEnabledRef.current) return;
+    if (paths.length) await pasteFiles([], paths);
+    else if (files.length && !(files.length === 1 && files[0].type === "image/png")) await pasteFiles(files);
+    else if (image) await pasteImage(image);
+    else terminal?.paste(text);
   };
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -768,6 +795,9 @@ export default function TerminalView({
             active &&
             inputEnabled
           ) {
+            // Cmd+V must keep its native paste event on WebKit. The paste
+            // capture below routes the event's text, files and images.
+            if (event.metaKey && !event.ctrlKey) return;
             event.preventDefault();
             event.stopPropagation();
             void pasteClipboard();
@@ -775,6 +805,15 @@ export default function TerminalView({
         }}
         onPasteCapture={(event) => {
           const files = Array.from(event.clipboardData?.files ?? []);
+          if (/Mac/i.test(navigator.platform) && active && inputEnabled) {
+            event.preventDefault();
+            event.stopPropagation();
+            const image = [...(event.clipboardData?.items ?? [])]
+              .find((item) => item.type === "image/png")?.getAsFile()
+              ?? files.find((file) => file.type === "image/png") ?? null;
+            void pasteMacData(files, image, event.clipboardData?.getData("text/plain") ?? "");
+            return;
+          }
           if (files.length && !(files.length === 1 && files[0].type === "image/png") && active && inputEnabled) {
             event.preventDefault();
             event.stopPropagation();

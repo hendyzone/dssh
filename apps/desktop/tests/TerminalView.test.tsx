@@ -447,6 +447,107 @@ it("uploads copied local files on Ctrl+V and quotes paths without executing them
   expect(mocks.instances[0].pastedData).toHaveBeenCalledWith("'/home/demo/报告.pdf' '/home/demo/a'\"'\"'$(id).csv' ");
 });
 
+it("leaves Command+V to the native paste event and sends its text once", async () => {
+  const read = vi.fn().mockRejectedValue(new Error("NotAllowedError"));
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { read } });
+  const view = render(<TerminalView {...props} />);
+  await settle();
+  try {
+    const input = screen.getByLabelText("Terminal input");
+    expect(fireEvent.keyDown(input, { key: "v", code: "KeyV", metaKey: true })).toBe(true);
+    fireEvent.paste(input, { clipboardData: { files: [], items: [] } });
+    await settle();
+    expect(read).not.toHaveBeenCalled();
+    expect(mocks.invoke.mock.calls.filter(([command, args]) =>
+      command === "ssh_write" && args.data === "pasted text")).toHaveLength(1);
+  } finally {
+    view.unmount();
+    Reflect.deleteProperty(navigator, "clipboard");
+  }
+});
+
+it("starts clipboard reads before native IPC and falls back from image reads to text", async () => {
+  const read = vi.fn().mockRejectedValue(new Error("NotAllowedError"));
+  const readText = vi.fn().mockResolvedValue("Mac clipboard text");
+  let finishPaths!: (paths: string[]) => void;
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === "ssh_connect") return "backend";
+    if (command === "clipboard_file_paths") return new Promise<string[]>((resolve) => { finishPaths = resolve; });
+  });
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { read, readText } });
+  const view = render(<TerminalView {...props} />);
+  await settle();
+  try {
+    fireEvent.keyDown(screen.getByLabelText("Terminal input"), { key: "v", ctrlKey: true });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(readText).toHaveBeenCalledTimes(1);
+    await act(async () => { finishPaths([]); });
+    expect(mocks.instances[0].pastedData).toHaveBeenCalledExactlyOnceWith("Mac clipboard text");
+  } finally {
+    view.unmount();
+    Reflect.deleteProperty(navigator, "clipboard");
+  }
+});
+
+it("pastes Mac event text even when clipboard APIs and native file lookup fail", async () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === "ssh_connect") return "backend";
+    if (command === "clipboard_file_paths") throw new Error("Clipboard busy");
+  });
+  const view = render(<TerminalView {...props} />);
+  await settle();
+  try {
+    fireEvent.paste(screen.getByLabelText("Terminal input"), {
+      clipboardData: { files: [], items: [], getData: () => "中文 text\nsecond line" },
+    });
+    await settle();
+    expect(mocks.instances[0].pastedData).toHaveBeenCalledExactlyOnceWith("中文 text\nsecond line");
+    expect(mocks.invoke.mock.calls.some(([command, args]) => command === "ssh_write" && args.data === "pasted text")).toBe(false);
+  } finally { view.unmount(); platform.mockRestore(); }
+});
+
+it("uploads a Mac screenshot from its native paste event without reading the browser clipboard", async () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  const png = { type: "image/png", size: 4, arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer };
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === "ssh_connect") return "backend";
+    if (command === "clipboard_file_paths") return [];
+    if (command === "sftp_clipboard_image") return "/tmp/screenshot.png";
+  });
+  const view = render(<TerminalView {...props} />);
+  await settle();
+  try {
+    fireEvent.paste(screen.getByLabelText("Terminal input"), {
+      clipboardData: { files: [png], items: [{ type: "image/png", getAsFile: () => png }], getData: () => "" },
+    });
+    await settle();
+    expect(mocks.invoke).toHaveBeenCalledWith("sftp_clipboard_image", { sessionId: "backend", data: [137, 80, 78, 71] });
+    expect(mocks.instances[0].pastedData).toHaveBeenCalledExactlyOnceWith('"/tmp/screenshot.png" ');
+  } finally { view.unmount(); platform.mockRestore(); }
+});
+
+it("uploads Finder paths hidden from the Mac paste event instead of pasting filenames", async () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === "ssh_connect") return "backend";
+    if (command === "clipboard_file_paths") return ["/Users/demo/报告.pdf", "/Users/demo/project"];
+    if (command === "sftp_clipboard_upload") return ["/tmp/报告.pdf", "/tmp/project"];
+  });
+  const view = render(<TerminalView {...props} />);
+  await settle();
+  try {
+    fireEvent.paste(screen.getByLabelText("Terminal input"), {
+      clipboardData: { files: [], items: [], getData: () => "报告.pdf\nproject" },
+    });
+    await settle();
+    expect(mocks.invoke).toHaveBeenCalledWith("sftp_clipboard_upload", {
+      sessionId: "backend", paths: ["/Users/demo/报告.pdf", "/Users/demo/project"],
+    });
+    expect(mocks.instances[0].pastedData).toHaveBeenCalledExactlyOnceWith("'/tmp/报告.pdf' '/tmp/project' ");
+  } finally { view.unmount(); platform.mockRestore(); }
+});
+
 it("uploads non-image paste files instead of sending clipboard text to the terminal", async () => {
   mocks.invoke.mockImplementation(async (command: string) => command === "ssh_connect" ? "backend" : command === "sftp_clipboard_file" ? "/home/demo/report.pdf" : undefined);
   render(<TerminalView {...props} />); await settle();
