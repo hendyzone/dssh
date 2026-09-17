@@ -1125,7 +1125,7 @@ dependencies = [
 
 [[package]]
 name = "dssh"
-version = "1.2.5"
+version = "1.2.6"
 dependencies = [
  "aes-gcm",
  "anyhow",

@@ -37,6 +37,7 @@ export default function CollaborationSettings({sessions=[]}: {sessions?:Collabor
       {field("project","项目编号","与看板和 amail 中的项目一致")}
       {field("workdir","worktree 根目录","/srv/workspace/my-project-worktree")}
       <p>目录必须是该 tmux 会话当前 Git worktree 的根目录。</p>
+      <label className="collaboration-toggle"><input type="checkbox" checked={profile.membersEnabled} onChange={e=>update({membersEnabled:e.target.checked})}/> 团队成员与终端跳转（无需配置看板和邮箱）</label>
       <fieldset><legend><label className="collaboration-toggle"><input type="checkbox" checked={profile.taskboardEnabled} onChange={e=>update({taskboardEnabled:e.target.checked})}/> 任务看板</label></legend>
         {profile.taskboardEnabled&&<>
           {field("taskboardUrl","看板服务地址（从远端访问）","https://taskboard.example.com")}

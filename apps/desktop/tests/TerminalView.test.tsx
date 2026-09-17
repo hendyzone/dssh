@@ -379,6 +379,7 @@ it("reattaches the same tmux identity on manual reconnect without shell injectio
       session={{
         ...props.session,
         tmux: { id: "$2", created: 123, name: "work" },
+        tmuxWorkdir: "/repo/member",
       }}
     />,
   );
@@ -389,6 +390,8 @@ it("reattaches the same tmux identity on manual reconnect without shell injectio
   const calls = mocks.invoke.mock.calls.filter((c) => c[0] === "ssh_connect");
   expect(calls).toHaveLength(2);
   expect(calls[1][1].params.tmux).toEqual({ id: "$2", created: 123 });
+  expect(calls[0][1].params.tmuxWorkdir).toBe("/repo/member");
+  expect(calls[1][1].params.tmuxWorkdir).toBe("/repo/member");
   expect(
     mocks.invoke.mock.calls.filter((c) => c[0] === "ssh_write"),
   ).toHaveLength(0);

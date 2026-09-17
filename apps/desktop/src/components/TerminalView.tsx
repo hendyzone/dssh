@@ -571,6 +571,7 @@ export default function TerminalView({
               tmux: session.tmux
                 ? { id: session.tmux.id, created: session.tmux.created }
                 : null,
+              tmuxWorkdir: session.tmuxWorkdir ?? null,
             },
           });
         } catch (e) {

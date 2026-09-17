@@ -30,6 +30,8 @@ pub struct ConnectParams {
     pub rows: u32,
     #[serde(default)]
     pub tmux: Option<crate::tmux::Target>,
+    #[serde(default)]
+    pub tmux_workdir: Option<String>,
 }
 
 type ClientHandle = russh::client::Handle<SshHandler>;
@@ -244,7 +246,14 @@ pub async fn ssh_connect(
     // TERM_PROGRAM=ghostty 声明本终端支持 Kitty graphics protocol
     //（pi 等现代工具依据该变量决定是否内联显示图片）。
     let startup = match &params.tmux {
-        Some(target) => crate::tmux::attach_command(target).map_err(SshError::Other)?,
+        Some(target) => {
+            if let Some(workdir) = &params.tmux_workdir {
+                crate::collaboration::member_attach_command(target, workdir)
+                    .map_err(SshError::Other)?
+            } else {
+                crate::tmux::attach_command(target).map_err(SshError::Other)?
+            }
+        }
         None => "env TERM_PROGRAM=ghostty COLORTERM=truecolor ${SHELL:-/bin/bash} -l".to_string(),
     };
 

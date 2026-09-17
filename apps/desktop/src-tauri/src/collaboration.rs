@@ -76,6 +76,9 @@ impl Default for Profile {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Operation {
+    Members,
+    MemberSave,
+    MemberRemove,
     Context,
     Inbox,
     Read,
@@ -125,7 +128,7 @@ fn absolute_path(value: &str) -> Result<String, String> {
     literal(value)
 }
 
-fn worktree_command(target: &Target) -> Result<String, String> {
+pub(crate) fn worktree_command(target: &Target) -> Result<String, String> {
     if !target.id.starts_with('$')
         || target.id.len() < 2
         || !target.id[1..].bytes().all(|b| b.is_ascii_digit())
@@ -134,6 +137,13 @@ fn worktree_command(target: &Target) -> Result<String, String> {
         return Err("无效的 tmux 会话身份".into());
     }
     Ok(format!("[ \"$(tmux display-message -p -t {} '#{{session_created}}' 2>/dev/null)\" = {} ] || {{ echo 'tmux session changed; reconnect' >&2; exit 1; }}; dssh_collab_cwd=$(tmux display-message -p -t {} '#{{pane_current_path}}') || exit 1; dssh_collab_root=$(git -C \"$dssh_collab_cwd\" rev-parse --show-toplevel) || exit 1; cd \"$dssh_collab_root\" && pwd -P",quote(&target.id),quote(&target.created.to_string()),quote(&format!("{}:",target.id))))
+}
+
+pub(crate) fn member_attach_command(target: &Target, workdir: &str) -> Result<String, String> {
+    let directory = absolute_path(workdir)?;
+    let resolve = worktree_command(target)?;
+    let attach = crate::tmux::attach_command(target)?;
+    Ok(format!("dssh_member_root=$({resolve}) || exit 1; [ \"$dssh_member_root\" = {directory} ] || {{ echo '成员工作区已变化，请更新成员位置' >&2; exit 1; }}; {attach}"))
 }
 
 fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result<String, String> {
@@ -179,7 +189,27 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
             ))
         ),
     ];
-    if matches!(request.operation, Operation::Context) {
+    if matches!(
+        request.operation,
+        Operation::Members | Operation::MemberSave | Operation::MemberRemove
+    ) {
+        if request.body.len() > 16384 || request.body.contains('\0') {
+            return Err("成员位置超过限制".into());
+        }
+        let operation = match request.operation {
+            Operation::Members => "members",
+            Operation::MemberSave => "memberSave",
+            _ => "memberRemove",
+        };
+        args = vec![
+            literal(&profile.python_bin)?,
+            "-c".into(),
+            quote(include_str!("team_members.py")),
+            quote(&profile.project),
+            quote(operation),
+            quote(&request.body),
+        ];
+    } else if matches!(request.operation, Operation::Context) {
         if !profile.taskboard_enabled {
             return Err("任务看板未开启".into());
         }
@@ -270,7 +300,10 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
                     quote(&request.task),
                 ]);
             }
-            Operation::Context => unreachable!(),
+            Operation::Context
+            | Operation::Members
+            | Operation::MemberSave
+            | Operation::MemberRemove => unreachable!(),
         }
         if matches!(request.operation, Operation::Send | Operation::Reply) {
             if ![
@@ -302,7 +335,10 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
             }
         }
     }
-    let mailbox_guard = if matches!(request.operation, Operation::Context) {
+    let mailbox_guard = if matches!(
+        request.operation,
+        Operation::Context | Operation::Members | Operation::MemberSave | Operation::MemberRemove
+    ) {
         String::new()
     } else {
         format!("[ -f {} ] || {{ echo 'this tmux/worktree mailbox is not provisioned' >&2; exit 1; }}; ", quote(&format!("{mail_home}/.agent-mail/env")))
@@ -376,6 +412,42 @@ mod tests {
             body: "hello".into(),
             preview: true,
         }
+    }
+    #[test]
+    fn member_roster_requires_binding_but_not_a_mailbox() {
+        let mut p = profile();
+        p.mail_enabled = false;
+        let command = build_command(&p, &request(Operation::Members), "ssh").unwrap();
+        assert!(command.contains("worktree changed"));
+        assert!(command.contains("'python3' '-c'") || command.contains("'python3' -c"));
+        assert!(!command.contains("mailbox is not provisioned"));
+        let mut save = request(Operation::MemberSave);
+        save.body = "x".repeat(16385);
+        assert!(build_command(&p, &save, "ssh").is_err());
+        p.enabled = false;
+        assert!(build_command(&p, &request(Operation::Members), "ssh").is_err());
+    }
+    #[test]
+    fn member_attachment_guards_incarnation_and_worktree_before_attach() {
+        let target = Target {
+            id: "$2".into(),
+            created: 123,
+        };
+        let command = member_attach_command(&target, "/repo with 'quote").unwrap();
+        assert!(command.contains("#{session_created}"));
+        assert!(command.contains("'/repo with '\"'\"'quote'"));
+        assert!(
+            command.find("dssh_member_root").unwrap() < command.find("attach-session").unwrap()
+        );
+        assert!(member_attach_command(&target, "relative").is_err());
+        assert!(member_attach_command(
+            &Target {
+                id: "$2".into(),
+                created: 0
+            },
+            "/repo"
+        )
+        .is_err());
     }
     #[test]
     fn session_worktree_guard_and_identity_survive_reconnect() {

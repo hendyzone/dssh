@@ -11,6 +11,7 @@ export interface CollaborationProfile {
   enabled: boolean;
   taskboardEnabled: boolean;
   mailEnabled: boolean;
+  membersEnabled: boolean;
   project: string;
   workdir: string;
   taskboardUrl: string;
@@ -23,14 +24,14 @@ export const COLLABORATION_KEY = "dssh.collaboration.v2";
 const EVENT = "dssh-collaboration-changed";
 export const emptyProfile = (): CollaborationProfile => ({
   tmuxId:"", tmuxCreated:0, tmuxName:"",
-  enabled:false, taskboardEnabled:false, mailEnabled:false, project:"", workdir:"",
+  enabled:false, taskboardEnabled:false, mailEnabled:false, membersEnabled:false, project:"", workdir:"",
   taskboardUrl:"", taskboardBin:"taskboard", tokenFile:"", pythonBin:"python3", mailctlPath:"",
 });
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export function profileError(p: CollaborationProfile): string {
   if (!p.enabled) return "";
   if (!/^\$\d+$/.test(p.tmuxId) || !Number.isSafeInteger(p.tmuxCreated) || p.tmuxCreated <= 0) return "请绑定有效的 tmux 会话";
-  if (!p.taskboardEnabled && !p.mailEnabled) return "请至少开启任务看板或 Agent 通信";
+  if (!p.taskboardEnabled && !p.mailEnabled && !p.membersEnabled) return "请至少开启团队成员、任务看板或 Agent 通信";
   if (!identifier.test(p.project)) return "请填写项目编号（字母、数字、点、下划线或连字符）";
   if (!p.workdir.startsWith("/")) return "请填写远端工作目录的绝对路径";
   if (Object.values(p).some(v => typeof v === "string" && (v.length > 4096 || /[\r\n\0]/.test(v)))) return "配置不能包含换行或超过 4096 字符";
@@ -106,7 +107,7 @@ export function useCollaboration() {
   }, []);
   return profiles;
 }
-export type CollaborationOperation = "context" | "inbox" | "read" | "send" | "reply";
+export type CollaborationOperation = "context" | "inbox" | "read" | "send" | "reply" | "members" | "memberSave" | "memberRemove";
 export interface CollaborationRequest {
   operation: CollaborationOperation;
   task?: string; uid?: string; to?: string; kind?: string; body?: string; preview?: boolean;
@@ -115,6 +116,6 @@ export async function collaborationRequest(sessionId:string, profile:Collaborati
   if (!profile.enabled) throw new Error("Agent 协作未开启");
   const error = profileError(profile); if(error) throw new Error(error);
   if (!sessionId) throw new Error("请先连接此服务器");
-  if (request.operation === "context" ? !profile.taskboardEnabled : !profile.mailEnabled) throw new Error("该服务未开启");
+  if (request.operation === "context" ? !profile.taskboardEnabled : ["inbox","read","send","reply"].includes(request.operation) && !profile.mailEnabled) throw new Error("该服务未开启");
   return invoke("collaboration_request", {sessionId, profile, request});
 }

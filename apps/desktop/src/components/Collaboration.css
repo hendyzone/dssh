@@ -11,6 +11,24 @@
 .collaboration-content select,.collaboration-settings select{padding:6px;background:var(--ui-panel);color:var(--ui-fg);border:1px solid var(--ui-border);border-radius:4px}
 .collaboration-actions{display:flex;flex-wrap:wrap;gap:6px}
 .collaboration-error{color:var(--ui-danger,#e06c75)}
+.team-members,.team-members details{display:flex;flex-direction:column;gap:10px}
+.team-members summary{cursor:pointer;font-size:12px;margin-bottom:8px}
+.team-members select{max-width:100%;min-width:0}
+.team-toolbar,.team-card-main{display:flex;align-items:center;gap:10px}
+.team-toolbar{justify-content:space-between}
+.team-count{font-size:11px;font-weight:normal;margin-left:4px}
+.team-empty,.team-setup{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:20px 8px}
+.team-empty{align-items:center;text-align:center;padding:24px 12px}
+.team-empty h4,.team-setup h3{margin:0;font-size:15px}
+.team-add{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-panel)}
+.team-members .team-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px}
+.team-avatar{display:flex;align-items:center;justify-content:center;width:32px;height:32px;flex-shrink:0;border:1px solid var(--ui-border);border-radius:8px}
+.team-card-title{min-width:0}
+.team-card-title strong{display:block;overflow-wrap:anywhere;font-size:13px}
+.team-card-title p{margin:3px 0 0;opacity:.7}
+.team-card-extra{grid-column:1/-1;min-width:0}
+.team-card-extra summary,.team-footnote{opacity:.7}
+.team-open{white-space:nowrap}
 .agent-guide{display:flex;flex-direction:column;gap:10px;border:1px solid var(--ui-border);border-radius:8px;padding:12px}
 .agent-guide textarea{box-sizing:border-box;width:100%;min-height:180px;resize:vertical;padding:8px;background:var(--ui-panel);color:var(--ui-fg);border:1px solid var(--ui-border);border-radius:4px;font-family:monospace;font-size:12px}
 .agent-guide summary{cursor:pointer;font-size:12px;margin:6px 0}

@@ -33,6 +33,8 @@ export interface SessionInfo {
   server: ServerEntry;
   /** Stable remote identity prevents reconnecting to a reused tmux session ID. */
   tmux?: { id: string; created: number; name: string };
+  /** Expected member worktree, checked again on each SSH attachment. */
+  tmuxWorkdir?: string;
 }
 
 /** 一个标签页：1-2 个窗格（分屏） */

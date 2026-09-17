@@ -8,7 +8,9 @@ import ChangesPanel from "./components/ChangesPanel";
 import { focusTask, taskLabels } from "./lib/taskStatus";
 import ToolRail from "./components/ToolRail";
 import CollaborationPanel from "./components/CollaborationPanel";
+import TeamPanel from "./components/TeamPanel";
 import { collaborationKey, useActiveCollaboration, useCollaboration } from "./lib/collaboration";
+import { connectedMemberTab, type TeamMember } from "./lib/teamMembers";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWindowClose } from "./lib/useWindowClose";
 import { confirmAction } from "./lib/confirm";
@@ -64,6 +66,7 @@ import { applyTheme, getTheme } from "./themes";
 import type { AppSettings, ServerEntry, SessionInfo, TabInfo } from "./types";
 
 type SidePanel =
+  | "team"
   | "collaboration"
   | "sftp"
   | "forward"
@@ -222,10 +225,11 @@ export default function App() {
     server: ServerEntry,
     groupId?: string,
     tmux?: SessionInfo["tmux"],
+    tmuxWorkdir?: string,
   ) => {
     // 每点一次开一个新连接（同一服务器可开任意多个标签）
     setRecentIds((previous) => rememberConnection(previous, server.id));
-    const pane: SessionInfo = { id: crypto.randomUUID(), server, tmux };
+    const pane: SessionInfo = { id: crypto.randomUUID(), server, tmux, tmuxWorkdir };
     const tab: TabInfo = {
       id: crypto.randomUUID(),
       panes: [pane],
@@ -244,6 +248,20 @@ export default function App() {
   const hasActiveConnection = (tabId: string) => {
     const tab = tabs.find((item) => item.id === tabId);
     return tab?.panes.some((pane) => Boolean(backendIds[pane.id])) ?? false;
+  };
+
+  const openTeamMember = async (member: TeamMember, server: ServerEntry, groupId?: string) => {
+    const existing = await connectedMemberTab(member, server, tabs, backendIds, activeTabId);
+    if (existing) {
+      setActiveTabId(existing.tab.id);
+      focusPane(existing.tab.id, existing.paneIndex);
+      if (existing.tab.groupId) setConnectionGroups(previous => previous.map(group =>
+        group.id === existing.tab.groupId ? {...group, collapsed:false} : group));
+      return;
+    }
+    // TerminalView authenticates using this device's saved connection and checks the
+    // tmux incarnation and worktree before attaching, including on reconnect.
+    connect(server, groupId, member.tmux, member.workdir);
   };
 
   const confirmClose = async (tabIds: string[], message: string) => {
@@ -342,7 +360,7 @@ export default function App() {
   const duplicateTab = (tabId: string) => {
     const tab = tabs.find((item) => item.id === tabId);
     if (!tab) return;
-    connect(tab.panes[0].server, tab.groupId, tab.panes[0].tmux);
+    connect(tab.panes[0].server, tab.groupId, tab.panes[0].tmux, tab.panes[0].tmuxWorkdir);
     setContextMenu(null);
   };
 
@@ -379,6 +397,7 @@ export default function App() {
           id: crypto.randomUUID(),
           server: src.server,
           tmux: src.tmux,
+          tmuxWorkdir: src.tmuxWorkdir,
         };
         return {
           ...t,
@@ -813,13 +832,15 @@ export default function App() {
                 <div className="session-content">
                   <ToolRail
                     side="left"
-                    collaborationEnabled={!!collaboration?.enabled}
+                    teamEnabled={!!t.panes[t.activePane]?.tmux}
+                    collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
                   />
                   <ToolRail
                     side="right"
-                    collaborationEnabled={!!collaboration?.enabled}
+                    teamEnabled={!!t.panes[t.activePane]?.tmux}
+                    collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
                   />
@@ -875,9 +896,12 @@ export default function App() {
                       />
                     </PanelDock>
                   )}
+                  {panel === "team" && t.id === activeTabId && t.panes[t.activePane]?.tmux && <PanelDock kind="team">
+                    <TeamPanel key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                  </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
                     <PanelDock kind="collaboration">
-                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} onClose={()=>togglePanel(t.id,null)}/>
+                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} onClose={()=>togglePanel(t.id,null)} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (
