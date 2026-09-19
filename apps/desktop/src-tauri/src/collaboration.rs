@@ -78,6 +78,7 @@ impl Default for Profile {
 pub enum Operation {
     Members,
     MemberSave,
+    MemberNotes,
     MemberRemove,
     Context,
     Inbox,
@@ -191,14 +192,15 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
     ];
     if matches!(
         request.operation,
-        Operation::Members | Operation::MemberSave | Operation::MemberRemove
+        Operation::Members | Operation::MemberSave | Operation::MemberNotes | Operation::MemberRemove
     ) {
-        if request.body.len() > 16384 || request.body.contains('\0') {
+        if request.body.len() > 64 * 1024 || request.body.contains('\0') {
             return Err("成员位置超过限制".into());
         }
         let operation = match request.operation {
             Operation::Members => "members",
             Operation::MemberSave => "memberSave",
+            Operation::MemberNotes => "memberNotes",
             _ => "memberRemove",
         };
         args = vec![
@@ -302,6 +304,7 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
             }
             Operation::Context
             | Operation::Members
+            | Operation::MemberNotes
             | Operation::MemberSave
             | Operation::MemberRemove => unreachable!(),
         }
@@ -337,7 +340,7 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
     }
     let mailbox_guard = if matches!(
         request.operation,
-        Operation::Context | Operation::Members | Operation::MemberSave | Operation::MemberRemove
+        Operation::Context | Operation::Members | Operation::MemberSave | Operation::MemberNotes | Operation::MemberRemove
     ) {
         String::new()
     } else {
@@ -422,7 +425,7 @@ mod tests {
         assert!(command.contains("'python3' '-c'") || command.contains("'python3' -c"));
         assert!(!command.contains("mailbox is not provisioned"));
         let mut save = request(Operation::MemberSave);
-        save.body = "x".repeat(16385);
+        save.body = "x".repeat(64 * 1024 + 1);
         assert!(build_command(&p, &save, "ssh").is_err());
         p.enabled = false;
         assert!(build_command(&p, &request(Operation::Members), "ssh").is_err());

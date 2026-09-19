@@ -353,3 +353,23 @@ test("shows missing tmux and fetch errors rather than an empty valid server", as
   expect(screen.getByRole("alert").textContent).toContain("SSH disconnected");
   view.unmount();
 });
+
+test("automatically folds worker sessions without changing explicit groups or Lead sessions", async () => {
+  mocks.invoke.mockImplementation(async command => command === "tmux_snapshot" ? {...snapshot,sessions:[
+    {...snapshot.sessions[0],name:"smart-table-cw1c-pi"},
+    {...snapshot.sessions[0],id:"$1",name:"agentdock-cw1-codex"},
+    {...snapshot.sessions[0],id:"$2",name:"smart-table-lead"},
+    {...snapshot.sessions[0],id:"$3",name:"project-worker-2",group:"手动分组"},
+  ]} : undefined);
+  const onAttach=vi.fn();
+  render(<TmuxPanel sessionId="ssh" onAttach={onAttach} onClose={()=>{}}/>);
+  const group=await screen.findByRole("button",{name:"Workers 2"});
+  expect(group.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("smart-table-cw1c-pi")).toBeNull();
+  expect(screen.getByText("smart-table-lead")).toBeTruthy();
+  expect(screen.getByText("project-worker-2")).toBeTruthy();
+  fireEvent.click(group);
+  fireEvent.doubleClick(screen.getByText("smart-table-cw1c-pi"));
+  expect(onAttach).toHaveBeenCalledWith(expect.objectContaining({id:"$0",created:123}));
+  expect(mocks.invoke.mock.calls.some(([command])=>command==="tmux_action")).toBe(false);
+});

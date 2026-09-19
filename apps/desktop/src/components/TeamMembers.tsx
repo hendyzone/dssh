@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw, Terminal, Users } from "lucide-react";
 import { collaborationRequest, resolveWorktree, type CollaborationProfile, type CollaborationSession } from "../lib/collaboration";
-import { loadTeamMappings, matchingServers, memberKey, memberMappingKey, parseMember, TEAM_MAPPING_KEY, type TeamMember } from "../lib/teamMembers";
+import { loadTeamMappings, matchingServers, memberKey, memberMappingKey, memberNoteFields, parseMember, TEAM_MAPPING_KEY, type MemberNoteField, type TeamMember } from "../lib/teamMembers";
+import { teamLeadPrompt } from "../lib/teamLeadPrompt";
 import type { ServerEntry } from "../types";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import TeamMemberNotes from "./TeamMemberNotes";
 
 export interface TeamNavigation {
   server: ServerEntry;
@@ -26,6 +28,10 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [mapping, setMapping] = useState(loadTeamMappings);
+  const [noteMember, setNoteMember] = useState<string>();
+  const [managedMember, setManagedMember] = useState<string>();
+  const [noteDraft, setNoteDraft] = useState<Partial<Record<MemberNoteField,string>>>({});
+  const leadPrompt = teamLeadPrompt(profile,navigation.server);
   const pending = useRef(false);
   const generation = useRef(0);
   const choices = (navigation.sessions ?? []).filter(s=>s.pane.tmux && s.backendId);
@@ -37,7 +43,7 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
     try { await action(()=>version===generation.current); } catch (e) { if (version === generation.current) setError(String(e)); }
     finally { if (version === generation.current) { pending.current = false; setBusy(false); } }
   };
-  const request = async (operation: "members" | "memberSave" | "memberRemove", body = "") => {
+  const request = async (operation: "members" | "memberSave" | "memberRemove" | "memberNotes", body = "") => {
     const version = generation.current;
     const raw: unknown = JSON.parse(await collaborationRequest(sessionId, profile, {operation, body}));
     if (!Array.isArray(raw) || raw.length > 100) throw new Error("成员列表格式无效");
@@ -45,7 +51,7 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
     if (version === generation.current) setMembers(list);
   };
   useEffect(() => {
-    setMembers([]); setMapping(loadTeamMappings()); setPosition(""); setError(""); setNotice(""); setAdding(false); setBusy(false);
+    setMembers([]); setMapping(loadTeamMappings()); setPosition(""); setError(""); setNotice(""); setAdding(false); setBusy(false);setNoteMember(undefined);
     if (sessionId && profile.enabled) void run(() => request("members"));
     return () => { generation.current++; pending.current = false; };
   }, [sessionId, profile]);
@@ -67,6 +73,13 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
       <Button size="icon-sm" variant="ghost" aria-label="刷新成员" disabled={disabled} onClick={()=>void run(()=>request("members"))}><RefreshCw size={15}/></Button>
       <Button size="sm" disabled={disabled} onClick={()=>startAdd()}><Plus size={14}/> 添加成员</Button>
     </div></div>
+    <div className="team-lead-guide">
+      <Button size="sm" disabled={busy} onClick={()=>void run(async current=>{
+        try {await navigator.clipboard.writeText(leadPrompt);} catch {throw new Error("复制失败，请展开“查看提示词”手动复制。");}
+        if(current())setNotice("提示词已复制，请粘贴到 Lead 对话。执行完成后刷新成员。");
+      })}>复制给 Lead 的提示词</Button>
+      <details><summary>查看提示词</summary><p>贴给 Lead 批量登记成员和维护备注，完成后刷新成员。</p><textarea aria-label="给 Lead 的团队管理提示词" readOnly value={leadPrompt}/></details>
+    </div>
     {error && <p role="alert" className="collaboration-error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {busy && <p role="status">正在处理…</p>}
@@ -96,20 +109,32 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
       const selectedServer=mapping[memberMappingKey(member)]??(matches.length===1?matches[0].id:"");
       const server=navigation.servers.find(s=>s.id===selectedServer);
       return <article key={memberKey(member)} className="team-card">
-        <div className="team-card-main"><span className="team-avatar"><Terminal size={18}/></span><div className="team-card-title"><strong>{member.role}</strong><p>{server?.name??member.host} · {member.tmux.name}</p></div></div>
-        <Button className="team-open" size="sm" disabled={disabled||!server} aria-label={`打开终端 · ${member.role}`} onClick={()=>server&&void run(()=>navigation.onOpen(member,server))}>打开终端</Button>
+        <div className="team-card-main"><span className="team-avatar"><Terminal size={15}/></span><div className="team-card-title"><strong title={member.role}>{member.role}</strong><p title={`${server?.name??member.host} · ${member.tmux.name}`}>{server?.name??member.host}{member.tmux.name!==member.role ? ` · ${member.tmux.name}` : ""}</p></div></div>
+        <div className="team-card-actions"><Button className="team-open" size="sm" disabled={disabled||!server} aria-label={`打开终端 · ${member.role}`} onClick={()=>server&&void run(()=>navigation.onOpen(member,server))}>打开</Button><Button size="sm" variant="ghost" aria-expanded={managedMember===memberKey(member)} onClick={()=>setManagedMember(old=>old===memberKey(member)?undefined:memberKey(member))}>管理</Button></div>
+        <TeamMemberNotes member={member}/>
+        {noteMember===memberKey(member) && <div className="team-card-extra team-member-notes">
+          {noteMember===memberKey(member) ? <div className="team-notes-editor">
+            {(Object.entries(memberNoteFields).filter(([key])=>key!=="quota") as [MemberNoteField,string][]).map(([key,label])=><label className="collaboration-field" key={key}>{label}<textarea maxLength={2000} disabled={busy} value={noteDraft[key]??""} onChange={e=>setNoteDraft(old=>({...old,[key]:e.target.value}))}/></label>)}
+            <div className="collaboration-actions"><Button size="sm" disabled={disabled} onClick={()=>void run(async current=>{
+              await request("memberNotes",JSON.stringify({project:profile.project,id:member.id,email:member.email,...noteDraft}));
+              if(current()){setNoteMember(undefined);setNotice("成员备注已保存。");}
+            })}>保存备注</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>setNoteMember(undefined)}>取消备注编辑</Button></div>
+          </div>:null}
+        </div>}
         {!server && <div className="team-card-extra"><p>为这位成员选择本机的 SSH 连接。</p>{connectionSelect(member)}{!navigation.servers.length&&<p>请先在左侧添加服务器。</p>}</div>}
-        <details className="team-card-extra"><summary>连接详情与管理</summary>
+        {managedMember===memberKey(member) && <div className="team-card-extra team-manage team-manage-content">
           <p>{member.username}@{member.host}:{member.port}</p><p>{member.workdir}</p>{member.email&&<p>{member.email}</p>}
-          <p>位置更新：{member.updatedAt?new Date(member.updatedAt).toLocaleString():"未知"}（不代表在线）</p>
+          <p>信息更新：{member.updatedAt?new Date(member.updatedAt).toLocaleString():"未知"}（不代表在线）</p>
           {server&&connectionSelect(member,server)}
-          <div className="collaboration-actions"><Button size="sm" variant="ghost" disabled={disabled} onClick={()=>startAdd(member)}>更新终端</Button>
+          <div className="collaboration-actions"><Button size="sm" variant="ghost" disabled={disabled} aria-label={`编辑备注 · ${member.role}`} onClick={()=>{
+            setNoteMember(memberKey(member));setNoteDraft(Object.fromEntries(Object.keys(memberNoteFields).filter(key=>key!=="quota").map(key=>[key,member[key as MemberNoteField]??""])));
+          }}>编辑备注</Button><Button size="sm" variant="ghost" disabled={disabled} onClick={()=>startAdd(member)}>更新终端</Button>
             <Button size="sm" variant="ghost" disabled={disabled} onClick={()=>void run(()=>request("memberRemove",memberKey(member)))}>从团队移除</Button></div>
-        </details>
+        </div>}
       </article>;
     })}
-    <p className="team-footnote">团队保存在 Lead 工作区，换电脑后连接同一工作区即可继续使用。</p>
     <details><summary>高级：导入或分享成员位置</summary>
+      <p className="team-footnote">团队保存在 Lead 工作区，换电脑后连接同一工作区即可继续使用。</p>
       <p>需要从其他设备转移成员位置时使用。</p>
       <label className="collaboration-field">成员位置 JSON<textarea value={position} onChange={e=>setPosition(e.target.value)} placeholder="粘贴已有的成员位置"/></label>
       <div className="collaboration-actions"><Button size="sm" disabled={disabled||!position} onClick={()=>void run(async current=>{

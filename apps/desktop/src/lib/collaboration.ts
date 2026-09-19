@@ -72,6 +72,13 @@ export function saveCollaboration(serverId: string, profile: CollaborationProfil
 export function collaborationKey(serverId: string, p: Pick<CollaborationProfile,"tmuxId"|"tmuxCreated"|"workdir">): string {
   return JSON.stringify([serverId,p.tmuxId,p.tmuxCreated,p.workdir]);
 }
+/** Remove only this device's binding; remote processes and rosters are untouched. */
+export function removeCollaboration(serverId: string, profile: CollaborationProfile): void {
+  const profiles = loadCollaboration();
+  delete profiles[collaborationKey(serverId, profile)];
+  localStorage.setItem(COLLABORATION_KEY, JSON.stringify(profiles));
+  window.dispatchEvent(new Event(EVENT));
+}
 export function resolveWorktree(sessionId: string, tmux: NonNullable<SessionInfo["tmux"]>): Promise<string> {
   return invoke("collaboration_worktree", {sessionId, target:{id:tmux.id,created:tmux.created}});
 }
@@ -107,7 +114,7 @@ export function useCollaboration() {
   }, []);
   return profiles;
 }
-export type CollaborationOperation = "context" | "inbox" | "read" | "send" | "reply" | "members" | "memberSave" | "memberRemove";
+export type CollaborationOperation = "context" | "inbox" | "read" | "send" | "reply" | "members" | "memberSave" | "memberRemove" | "memberNotes";
 export interface CollaborationRequest {
   operation: CollaborationOperation;
   task?: string; uid?: string; to?: string; kind?: string; body?: string; preview?: boolean;

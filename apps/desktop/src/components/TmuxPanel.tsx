@@ -16,6 +16,11 @@ import { confirm } from "@tauri-apps/plugin-dialog";
 import type { TmuxSession, TmuxSnapshot } from "../lib/tmux";
 import "./TmuxPanel.css";
 
+const WORKER_GROUP = "Workers";
+// Match worker tokens, not arbitrary project names containing "work".
+const sessionGroup = (session: TmuxSession) => session.group ||
+  (/(?:^|[-_])(?:cw\d+[a-z]*|worker\d*[a-z]*)(?=$|[-_])/i.test(session.name) ? WORKER_GROUP : "");
+
 export default function TmuxPanel({
   sessionId,
   onAttach,
@@ -37,7 +42,7 @@ export default function TmuxPanel({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(()=>new Set([WORKER_GROUP]));
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropGroup, setDropGroup] = useState<string | null>(null);
   const [swapId, setSwapId] = useState<string | null>(null);
@@ -46,7 +51,7 @@ export default function TmuxPanel({
   const groupInputId = `tmux-groups-${sessionId}`;
   const groups = new Map<string, TmuxSession[]>();
   for (const session of snapshot?.sessions ?? []) {
-    const group = session.group || "";
+    const group = sessionGroup(session);
     if (!groups.has(group)) groups.set(group, []);
     groups.get(group)!.push(session);
   }
@@ -352,7 +357,7 @@ export default function TmuxPanel({
                       const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-group]");
                       setDropGroup(target && event.currentTarget.closest(".tmux-panel")?.contains(target) ? target.dataset.tmuxGroup ?? null : null);
                       const card = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-session]");
-                      setSwapId(target && event.currentTarget.closest(".tmux-panel")?.contains(target) && target.dataset.tmuxGroup === (current.session.group || "") && card?.dataset.tmuxSession !== current.session.id ? card?.dataset.tmuxSession ?? null : null);
+                      setSwapId(target && event.currentTarget.closest(".tmux-panel")?.contains(target) && target.dataset.tmuxGroup === sessionGroup(current.session) && card?.dataset.tmuxSession !== current.session.id ? card?.dataset.tmuxSession ?? null : null);
                     }}
                     onPointerUp={(event) => {
                       const current = drag.current;
@@ -370,7 +375,7 @@ export default function TmuxPanel({
                         void run("swap-session", other.id, String(other.created), subject);
                         return;
                       }
-                      if (subject && target && event.currentTarget.closest(".tmux-panel")?.contains(target) && group !== undefined && group !== (subject.group || "")) {
+                      if (subject && target && event.currentTarget.closest(".tmux-panel")?.contains(target) && group !== undefined && group !== sessionGroup(subject)) {
                         void run("set-group", undefined, group, subject);
                       }
                     }}

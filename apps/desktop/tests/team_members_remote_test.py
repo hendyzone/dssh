@@ -58,6 +58,33 @@ class RosterTest(unittest.TestCase):
         self.assertEqual(updated[0]['tmux']['created'], 456)
         self.assertEqual(json.loads(self.call('memberRemove', data['id']).stdout), [])
 
+    def test_batch_merges_notes_and_rejects_invalid_batches_atomically(self):
+        old = self.member(0)
+        old.update(responsibilities='后端 API', quota='未知', currentTask='T12 验证中', notes='使用独立 worktree\n待验收')
+        self.assertEqual(self.call('memberSave', json.dumps(old)).returncode, 0)
+        batch = [self.member(0), self.member(1)]
+        batch[0]['host'] = 'migrated'
+        batch[1]['responsibilities'] = '前端'
+        target = pathlib.Path(self.temp.name) / 'batch.json'
+        target.write_text(json.dumps(batch), encoding='utf-8')
+        result = self.call('memberBatch', '@' + str(target))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data[0]['notes'], old['notes'])
+        self.assertEqual(data[0]['host'], 'migrated')
+        before = self.call('members').stdout
+        invalid = [self.member(2), {**self.member(3), 'quota': ['not text']}]
+        self.assertNotEqual(self.call('memberBatch', json.dumps(invalid)).returncode, 0)
+        self.assertEqual(self.call('members').stdout, before)
+        self.assertNotEqual(self.call('memberBatch', json.dumps([old, old])).returncode, 0)
+        patch = dict(project='demo', email=old['email'], quota='剩余约 30%，人工确认', notes='', host='must-not-change')
+        updated = json.loads(self.call('memberNotes', json.dumps(patch)).stdout)
+        self.assertEqual(updated[0]['host'], 'migrated')
+        self.assertEqual(updated[0]['notes'], '')
+        self.assertEqual(updated[0]['currentTask'], 'T12 验证中')
+        self.assertEqual(updated[0]['quota'], patch['quota'])
+
 
 if __name__ == '__main__':
     unittest.main()

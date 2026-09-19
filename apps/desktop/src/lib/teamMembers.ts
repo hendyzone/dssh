@@ -13,7 +13,13 @@ export interface TeamMember {
   workdir: string;
   tmux: NonNullable<SessionInfo["tmux"]>;
   updatedAt?: string;
+  responsibilities?: string;
+  quota?: string;
+  currentTask?: string;
+  notes?: string;
 }
+export const memberNoteFields = {responsibilities:"主要负责", quota:"额度情况", currentTask:"当前在做", notes:"其他备注"} as const;
+export type MemberNoteField = keyof typeof memberNoteFields;
 
 /** Pick only portable location fields, never connection credentials or local IDs. */
 export function parseMember(value: unknown, project: string): TeamMember {
@@ -27,7 +33,14 @@ export function parseMember(value: unknown, project: string): TeamMember {
       !m.tmux || !/^\$\d+$/.test(m.tmux.id) || !Number.isSafeInteger(m.tmux.created) || m.tmux.created <= 0 || !validText(m.tmux.name, 255)) {
     throw new Error("成员位置无效：请核对项目、邮箱、服务器、worktree 和 tmux 身份。");
   }
-  return { ...(validId ? {id:m.id} : {}), project, email:m.email, role:m.role, host:m.host, port:m.port, username:m.username, workdir:m.workdir,
+  const info: Partial<Record<MemberNoteField,string>> = {};
+  for (const key of Object.keys(memberNoteFields) as MemberNoteField[]) {
+    const value = m[key];
+    if (value === undefined) continue;
+    if (typeof value !== "string" || value.length > 2000 || /[\x00-\x08\x0b-\x1f\x7f]/.test(value)) throw new Error("成员备注须为不超过 2000 字的文本");
+    info[key] = value;
+  }
+  return { ...info, ...(validId ? {id:m.id} : {}), project, email:m.email, role:m.role, host:m.host, port:m.port, username:m.username, workdir:m.workdir,
     tmux:{id:m.tmux.id, created:m.tmux.created, name:m.tmux.name},
     ...(validText(m.updatedAt, 80) ? {updatedAt:m.updatedAt} : {}) };
 }

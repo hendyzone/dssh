@@ -4,7 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import TeamMembers from "../src/components/TeamMembers";
 import TeamPanel from "../src/components/TeamPanel";
 import ToolRail from "../src/components/ToolRail";
-import { emptyProfile } from "../src/lib/collaboration";
+import { teamLeadPrompt } from "../src/lib/teamLeadPrompt";
+import { collaborationKey, emptyProfile, loadCollaboration, saveCollaboration } from "../src/lib/collaboration";
 import { connectedMemberTab, matchingServers, parseMember, type TeamMember } from "../src/lib/teamMembers";
 import type { ServerEntry } from "../src/types";
 
@@ -14,12 +15,79 @@ const server:ServerEntry = {id:"local-device-id", name:"开发机", host:"remote
 const profile = {...emptyProfile(), enabled:true, taskboardEnabled:true, project:"demo", workdir:"/lead", tmuxId:"$1", tmuxCreated:100, tmuxName:"lead", taskboardUrl:"https://board.test"};
 beforeEach(() => { localStorage.clear(); vi.mocked(invoke).mockReset().mockResolvedValue(JSON.stringify([member])); });
 
+it.each(["saved", "new"])("exits a %s team locally and lets the mistaken window bind a different project", async source=>{
+  const pane={id:"lead",server,tmux:{id:"$1",created:100,name:"worker"}};
+  const other={...profile,tmuxId:"$7"};
+  saveCollaboration(server.id,other);
+  if(source==="saved")saveCollaboration(server.id,profile);
+  vi.mocked(invoke).mockImplementation(async command=>command==="collaboration_worktree"?"/lead":"[]");
+  render(<TeamPanel sessionId="ssh" pane={pane} profile={source==="saved"?profile:undefined} navigation={{server,servers:[server],onOpen:vi.fn()}} onClose={vi.fn()}/>);
+  if(source==="new"){
+    fireEvent.click(await screen.findByText("将当前窗口设为 Lead"));
+    fireEvent.change(screen.getByLabelText("项目名称"),{target:{value:"demo"}});
+    fireEvent.click(screen.getByRole("button",{name:"打开此项目的团队"}));
+  }
+  await screen.findByRole("button",{name:"退出团队"});
+  const count=vi.mocked(invoke).mock.calls.length;
+  fireEvent.click(screen.getByRole("button",{name:"退出团队"}));
+  fireEvent.click(await screen.findByText("将当前窗口设为 Lead"));
+  expect(screen.getByText(/已退出团队/)).toBeTruthy();
+  expect(screen.queryByRole("button",{name:"退出团队"})).toBeNull();
+  expect(vi.mocked(invoke).mock.calls.slice(count).every(([command,args]:any)=>command==="collaboration_worktree" || args.request?.operation==="members")).toBe(true);
+  expect(loadCollaboration()[collaborationKey(server.id,profile)]).toBeUndefined();
+  expect(loadCollaboration()[collaborationKey(server.id,other)]).toEqual(other);
+  fireEvent.change(screen.getByLabelText("项目名称"),{target:{value:"correct-project"}});
+  fireEvent.click(screen.getByRole("button",{name:"打开此项目的团队"}));
+  await screen.findByText("团队 · correct-project");
+  expect(loadCollaboration()[collaborationKey(server.id,profile)].project).toBe("correct-project");
+});
+
 it("portable positions strip secrets and local IDs, reject foreign projects and reused identities", () => {
   expect(parseMember({...member, password:"secret", serverId:"old-device"}, "demo")).toEqual(member);
   for (const invalid of [{...member, project:"other"}, {...member, tmux:{...member.tmux, created:0}}, {...member, port:70000}, {...member, workdir:"relative"}]) {
     expect(() => parseMember(invalid, "demo")).toThrow();
   }
   expect(matchingServers(member, [server, {...server, id:"root", username:"root"}, {...server, id:"other-port", port:2222}])).toEqual([server]);
+});
+
+it("copies a project-specific executable Lead guide without credentials or remote writes",async()=>{
+  const writeText=vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
+  const p={...profile,workdir:"/lead's repo",tokenFile:"/private/token"};
+  render(<TeamMembers sessionId="ssh" profile={p} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
+  await screen.findByRole("button",{name:"打开终端 · cw2"});
+  const count=vi.mocked(invoke).mock.calls.length;
+  fireEvent.click(screen.getByRole("button",{name:"复制给 Lead 的提示词"}));
+  await waitFor(()=>expect(writeText).toHaveBeenCalledWith(teamLeadPrompt(p,server)));
+  const prompt=writeText.mock.calls[0][0] as string;
+  expect(prompt).toContain("cd '/lead'\"'\"'s repo'");
+  expect(prompt).toContain("memberBatch @.dssh/team/pending-members.json");
+  expect(prompt).toContain("fcntl.flock");
+  expect(prompt).not.toContain("/private/token");
+  expect(invoke).toHaveBeenCalledTimes(count);
+});
+
+it("shows Lead notes and edits them without sending a stale terminal location",async()=>{
+  const annotated={...member,responsibilities:"后端",quota:"未知",currentTask:"T12 测试中",notes:"等待审查"};
+  vi.mocked(invoke).mockResolvedValue(JSON.stringify([annotated]));
+  render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
+  await screen.findByText("后端",{exact:false});
+  expect(screen.getByLabelText("成员摘要").textContent).toContain("T12 测试中");
+  expect(screen.getByText("详细信息").closest("details")?.open).toBe(false);
+  fireEvent.click(screen.getByText("管理"));
+  fireEvent.click(screen.getByRole("button",{name:"编辑备注 · cw2"}));
+  expect(screen.queryByLabelText("额度情况")).toBeNull();
+  fireEvent.change(screen.getByLabelText("其他备注"),{target:{value:"等待验收"}});
+  fireEvent.click(screen.getByRole("button",{name:"保存备注"}));
+  await screen.findByText("成员备注已保存。");
+  const save=vi.mocked(invoke).mock.calls.find(([,args]:any)=>args.request?.operation==="memberNotes")!;
+  const payload=JSON.parse((save[1] as any).request.body);
+  expect(payload).toMatchObject({project:"demo",email:member.email,notes:"等待验收",responsibilities:"后端",currentTask:"T12 测试中"});
+  expect(payload).not.toHaveProperty("tmux");
+  expect(payload).not.toHaveProperty("host");
+  expect(payload).not.toHaveProperty("quota");
+  expect(parseMember(annotated,"demo").notes).toBe("等待审查");
+  expect(()=>parseMember({...member,notes:["invalid"]},"demo")).toThrow();
 });
 
 it("reuses a live split pane across saved IDs only after verifying its remote worktree", async () => {
@@ -55,6 +123,7 @@ it("requires an explicit alias mapping when no endpoint matches and remembers it
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(member, alias));
   view.unmount();
   render(<TeamMembers {...props}/>);
+  fireEvent.click(await screen.findByRole("button",{name:"管理"}));
   expect((await screen.findByLabelText("本机连接 · cw2") as HTMLSelectElement).value).toBe(alias.id);
 });
 
@@ -97,9 +166,44 @@ it("exposes a team entry without mail or taskboard and creates a members-only pr
   expect(screen.getByRole("button",{name:"团队 · 打开成员终端"})).toBeTruthy();
   expect(screen.queryByRole("button",{name:"Agent 协作"})).toBeNull();
   expect(invoke).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByText("将当前窗口设为 Lead"));
   fireEvent.change(screen.getByLabelText("项目名称"),{target:{value:"demo"}});
   fireEvent.click(screen.getByRole("button",{name:"打开此项目的团队"}));
   await screen.findByRole("button",{name:"添加成员"});
   const saved=Object.values(JSON.parse(localStorage.getItem("dssh.collaboration.v2")!))[0];
   expect(saved).toMatchObject({enabled:true,membersEnabled:true,mailEnabled:false,taskboardEnabled:false,workdir:"/lead/repo"});
+});
+
+it("recognizes a member across servers and opens the original Lead instead of offering setup",async()=>{
+  const leadServer={...server,id:"lead-server",host:"lead-remote"};
+  saveCollaboration(leadServer.id,profile);
+  const onOpen=vi.fn().mockResolvedValue(undefined);
+  vi.mocked(invoke).mockImplementation(async command=>command==="collaboration_worktree"?"/repo":JSON.stringify([{...member,responsibilities:"后端实现"}]));
+  render(<TeamPanel sessionId="worker-ssh" pane={{id:"worker",server,tmux:member.tmux}} navigation={{server,servers:[server,leadServer],sessions:[{pane:{id:"lead",server:leadServer,tmux:{id:"$1",created:100,name:"lead"}},backendId:"lead-ssh"}],onOpen}} onClose={vi.fn()}/>);
+  await screen.findByText("当前窗口是团队成员");
+  expect(screen.getByText("demo · cw2")).toBeTruthy();
+  expect(screen.getByLabelText("成员摘要").textContent).toContain("后端实现");
+  expect(screen.queryByLabelText("项目名称")).toBeNull();
+  expect(screen.queryByText("将当前窗口设为 Lead")).toBeNull();
+  expect(invoke).toHaveBeenCalledWith("collaboration_request",{sessionId:"lead-ssh",profile,request:{operation:"members"}});
+  fireEvent.click(screen.getByRole("button",{name:"打开 Lead 终端"}));
+  await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({project:"demo",host:"lead-remote",workdir:"/lead",tmux:{id:"$1",created:100,name:"lead"}}),leadServer));
+});
+
+it.each(["reused-session","different-worktree"])("does not identify a stale member: %s",async reason=>{
+  saveCollaboration(server.id,profile);
+  vi.mocked(invoke).mockImplementation(async command=>command==="collaboration_worktree"?(reason==="different-worktree"?"/other":"/repo"):JSON.stringify([member]));
+  render(<TeamPanel sessionId="ssh" pane={{id:"worker",server,tmux:{...member.tmux,created:reason==="reused-session"?999:member.tmux.created}}} navigation={{server,servers:[server],onOpen:vi.fn()}} onClose={vi.fn()}/>);
+  await screen.findByText("将当前窗口设为 Lead");
+  expect(screen.queryByRole("button",{name:"打开 Lead 终端"})).toBeNull();
+  expect(screen.getByText("将当前窗口设为 Lead").closest("details")?.open).toBe(false);
+});
+
+it("keeps failed membership discovery distinct from a new team",async()=>{
+  saveCollaboration(server.id,profile);
+  vi.mocked(invoke).mockRejectedValue(new Error("SSH disconnected"));
+  render(<TeamPanel sessionId="ssh" pane={{id:"worker",server,tmux:member.tmux}} navigation={{server,servers:[server],onOpen:vi.fn()}} onClose={vi.fn()}/>);
+  await screen.findByText("部分团队尚未确认，请连接 Lead 所在服务器后刷新。");
+  expect(screen.getByRole("alert").textContent).toContain("SSH disconnected");
+  expect(screen.getByText("将当前窗口设为 Lead").closest("details")?.open).toBe(false);
 });

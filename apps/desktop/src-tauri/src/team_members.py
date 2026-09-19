@@ -9,8 +9,28 @@ import sys
 import tempfile
 
 project, operation, payload = sys.argv[1:]
+assert re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', project), '项目编号无效'
+if operation == 'memberBatch' and payload.startswith('@'):
+    with open(payload[1:], encoding='utf-8') as source:
+        payload = source.read(256 * 1024 + 1)
+assert len(payload.encode('utf-8')) <= 256 * 1024, '输入过大'
 root = pathlib.Path('.dssh/team')
 path = root / (project + '.json')
+NOTE_FIELDS = ['responsibilities', 'quota', 'currentTask', 'notes']
+
+
+def annotations(v):
+    result = {}
+    for key in NOTE_FIELDS:
+        if key in v:
+            value = v[key]
+            assert isinstance(value, str) and len(value) <= 2000 and not re.search(r'[\x00-\x08\x0b-\x1f\x7f]', value), '备注格式无效: ' + key
+            result[key] = value
+    return result
+
+
+def identity(v):
+    return v.get('email') or v.get('id')
 
 
 def text(v, limit=1024):
@@ -36,6 +56,7 @@ def member(v):
         result['id'] = v['id']
     if text(v.get('updatedAt'), 80):
         result['updatedAt'] = v['updatedAt']
+    result.update(annotations(v))
     return result
 
 
@@ -51,18 +72,38 @@ def read():
 if operation == 'members':
     print(json.dumps(read(), ensure_ascii=False))
 else:
-    incoming = member(json.loads(payload)) if operation == 'memberSave' else None
-    assert operation in ['memberSave', 'memberRemove'], '操作无效'
+    assert operation in ['memberSave', 'memberBatch', 'memberNotes', 'memberRemove'], '操作无效'
+    incoming = []
+    if operation in ['memberSave', 'memberBatch']:
+        raw = json.loads(payload)
+        raw = [raw] if operation == 'memberSave' else raw
+        assert isinstance(raw, list) and 0 < len(raw) <= 100, '请提供 1–100 名成员'
+        incoming = [member(v) for v in raw]
+        assert len({identity(v) for v in incoming}) == len(incoming), '批次中成员身份重复'
+    note_patch = json.loads(payload) if operation == 'memberNotes' else None
+    if note_patch is not None:
+        assert isinstance(note_patch, dict) and note_patch.get('project') == project and text(identity(note_patch), 254), '成员身份无效'
+        annotations(note_patch)
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     # Lock the read-modify-write transaction so two desktop clients cannot lose updates.
     with open(root / (project + '.lock'), 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         data = read()
-        identity = (incoming['email'] or incoming['id']) if incoming else payload
-        data = [m for m in data if (m['email'] or m['id']) != identity]
-        if incoming:
-            incoming['updatedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            data.append(incoming)
+        if operation == 'memberRemove':
+            data = [m for m in data if identity(m) != payload]
+        elif operation == 'memberNotes':
+            target = next((m for m in data if identity(m) == identity(note_patch)), None)
+            assert target is not None, '成员已移除，请刷新'
+            target.update(annotations(note_patch))
+            target['updatedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        else:
+            for item in incoming:
+                existing = next((m for m in data if identity(m) == identity(item)), {})
+                # Omitted notes survive terminal updates; an explicit empty string clears them.
+                updated = {**annotations(existing), **item}
+                updated['updatedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                data = [m for m in data if identity(m) != identity(item)]
+                data.append(updated)
         assert len(data) <= 100, '最多登记 100 名成员'
         encoded = json.dumps(data, ensure_ascii=False)
         assert len(encoded.encode('utf-8')) <= 256 * 1024, '成员列表过大'

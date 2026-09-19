@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Users } from "lucide-react";
-import { collaborationKey, emptyProfile, loadCollaboration, resolveWorktree, saveCollaboration, type CollaborationProfile } from "../lib/collaboration";
+import { collaborationKey, emptyProfile, loadCollaboration, removeCollaboration, resolveWorktree, saveCollaboration, type CollaborationProfile } from "../lib/collaboration";
 import type { SessionInfo } from "../types";
 import TeamMembers, { type TeamNavigation } from "./TeamMembers";
+import TeamMembership from "./TeamMembership";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { IconClose } from "./Icons";
@@ -15,13 +16,28 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
   const [project, setProject] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const active = profile ?? created;
+  const [unbound, setUnbound] = useState(false);
+  const active = unbound ? undefined : created ?? profile;
   return <aside className="workspace-panel collaboration-panel">
     <header data-panel-drag-handle tabIndex={0}><strong>团队{active ? ` · ${active.project}` : ""}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭团队" onClick={onClose}><IconClose/></Button></header>
     <div className="collaboration-content">
-      {active ? <TeamMembers sessionId={sessionId} profile={active} navigation={navigation}/> : <div className="team-setup">
+      {active ? <>
+        <div className="team-binding">
+          <div><p title={`${pane.server.name} · ${active.tmuxName || active.tmuxId}`}>{pane.server.name} · {active.tmuxName || active.tmuxId}</p></div>
+          <Button size="sm" variant="outline" title="解除本机此窗口的项目绑定；不停止 Agent 或删除远端团队" onClick={()=>{
+            try {
+              removeCollaboration(pane.server.id, active);
+              setCreated(undefined); setUnbound(true); setProject(""); setError("");
+            } catch(e) {setError(String(e));}
+          }}>退出团队</Button>
+        </div>
+        {error && <p role="alert" className="collaboration-error">{error}</p>}
+        <TeamMembers sessionId={sessionId} profile={active} navigation={navigation}/>
+      </> : <TeamMembership sessionId={sessionId} pane={pane} navigation={navigation}><div className="team-setup">
+        {unbound && <p role="status">已退出团队。请切换到正确的 Lead 窗口后设置团队。</p>}
         <Users size={32}/><h3>从这里打开团队成员的终端</h3>
         <p>在 Lead 窗口输入项目名称，再选择要加入的终端。另一台电脑连接同一个 Lead 工作区，也能看到成员。</p>
+        <p>当前窗口：{pane.server.name} · {pane.tmux?.name}</p>
         <label className="collaboration-field">项目名称<Input value={project} placeholder="例如 dssh" disabled={busy} onChange={e=>setProject(e.target.value)}/></label>
         <Button disabled={busy || !sessionId || !pane.tmux || !project.trim()} onClick={async()=>{
           if (!pane.tmux) return;
@@ -32,12 +48,12 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
             const existing = loadCollaboration()[collaborationKey(pane.server.id, identity)];
             if (existing?.project && existing.project !== project.trim()) throw new Error(`此工作区已绑定项目 ${existing.project}，请使用该项目名称。`);
             const next = {...emptyProfile(), ...existing, ...identity, tmuxName:pane.tmux.name, project:project.trim(), membersEnabled:true, enabled:true};
-            saveCollaboration(pane.server.id, next); setCreated(next);
+            saveCollaboration(pane.server.id, next); setCreated(next); setUnbound(false);
           } catch (e) {setError(String(e));} finally {setBusy(false);}
         }}>{busy ? "正在打开团队…" : "打开此项目的团队"}</Button>
         <p>只需远端 Python 3，无需先配置看板或邮箱。</p>
         {error && <p role="alert" className="collaboration-error">{error}</p>}
-      </div>}
+      </div></TeamMembership>}
     </div>
   </aside>;
 }
