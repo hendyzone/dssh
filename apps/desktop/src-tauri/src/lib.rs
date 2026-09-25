@@ -10,6 +10,7 @@ mod sftp;
 mod ssh;
 mod sync;
 mod tmux;
+mod team_ai;
 mod workspace;
 mod vscode;
 
@@ -56,6 +57,10 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            team_ai::team_ai_key,
+            team_ai::team_ai_models,
+            team_ai::team_ai_capture,
+            team_ai::team_ai_summarize,
             collaboration::collaboration_request,
             collaboration::collaboration_worktree,
             collaboration::collaboration_export_guide,
@@ -68,6 +73,7 @@ pub fn run() {
             workspace::workspace_diff,
             vscode::vscode_open,
             ssh::ssh_connect,
+            ssh::ssh_live_connections,
             ssh::ssh_start,
             tmux::tmux_snapshot,
             tmux::tmux_action,
@@ -77,6 +83,7 @@ pub fn run() {
             ssh::ssh_disconnect,
             servers::servers_list,
             servers::servers_import_private_key,
+            servers::servers_read_imported_key,
             servers::servers_move,
             servers::servers_auto_group,
             servers::servers_upsert,

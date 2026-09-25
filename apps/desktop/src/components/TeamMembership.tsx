@@ -1,19 +1,35 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { collaborationKey, collaborationRequest, resolveWorktree, useCollaboration } from "../lib/collaboration";
-import { loadTeamMappings, matchingServers, memberMappingKey, parseMember, type TeamMember } from "../lib/teamMembers";
+import { collaborationKey, collaborationRequest, emptyProfile, loadCollaboration, resolveWorktree, saveCollaboration, useCollaboration, type CollaborationProfile } from "../lib/collaboration";
+import { loadTeamMappings, matchingServers, memberKey, memberMappingKey, parseMember, type TeamMember } from "../lib/teamMembers";
 import TeamMemberNotes from "./TeamMemberNotes";
 import type { SessionInfo } from "../types";
 import type { TeamNavigation } from "./TeamMembers";
 import { Button } from "./ui/button";
 
-export default function TeamMembership({sessionId, pane, navigation, children}: {
-  sessionId:string; pane:SessionInfo; navigation:TeamNavigation; children:ReactNode;
+export default function TeamMembership({sessionId, pane, navigation, children, onPromoted}: {
+  sessionId:string; pane:SessionInfo; navigation:TeamNavigation; children:ReactNode; onPromoted:(profile:CollaborationProfile)=>void;
 }) {
   const profiles=useCollaboration();
   const [revision,setRevision]=useState(0);
   const [result,setResult]=useState<{key:string; teams:{member:TeamMember; lead:TeamMember}[]; incomplete:boolean}>();
   const [error,setError]=useState("");
   const [opening,setOpening]=useState(false);
+  const [promotion,setPromotion]=useState<{member:TeamMember; profile:CollaborationProfile; count:number}>();
+  const [promoting,setPromoting]=useState(false);
+  const checkPromotion=async(member:TeamMember)=>{
+    if(!pane.tmux||!sessionId)throw new Error("请先连接当前 tmux 会话。");
+    const workdir=await resolveWorktree(sessionId,pane.tmux);
+    const identity={tmuxId:pane.tmux.id,tmuxCreated:pane.tmux.created,workdir};
+    const existing=loadCollaboration()[collaborationKey(pane.server.id,identity)];
+    if(existing&&existing.project!==member.project)throw new Error(`当前工作区已绑定项目 ${existing.project}，请先解除原绑定。`);
+    const next={...emptyProfile(),...existing,...identity,tmuxName:pane.tmux.name,project:member.project,enabled:true,membersEnabled:true};
+    const raw:unknown=JSON.parse(await collaborationRequest(sessionId,next,{operation:"members"}));
+    if(!Array.isArray(raw)||raw.length>100)throw new Error("当前工作区的团队名单格式无效。");
+    const members=raw.map(m=>parseMember(m,member.project));
+    if(!members.length)throw new Error("当前工作区没有团队名单。请先将原名单迁移到此工作区，再设为 Lead；不会创建空名单。");
+    if(!members.some(m=>memberKey(m)===memberKey(member)&&m.tmux.id===pane.tmux!.id&&m.tmux.created===pane.tmux!.created&&m.workdir===workdir))throw new Error("新名单中当前成员的位置不匹配，请让 Lead 核对迁移结果。");
+    return {member,profile:next,count:members.length};
+  };
   const endpoints=navigation.servers;
   const sessions=[...(navigation.sessions??[]),{pane,backendId:sessionId}];
   const candidates=Object.entries(profiles).flatMap(([key,p])=>{
@@ -64,8 +80,25 @@ export default function TeamMembership({sessionId, pane, navigation, children}: 
             try{await navigation.onOpen(lead,server);}catch(e){setError(String(e));}finally{setOpening(false);}
           }}>打开 Lead 终端</Button>
           <TeamMemberNotes member={member}/>
+          <div className="team-card-extra"><Button size="sm" variant="outline" disabled={promoting||!sessionId} onClick={async()=>{
+            setPromoting(true);setError("");setPromotion(undefined);
+            try{setPromotion(await checkPromotion(member));}catch(e){setError(String(e));}finally{setPromoting(false);}
+          }}>将当前窗口设为 Lead</Button></div>
         </article>;
       })}
+      {promotion&&<div className="team-add" aria-label="确认 Lead 绑定">
+        <strong>接管 {promotion.profile.project}</strong>
+        <p>{pane.server.name} · {pane.tmux?.name}</p><p>{promotion.profile.workdir}</p>
+        <p>此工作区已读取到 {promotion.count} 名成员。仅更改本机入口，不复制名单、不结束旧 Lead；其他设备需要同步新绑定。</p>
+        <div className="collaboration-actions"><Button size="sm" disabled={promoting} onClick={async()=>{
+          setPromoting(true);setError("");
+          try{
+            const checked=await checkPromotion(promotion.member);
+            if(checked.profile.workdir!==promotion.profile.workdir)throw new Error("当前工作目录已变化，请重新检查后接管。");
+            saveCollaboration(pane.server.id,checked.profile);onPromoted(checked.profile);
+          }catch(e){setError(String(e));setPromotion(undefined);}finally{setPromoting(false);}
+        }}>确认设为 Lead</Button><Button size="sm" variant="ghost" disabled={promoting} onClick={()=>setPromotion(undefined)}>取消</Button></div>
+      </div>}
       {current.incomplete && <p role="status">部分团队尚未确认，请连接 Lead 所在服务器后刷新。</p>}
       {!current.teams.length && <>
         <p>尚未识别到所属团队。如果这是成员窗口，请先打开已有 Lead 的团队，再回来刷新。</p>

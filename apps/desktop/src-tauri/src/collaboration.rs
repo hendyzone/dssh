@@ -79,6 +79,7 @@ pub enum Operation {
     Members,
     MemberSave,
     MemberNotes,
+    MemberLease,
     MemberRemove,
     Context,
     Inbox,
@@ -192,12 +193,13 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
     ];
     if matches!(
         request.operation,
-        Operation::Members | Operation::MemberSave | Operation::MemberNotes | Operation::MemberRemove
+        Operation::MemberLease | Operation::Members | Operation::MemberSave | Operation::MemberNotes | Operation::MemberRemove
     ) {
         if request.body.len() > 64 * 1024 || request.body.contains('\0') {
             return Err("成员位置超过限制".into());
         }
         let operation = match request.operation {
+            Operation::MemberLease => "memberLease",
             Operation::Members => "members",
             Operation::MemberSave => "memberSave",
             Operation::MemberNotes => "memberNotes",
@@ -304,6 +306,7 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
             }
             Operation::Context
             | Operation::Members
+            | Operation::MemberLease
             | Operation::MemberNotes
             | Operation::MemberSave
             | Operation::MemberRemove => unreachable!(),
@@ -340,7 +343,7 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
     }
     let mailbox_guard = if matches!(
         request.operation,
-        Operation::Context | Operation::Members | Operation::MemberSave | Operation::MemberNotes | Operation::MemberRemove
+        Operation::Context | Operation::MemberLease | Operation::Members | Operation::MemberSave | Operation::MemberNotes | Operation::MemberRemove
     ) {
         String::new()
     } else {

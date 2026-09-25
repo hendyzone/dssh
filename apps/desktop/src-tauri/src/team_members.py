@@ -16,7 +16,7 @@ if operation == 'memberBatch' and payload.startswith('@'):
 assert len(payload.encode('utf-8')) <= 256 * 1024, '输入过大'
 root = pathlib.Path('.dssh/team')
 path = root / (project + '.json')
-NOTE_FIELDS = ['responsibilities', 'quota', 'currentTask', 'notes']
+NOTE_FIELDS = ['responsibilities', 'quota', 'currentTask', 'notes', 'aiSummary', 'aiStatus', 'aiUpdatedAt', 'aiDigest', 'aiSource', 'aiEvidence']
 
 
 def annotations(v):
@@ -69,7 +69,26 @@ def read():
     return [member(v) for v in data]
 
 
-if operation == 'members':
+if operation == 'memberLease':
+    owner = payload
+    assert re.fullmatch(r'[a-zA-Z0-9-]{1,80}', owner), '采集端身份无效'
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    lease_path = root / (project + '.ai-lease.json')
+    with open(root / (project + '.lock'), 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+        lease = json.loads(lease_path.read_text()) if lease_path.exists() else {}
+        granted = lease.get('owner') == owner or lease.get('until', 0) <= now
+        if granted:
+            fd, temp = tempfile.mkstemp(dir=root, prefix='.lease-')
+            try:
+                with os.fdopen(fd, 'w') as output:
+                    json.dump({'owner': owner, 'until': now + 180}, output)
+                os.replace(temp, lease_path)
+            finally:
+                if os.path.exists(temp): os.unlink(temp)
+        print(json.dumps({'granted': granted}))
+elif operation == 'members':
     print(json.dumps(read(), ensure_ascii=False))
 else:
     assert operation in ['memberSave', 'memberBatch', 'memberNotes', 'memberRemove'], '操作无效'
@@ -94,6 +113,9 @@ else:
         elif operation == 'memberNotes':
             target = next((m for m in data if identity(m) == identity(note_patch)), None)
             assert target is not None, '成员已移除，请刷新'
+            if 'aiSource' in note_patch:
+                expected = [target[k] for k in ['host', 'port', 'username', 'workdir']] + [target['tmux']['id'], target['tmux']['created']]
+                assert json.loads(note_patch['aiSource']) == expected, '成员位置已变更，请重新采集'
             target.update(annotations(note_patch))
             target['updatedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         else:

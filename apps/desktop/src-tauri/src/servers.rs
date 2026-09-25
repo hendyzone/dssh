@@ -1,6 +1,6 @@
 //! 服务器条目持久化：基础信息存 JSON（app_config_dir），密码/passphrase 存系统 keyring
 //!
-//! 安全模型：条目 JSON 里只存 has_password/has_passphrase 标志，密钥永不出后端。
+//! 条目 JSON 不存密钥正文；编辑时可单独读取已导入的私钥。
 
 use std::fs;
 
@@ -111,6 +111,34 @@ fn validate_pasted_key(content: &str, passphrase: Option<&str>) -> Result<String
 }
 
 #[tauri::command]
+pub async fn servers_read_imported_key(
+    app: AppHandle,
+    id: String,
+) -> Result<String, ServersError> {
+    let record = read_all(&app)?.into_iter().find(|record| record.id == id)
+        .ok_or_else(|| ServersError::Other("服务器不存在".into()))?;
+    let root = servers_file(&app)?.parent().unwrap().join("imported-keys");
+    let path = record.key_path.ok_or_else(|| ServersError::Other("未保存私钥".into()))?;
+    read_imported_key(&root, std::path::Path::new(&path))
+}
+
+fn read_imported_key(root: &std::path::Path, path: &std::path::Path) -> Result<String, ServersError> {
+    let error = || ServersError::Other("无法读取已保存的私钥，请检查文件是否存在及读取权限".into());
+    let root = root.canonicalize().map_err(|_| error())?;
+    let path = path.canonicalize().map_err(|_| error())?;
+    if path.parent() != Some(root.as_path()) {
+        return Err(error());
+    }
+    // Bound the read even if the file was replaced after import.
+    use std::io::Read;
+    let mut content = String::new();
+    fs::File::open(path).map_err(|_| error())?.take(128 * 1024 + 1)
+        .read_to_string(&mut content).map_err(|_| error())?;
+    if content.len() > 128 * 1024 { return Err(error()); }
+    Ok(content)
+}
+
+#[tauri::command]
 pub async fn servers_import_private_key(
     app: AppHandle,
     content: String,
@@ -131,6 +159,22 @@ pub async fn servers_import_private_key(
 #[cfg(test)]
 mod pasted_key_tests {
     use super::*;
+
+    #[test]
+    fn reads_imported_content_but_rejects_other_paths_and_oversized_files() {
+        let base = std::env::temp_dir().join(format!("dssh-key-test-{:032x}", rand::random::<u128>()));
+        let root = base.join("imported-keys");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("key-test");
+        fs::write(&path, "synthetic-encrypted-key\n").unwrap();
+        assert_eq!(read_imported_key(&root, &path).unwrap(), "synthetic-encrypted-key\n");
+        let outside = base.join("other-key");
+        fs::write(&outside, "outside").unwrap();
+        assert!(read_imported_key(&root, &outside).is_err());
+        fs::write(&path, "x".repeat(128 * 1024 + 1)).unwrap();
+        assert!(read_imported_key(&root, &path).is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn groups_only_ungrouped_connections_and_preserves_credentials() {

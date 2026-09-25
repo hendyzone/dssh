@@ -57,6 +57,31 @@ pub struct Session {
     handle: SharedHandle,
     meta: SessionMeta,
     startup: Option<String>,
+    tmux: Option<crate::tmux::Target>,
+    tmux_workdir: Option<String>,
+}
+
+/// Only routing metadata; never expose credentials or private key paths.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveConnection {
+    session_id: String,
+    server_id: Option<String>,
+    host: String,
+    port: u16,
+    username: String,
+    tmux: Option<crate::tmux::Target>,
+    tmux_workdir: Option<String>,
+}
+
+#[tauri::command]
+pub async fn ssh_live_connections(state: State<'_, SshState>) -> Result<Vec<LiveConnection>, String> {
+    Ok(state.sessions.lock().await.iter().filter(|(_, s)| !s.handle.is_closed())
+        .map(|(id, s)| LiveConnection {
+            session_id: id.clone(), server_id: s.meta.server_id.clone(),
+            host: s.meta.host.clone(), port: s.meta.port, username: s.meta.username.clone(),
+            tmux: s.tmux.clone(), tmux_workdir: s.tmux_workdir.clone(),
+        }).collect())
 }
 
 #[derive(Default)]
@@ -302,6 +327,8 @@ pub async fn ssh_connect(
         session_id.clone(),
         Session {
             write_half,
+            tmux: params.tmux.clone(),
+            tmux_workdir: params.tmux_workdir.clone(),
             startup: Some(startup),
             handle: Arc::new(handle),
             meta: SessionMeta {

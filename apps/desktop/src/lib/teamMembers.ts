@@ -1,6 +1,6 @@
 import type { ServerEntry, SessionInfo, TabInfo } from "../types";
 import { resolveWorktree } from "./collaboration";
-import { findTmuxTab } from "./tmuxTabs";
+import { findTmuxTab, sameSshEndpoint } from "./tmuxTabs";
 
 export interface TeamMember {
   id?: string;
@@ -17,9 +17,26 @@ export interface TeamMember {
   quota?: string;
   currentTask?: string;
   notes?: string;
+  aiSummary?: string;
+  aiStatus?: string;
+  aiUpdatedAt?: string;
+  aiDigest?: string;
+  aiSource?: string;
+  aiEvidence?: string;
 }
 export const memberNoteFields = {responsibilities:"主要负责", quota:"额度情况", currentTask:"当前在做", notes:"其他备注"} as const;
 export type MemberNoteField = keyof typeof memberNoteFields;
+
+export const memberActivityLabels = {working:"工作中", idle:"空闲", unknown:"待确认"} as const;
+export type MemberActivity = keyof typeof memberActivityLabels;
+/** Classify only the current summary, never old details or terminal attachment. */
+export function memberActivity(member: Pick<TeamMember,"currentTask">): MemberActivity {
+  const summary=(member.currentTask??"").trim().split(/\r?\n/)[0];
+  if(/^(?:空闲|待命|idle\b)/i.test(summary))return "idle";
+  if(/^(?:未知|待确认|不确定|unknown\b)/i.test(summary))return "unknown";
+  if(/^(?:工作中|进行中|处理中|执行中|忙碌|阻塞|等待|working\b|busy\b|blocked\b|T\d+\b)/i.test(summary))return "working";
+  return "unknown";
+}
 
 /** Pick only portable location fields, never connection credentials or local IDs. */
 export function parseMember(value: unknown, project: string): TeamMember {
@@ -40,13 +57,35 @@ export function parseMember(value: unknown, project: string): TeamMember {
     if (typeof value !== "string" || value.length > 2000 || /[\x00-\x08\x0b-\x1f\x7f]/.test(value)) throw new Error("成员备注须为不超过 2000 字的文本");
     info[key] = value;
   }
-  return { ...info, ...(validId ? {id:m.id} : {}), project, email:m.email, role:m.role, host:m.host, port:m.port, username:m.username, workdir:m.workdir,
+  const ai:Partial<TeamMember>={};
+  for(const key of ["aiSummary","aiStatus","aiUpdatedAt","aiDigest","aiSource","aiEvidence"] as const){
+    if(typeof m[key]==="string" && m[key]!.length<=2000)ai[key]=m[key];
+  }
+  return { ...info, ...ai, ...(validId ? {id:m.id} : {}), project, email:m.email, role:m.role, host:m.host, port:m.port, username:m.username, workdir:m.workdir,
     tmux:{id:m.tmux.id, created:m.tmux.created, name:m.tmux.name},
     ...(validText(m.updatedAt, 80) ? {updatedAt:m.updatedAt} : {}) };
 }
 
 export function matchingServers(member: TeamMember, servers: ServerEntry[]) {
   return servers.filter(s => s.host.trim().toLowerCase() === member.host.trim().toLowerCase() && s.port === member.port && s.username === member.username);
+}
+
+/** Resolve from live connections first: duplicate saved entries are not different SSH hosts. */
+export function memberConnection(member:TeamMember,servers:ServerEntry[],sessions:{pane:{server:ServerEntry;tmux?:SessionInfo["tmux"];tmuxWorkdir?:string};backendId:string}[],mapping=loadTeamMappings()){
+  const mappedId=mapping[memberMappingKey(member)];
+  const mapped=mappedId?servers.find(s=>s.id===mappedId)??sessions.find(s=>s.pane.server.id===mappedId)?.pane.server:undefined;
+  const matches=matchingServers(member,servers);
+  const live=sessions.filter(s=>s.backendId&&(mapped?sameSshEndpoint(s.pane.server,mapped):matchingServers(member,[s.pane.server]).length>0));
+  const targetMatches=(s:typeof sessions[number])=>s.pane.tmux?.id===member.tmux.id&&s.pane.tmux.created===member.tmux.created;
+  const exact=live.find(targetMatches);
+  // A live pane can use another IP/port for the same worker. The capture command
+  // verifies its incarnation and actual Git root again before reading any output.
+  // Never guess by session name or numeric tmux ID alone, nor merge server records.
+  const alternatives=sessions.filter(s=>s.backendId&&targetMatches(s)&&s.pane.server.username===member.username&&(!s.pane.tmuxWorkdir||s.pane.tmuxWorkdir===member.workdir));
+  const routes=new Set(alternatives.map(s=>JSON.stringify([s.pane.server.host.trim().toLowerCase(),s.pane.server.port,s.pane.server.username])));
+  const alternate=routes.size===1?alternatives[0]:undefined;
+  const connection=exact??alternate??live[0];
+  return {server:connection?.pane.server??mapped??matches[0],backend:connection?.backendId};
 }
 
 export async function connectedMemberTab(member: TeamMember, server: ServerEntry, tabs: TabInfo[], backendIds: Record<string, string | null>, preferredTabId?: string | null) {

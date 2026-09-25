@@ -244,6 +244,7 @@ fn decrypt_bundle(raw: &[u8], password: &str) -> Result<bundle::Bundle, SyncErro
         let records: Vec<ServerRecord> = serde_json::from_slice(&plain)
             .map_err(|_| SyncError::Other("旧版备份格式无效".into()))?;
         Ok(bundle::Bundle {
+            ai_keys: Default::default(),
             entries: records
                 .into_iter()
                 .map(|record| bundle::Entry {
@@ -334,7 +335,7 @@ pub async fn sync_upload(
         return Err(report_failure(response).await);
     }
     Ok(format!(
-        "已加密上传 {} 个连接及凭据、私钥和界面配置",
+        "已加密上传 {} 个连接及凭据、私钥、云端模型配置与 Key 和界面配置",
         local.entries.len()
     ))
 }
@@ -369,9 +370,11 @@ mod tests {
     use super::*;
     #[test]
     fn full_backup_encrypts_secrets_and_round_trips() {
-        let payload = bundle::sample_bundle();
+        let mut payload = bundle::sample_bundle();
+        payload.ai_keys.insert("https://example.test/chat/completions".into(), "synthetic-model-api-key".into());
         let encrypted = encrypt_bundle(&payload, "synthetic-sync-password").unwrap();
         let text = String::from_utf8(encrypted.clone()).unwrap();
+        assert!(!text.contains("synthetic-model-api-key"));
         for secret in [
             "synthetic-ssh-password",
             "synthetic-key-passphrase",
@@ -382,6 +385,7 @@ mod tests {
             assert!(!text.contains(secret));
         }
         let restored = decrypt_bundle(&encrypted, "synthetic-sync-password").unwrap();
+        assert_eq!(restored.ai_keys, payload.ai_keys);
         assert_eq!(restored.entries[0].password, payload.entries[0].password);
         assert_eq!(
             restored.entries[0].private_key,

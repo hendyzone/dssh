@@ -11,6 +11,22 @@ SCRIPT = pathlib.Path(__file__).resolve().parents[1] / 'src-tauri/src/team_membe
 
 
 class RosterTest(unittest.TestCase):
+    def test_ai_lease_and_stale_summary_rejection(self):
+        self.assertTrue(json.loads(self.call('memberLease', 'device-one').stdout)['granted'])
+        self.assertFalse(json.loads(self.call('memberLease', 'device-two').stdout)['granted'])
+        self.assertTrue(json.loads(self.call('memberLease', 'device-one').stdout)['granted'])
+        m = self.member(1)
+        self.call('memberSave', json.dumps(m))
+        patch = dict(project='demo', email=m['email'], aiSummary='正在测试', aiStatus='working',
+                     aiSource=json.dumps(['remote', 22, 'dev', '/repo', '$1', 123]))
+        result = self.call('memberNotes', json.dumps(patch))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        m['tmux']['created'] = 456
+        saved = self.call('memberSave', json.dumps(m))
+        self.assertEqual(json.loads(saved.stdout)[0]['aiSummary'], '正在测试')
+        self.assertNotEqual(self.call('memberNotes', json.dumps(patch)).returncode, 0)
+        self.assertEqual(json.loads(self.call('members').stdout), json.loads(saved.stdout))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

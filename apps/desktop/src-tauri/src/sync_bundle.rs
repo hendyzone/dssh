@@ -25,6 +25,12 @@ pub const UI_KEYS: &[&str] = &[
     "dssh.panel-side.tasks",
     "dssh.panel-side.changes",
     "dssh.panel-side.monitor",
+    "dssh.panel-side.team",
+    "dssh.panel-side.collaboration",
+    "dssh.collaboration.v2",
+    "dssh.team-connections.v1",
+    "dssh.team-ai.v1",
+    "dssh.team-ai.profiles.v1",
 ];
 pub type UiState = BTreeMap<String, String>;
 
@@ -41,6 +47,8 @@ pub struct Entry {
 pub struct Bundle {
     pub entries: Vec<Entry>,
     pub ui_state: UiState,
+    #[serde(default)]
+    pub ai_keys: BTreeMap<String, String>,
     #[serde(skip)]
     pub legacy: bool,
 }
@@ -61,6 +69,7 @@ fn random_id() -> String {
 }
 
 pub fn validate_ui(ui: &UiState) -> Result<(), SyncError> {
+    ai_endpoints(ui)?;
     for (key, value) in ui {
         if !UI_KEYS.contains(&key.as_str()) || value.len() > 512 * 1024 {
             return Err(error("界面配置无效或超过大小限制"));
@@ -88,6 +97,23 @@ pub fn validate_ui(ui: &UiState) -> Result<(), SyncError> {
                         || !parsed["fontFamily"].is_string()
                     {
                         return Err(error("主题或字体配置无效"));
+                    }
+                }
+                "dssh.collaboration.v2" => {
+                    let profiles = parsed.as_object().ok_or_else(|| error("团队绑定格式无效"))?;
+                    for (key, profile) in profiles {
+                        let identity: Vec<serde_json::Value> = serde_json::from_str(key)
+                            .map_err(|_| error("团队绑定身份无效"))?;
+                        if identity.len() != 4 || !identity[0].is_string()
+                            || !identity[1].is_string() || !identity[2].is_u64()
+                            || !identity[3].is_string() || !profile.is_object() {
+                            return Err(error("团队绑定身份无效"));
+                        }
+                    }
+                }
+                "dssh.team-connections.v1" => {
+                    if !parsed.as_object().is_some_and(|m| m.values().all(|v| v.is_string())) {
+                        return Err(error("成员连接映射无效"));
                     }
                 }
                 "dssh.sidebar.width" => {
@@ -157,11 +183,71 @@ pub fn collect(app: &AppHandle, ui_state: UiState) -> Result<Bundle, SyncError> 
             private_key,
         });
     }
+    let mut ai_keys = BTreeMap::new();
+    for (reference,(endpoint,id)) in ai_endpoints(&ui_state)? {
+        if let Some(key) = crate::team_ai::saved_key(&endpoint,id.as_deref())
+            .map_err(|_| error("无法读取云端摘要 API Key，已停止备份"))? {
+            ai_keys.insert(reference, key);
+        }
+    }
     Ok(Bundle {
         entries,
+        ai_keys,
         ui_state,
         legacy: false,
     })
+}
+
+fn ai_endpoints(ui: &UiState) -> Result<BTreeMap<String,(String,Option<String>)>, SyncError> {
+    let mut endpoints=BTreeMap::new();
+    for key in ["dssh.team-ai.v1", "dssh.team-ai.profiles.v1"] {
+        if let Some(raw)=ui.get(key) {
+            if raw.len()>65536{return Err(error("模型配置过大"));}
+            let value:serde_json::Value=serde_json::from_str(raw).map_err(|_|error("模型配置格式无效"))?;
+            let object=value.as_object().ok_or_else(||error("模型配置格式无效"))?;
+            let configs:Vec<&serde_json::Value>=if key=="dssh.team-ai.v1" {vec![&value]}else{object.values().collect()};
+            if configs.len()>100{return Err(error("最多保存 100 套模型配置"));}
+            for config in configs {
+                if !config.is_object(){return Err(error("模型配置格式无效"));}
+                if config.as_object().is_some_and(|m|m.is_empty()){continue;}
+                let endpoint=config["endpoint"].as_str().ok_or_else(||error("模型接口无效"))?;
+                let model=config["model"].as_str().ok_or_else(||error("模型名称无效"))?;
+                if config.get("protocol").is_some_and(|p|p!="responses"&&p!="chat"){return Err(error("模型协议无效"));}
+                if model.is_empty() || model.len()>200{return Err(error("模型名称无效"));}
+                let id=config.get("id").map(|v|v.as_str().ok_or_else(||error("模型配置身份无效"))).transpose()?;
+                if config.get("name").is_some_and(|v|v.as_str().is_none_or(|s|s.chars().count()>80)){return Err(error("模型配置名称无效"));}
+                let reference=crate::team_ai::credential_ref(endpoint,id).map_err(|e|error(&e))?;
+                endpoints.insert(reference,(endpoint.to_owned(),id.map(str::to_owned)));
+            }
+        }
+    }
+    Ok(endpoints)
+}
+
+fn remap_team_connections(ui: &mut UiState, ids: &BTreeMap<String, String>) -> Result<(), SyncError> {
+    if let Some(raw) = ui.get_mut("dssh.collaboration.v2") {
+        let profiles: BTreeMap<String, serde_json::Value> = serde_json::from_str(raw)
+            .map_err(|_| error("团队绑定格式无效"))?;
+        let mut mapped = BTreeMap::new();
+        for (key, profile) in profiles {
+            let mut identity: Vec<serde_json::Value> = serde_json::from_str(&key)
+                .map_err(|_| error("团队绑定身份无效"))?;
+            if let Some(id) = identity.first().and_then(|v| v.as_str()).and_then(|id| ids.get(id)) {
+                identity[0] = serde_json::Value::String(id.clone());
+                mapped.insert(serde_json::to_string(&identity).map_err(|_| error("团队绑定无法恢复"))?, profile);
+            }
+        }
+        *raw = serde_json::to_string(&mapped).map_err(|_| error("团队绑定无法恢复"))?;
+    }
+    if let Some(raw) = ui.get_mut("dssh.team-connections.v1") {
+        let mappings: BTreeMap<String, String> = serde_json::from_str(raw)
+            .map_err(|_| error("成员连接映射无效"))?;
+        let mapped: BTreeMap<_, _> = mappings.into_iter()
+            .filter_map(|(key, id)| ids.get(&id).map(|replacement| (key, replacement.clone())))
+            .collect();
+        *raw = serde_json::to_string(&mapped).map_err(|_| error("成员连接映射无法恢复"))?;
+    }
+    Ok(())
 }
 
 pub(crate) fn restrict_directory(path: &Path) -> Result<(), SyncError> {
@@ -216,6 +302,7 @@ pub fn restore(app: &AppHandle, bundle: Bundle) -> Result<RestoreResult, SyncErr
 #[cfg(test)]
 pub(crate) fn sample_bundle() -> Bundle {
     Bundle {
+        ai_keys: BTreeMap::new(),
         entries: vec![Entry {
             record: ServerRecord {
                 id: "synthetic-source".into(),
@@ -250,6 +337,37 @@ pub(crate) fn sample_bundle() -> Bundle {
 mod tests {
     use super::*;
     #[test]
+    fn ai_config_and_keys_roundtrip_and_legacy_defaults() {
+        let mut bundle = sample_bundle();
+        let endpoint = "https://api.siliconflow.cn/v1/chat/completions";
+        bundle.ui_state.insert("dssh.team-ai.v1".into(), serde_json::json!({"endpoint":endpoint,"model":"example-model"}).to_string());
+        bundle.ai_keys.insert(endpoint.into(), "synthetic-key".into());
+        assert!(validate_ui(&bundle.ui_state).is_ok());
+        assert!(ai_endpoints(&bundle.ui_state).unwrap().contains_key(endpoint));
+        let mut json = serde_json::to_value(&bundle).unwrap();
+        let decoded:Bundle = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(decoded.ai_keys[endpoint], "synthetic-key");
+        json.as_object_mut().unwrap().remove("aiKeys");
+        assert!(serde_json::from_value::<Bundle>(json).unwrap().ai_keys.is_empty());
+        bundle.ui_state.insert("dssh.team-ai.v1".into(), r#"{"endpoint":"http://unsafe.test","model":"x"}"#.into());
+        assert!(validate_ui(&bundle.ui_state).is_err());
+    }
+    #[test]
+    fn team_bindings_follow_restored_server_ids() {
+        let old_key = r#"["source","$1",123,"/repo"]"#;
+        let mut ui = BTreeMap::from([
+            ("dssh.collaboration.v2".into(), serde_json::json!({old_key: {"project":"demo","tmuxId":"$1"}}).to_string()),
+            ("dssh.team-connections.v1".into(), r#"{"member":"source","stale":"missing"}"#.into()),
+        ]);
+        assert!(validate_ui(&ui).is_ok());
+        remap_team_connections(&mut ui, &BTreeMap::from([("source".into(),"restored".into())])).unwrap();
+        let profiles: serde_json::Value = serde_json::from_str(&ui["dssh.collaboration.v2"]).unwrap();
+        assert_eq!(profiles[r#"["restored","$1",123,"/repo"]"#]["project"], "demo");
+        assert!(profiles.get(old_key).is_none());
+        assert_eq!(ui["dssh.team-connections.v1"], r#"{"member":"restored"}"#);
+        assert!(validate_ui(&BTreeMap::from([("dssh.collaboration.v2".into(), r#"{"bad":{}}"#.into())])).is_err());
+    }
+    #[test]
     fn rejects_unexpected_ui_keys_and_invalid_shapes() {
         assert!(validate_ui(&BTreeMap::from([(
             "github_pat".into(),
@@ -270,7 +388,29 @@ mod tests {
         fs::create_dir(&dir).unwrap();
         let path = dir.join("servers.json");
         fs::write(&path, "[]").unwrap();
-        let result = restore_at(&path, sample_bundle()).unwrap();
+        let mut bundle = sample_bundle();
+        let endpoint = format!("https://{}.invalid/chat/completions", random_id());
+        let account = format!("team-ai:{endpoint}");
+        bundle.ui_state.insert("dssh.team-ai.v1".into(), serde_json::json!({"endpoint":endpoint,"model":"test"}).to_string());
+        bundle.ai_keys.insert(endpoint.clone(), "synthetic-model-key".into());
+        bundle.ui_state.insert("dssh.team-ai.profiles.v1".into(),serde_json::json!({
+            "profile-a":{"id":"profile-a","name":"主账号","endpoint":endpoint,"model":"test","protocol":"responses"},
+            "profile-b":{"id":"profile-b","name":"备用","endpoint":endpoint,"model":"test","protocol":"responses"}
+        }).to_string());
+        for id in ["profile-a","profile-b"] {
+            bundle.ai_keys.insert(crate::team_ai::credential_ref(&endpoint,Some(id)).unwrap(),format!("synthetic-{id}"));
+        }
+        let result = restore_at(&path, bundle).unwrap();
+        for id in ["profile-a","profile-b"] {
+            assert_eq!(crate::team_ai::saved_key(&endpoint,Some(id)).unwrap(),Some(format!("synthetic-{id}")));
+        }
+        assert!(!crate::team_ai::team_ai_key(endpoint.clone(),Some(String::new()),Some("profile-a".into())).unwrap());
+        assert_eq!(crate::team_ai::saved_key(&endpoint,Some("profile-b")).unwrap().as_deref(),Some("synthetic-profile-b"));
+        assert!(!crate::team_ai::team_ai_key(endpoint.clone(),None,Some("profile-a".into())).unwrap());
+        crate::team_ai::team_ai_key(endpoint.clone(),Some(String::new()),Some("profile-b".into())).unwrap();
+        assert_eq!(servers::export_secret(&account,"api-key").unwrap().as_deref(),Some("synthetic-model-key"));
+        assert!(!serde_json::to_string(&result.ui_state).unwrap().contains("synthetic-model-key"));
+        servers::delete_secret(&account,"api-key");
         let records: Vec<ServerRecord> = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         let record = &records[0];
         assert_ne!(record.id, "synthetic-source");
@@ -338,6 +478,13 @@ fn restore_at(path: &Path, mut bundle: Bundle) -> Result<RestoreResult, SyncErro
                 servers::get_secret(&entry.record.id, "passphrase").is_some();
         }
     }
+    let endpoints=ai_endpoints(&bundle.ui_state)?;
+    for (endpoint,key) in &bundle.ai_keys {
+        if !endpoints.contains_key(endpoint) || key.is_empty() || key.len()>4096 || key.chars().any(char::is_control) {
+            return Err(error("模型密钥与备份配置不匹配"));
+        }
+    }
+    let mut ai_rollback: Vec<(String, Option<String>)> = Vec::new();
     let root = path.parent().unwrap().join("sync-keys");
     fs::create_dir_all(&root).map_err(|_| error("无法创建私钥存储目录"))?;
     let directory = root.join(random_id());
@@ -373,6 +520,9 @@ fn restore_at(path: &Path, mut bundle: Bundle) -> Result<RestoreResult, SyncErro
                 entry.record.key_path = None;
             }
         }
+        if !bundle.legacy {
+            remap_team_connections(&mut bundle.ui_state, &id_map)?;
+        }
         if let Some(raw) = bundle.ui_state.get_mut("dssh.sidebar.tree-layout") {
             let mut layout: serde_json::Value =
                 serde_json::from_str(raw).map_err(|_| error("文件夹配置无效"))?;
@@ -402,6 +552,12 @@ fn restore_at(path: &Path, mut bundle: Bundle) -> Result<RestoreResult, SyncErro
         let staged = directory.join("servers.json");
         let raw = serde_json::to_vec_pretty(&records).map_err(|_| error("连接列表无法保存"))?;
         write_key(&staged, &raw)?;
+        for (endpoint,key) in &bundle.ai_keys {
+            let account=format!("team-ai:{endpoint}");
+            let old=servers::export_secret(&account,"api-key").map_err(|_|error("无法读取本机模型密钥"))?;
+            ai_rollback.push((account.clone(),old));
+            servers::set_secret(&account,"api-key",key).map_err(|_|error("无法恢复模型 API Key"))?;
+        }
         fs::rename(&staged, &path).map_err(|_| error("无法替换本机连接列表"))?;
         Ok(RestoreResult {
             message: format!(
@@ -418,6 +574,10 @@ fn restore_at(path: &Path, mut bundle: Bundle) -> Result<RestoreResult, SyncErro
         })
     })();
     if result.is_err() {
+        for (account,old) in ai_rollback {
+            if let Some(key)=old {let _=servers::set_secret(&account,"api-key",&key);}
+            else {servers::delete_secret(&account,"api-key");}
+        }
         for id in new_ids {
             servers::delete_secret(&id, "password");
             servers::delete_secret(&id, "passphrase");

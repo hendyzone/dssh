@@ -1,4 +1,4 @@
-import {render,screen,fireEvent,waitFor} from "@testing-library/react";
+import {render,screen,fireEvent,waitFor,within} from "@testing-library/react";
 import {it,expect,vi} from "vitest";
 import {invoke} from "@tauri-apps/api/core";
 import SftpPanel from "../src/components/SftpPanel";
@@ -13,6 +13,28 @@ function setup(){ vi.mocked(invoke).mockImplementation(async(command,args:any)=>
   if(command === "sftp_save_text")return "backup";
   return [];
 }); render(<SftpPanel sessionId="session" onClose={()=>{}}/>); }
+it("groups panes by full directory path and opens the selected directory",async()=>{
+ vi.mocked(invoke).mockImplementation(async(command)=>{
+  if(command === "sftp_home")return "/home/demo";
+  if(command === "tmux_snapshot")return {panes:[
+   {id:"%2",command:"bash",path:"/workspace/project"},
+   {id:"%4",command:"bash",path:"/workspace/project"},
+   {id:"%5",command:"pi",path:"/workspace/project"},
+   {id:"%6",command:"bash",path:"/other/project"},
+  ]};
+  return [];
+ });
+ render(<SftpPanel sessionId="session" onClose={()=>{}}/>);
+ await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/home/demo"));
+ fireEvent.click(screen.getByRole("button",{name:"tmux 工作目录"}));
+ const picker=within(await screen.findByRole("region",{name:"tmux 工作目录"}));
+ expect(picker.getAllByText("project")).toHaveLength(2);
+ expect(picker.getAllByText("/workspace/project")).toHaveLength(1);
+ expect(picker.getByText("选择工作目录").textContent).toBe("选择工作目录 2");
+ fireEvent.click(picker.getByRole("button",{name:"%2, %4, %5 · bash / pi · /workspace/project"}));
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_list",{sessionId:"session",path:"/workspace/project"}));
+ expect(screen.queryByRole("region",{name:"tmux 工作目录"})).toBeNull();
+});
 it("enters a resolved directory link without downloading it",async()=>{
  vi.mocked(invoke).mockClear();
  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
@@ -43,4 +65,31 @@ it("sends the original text with edits so the backend can reject remote conflict
 it("renders Markdown safely and keeps edits when switching modes",async()=>{
  vi.mocked(invoke).mockImplementation(async(command)=>command==="sftp_home"?"/home/demo":command==="sftp_list"?[{name:"README.md",path:"/home/demo/README.md",isDir:false}]:command==="sftp_read_text"?"# Preview title\n\n<script>alert(1)</script>":[]);
  render(<SftpPanel sessionId="session" onClose={()=>{}}/>);await screen.findByText("README.md");fireEvent.click(screen.getByTitle("在线编辑"));await screen.findByRole("heading",{name:"Preview title"});expect(document.querySelector("article script")).toBeNull();fireEvent.click(screen.getByRole("button",{name:"编辑源码"}));fireEvent.change(screen.getByLabelText("文件内容"),{target:{value:"# Edited title"}});fireEvent.click(screen.getByRole("button",{name:"渲染预览"}));expect(screen.getByRole("heading",{name:"Edited title"})).toBeTruthy();
+});
+
+it("remembers a successful directory across reconnections and isolates servers",async()=>{
+ vi.mocked(invoke).mockImplementation(async command=>command==="sftp_home"?"/home/demo":[]);
+ const view=render(<SftpPanel sessionId="first" serverId="a" onClose={()=>{}}/>);
+ await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/home/demo"));
+ fireEvent.change(screen.getByLabelText("远程路径"),{target:{value:"/workspace/project"}});
+ fireEvent.click(screen.getByRole("button",{name:"前往"}));
+ await waitFor(()=>expect(localStorage.getItem("dssh.sftp.last-directory.a")).toBe("/workspace/project"));
+ view.unmount();
+ const second=render(<SftpPanel sessionId="reconnected" serverId="a" onClose={()=>{}}/>);
+ await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/workspace/project"));
+ second.unmount();
+ render(<SftpPanel sessionId="other" serverId="b" onClose={()=>{}}/>);
+ await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/home/demo"));
+});
+
+it("falls back to home if the remembered folder is no longer accessible",async()=>{
+ localStorage.setItem("dssh.sftp.last-directory.a","/gone");
+ vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
+  if(command==="sftp_home")return "/home/demo";
+  if(command==="sftp_list"&&args.path==="/gone")throw new Error("not found");
+  return [];
+ });
+ render(<SftpPanel sessionId="ssh" serverId="a" onClose={()=>{}}/>);
+ await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/home/demo"));
+ expect(localStorage.getItem("dssh.sftp.last-directory.a")).toBe("/home/demo");
 });

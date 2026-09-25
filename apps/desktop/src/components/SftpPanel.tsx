@@ -171,6 +171,20 @@ export default function SftpPanel({
   const [panePaths, setPanePaths] = useState<
     { id: string; path: string; command: string }[]
   >([]);
+  const paneDirectories = useMemo(() => {
+    const directories = new Map<string, { path: string; ids: string[]; commands: string[] }>();
+    for (const pane of panePaths) {
+      const directory = directories.get(pane.path) ?? { path: pane.path, ids: [], commands: [] };
+      directory.ids.push(pane.id);
+      if (!directory.commands.includes(pane.command)) directory.commands.push(pane.command);
+      directories.set(pane.path, directory);
+    }
+    return Array.from(directories.values(), (directory) => ({
+      path: directory.path,
+      id: directory.ids.join(", "),
+      command: directory.commands.join(" / "),
+    }));
+  }, [panePaths]);
   const requestId = useRef(0);
   const [currentPath, setCurrentPath] = useState("/");
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -196,6 +210,7 @@ export default function SftpPanel({
     return subscribeTransfers(sessionId, setTransfers);
   }, [sessionId]);
   const currentPathRef = useRef(currentPath);
+  const directoryStorageKey = serverId ? `dssh.sftp.last-directory.${serverId}` : undefined;
 
   const loadDirectory = useCallback(
     async (path: string) => {
@@ -216,21 +231,39 @@ export default function SftpPanel({
         currentPathRef.current = path;
         setCurrentPath(path);
         setSelectedPath(null);
+        if (directoryStorageKey && path.startsWith("/")) {
+          try { localStorage.setItem(directoryStorageKey, path); } catch {}
+        }
+        return true;
       } catch (reason) {
+        if (request !== requestId.current) return;
         setError(String(reason));
+        return false;
       } finally {
         if (request === requestId.current) setLoading(false);
       }
     },
-    [sessionId],
+    [sessionId, directoryStorageKey],
   );
 
   useEffect(() => {
     if (!sessionId) return;
-    void invoke<string>("sftp_home", { sessionId })
-      .then((path) => loadDirectory(path))
-      .catch(() => loadDirectory("/"));
-  }, [loadDirectory, sessionId]);
+    let live = true;
+    const restore = async () => {
+      let saved: string | null = null;
+      try { saved = directoryStorageKey ? localStorage.getItem(directoryStorageKey) : null; } catch {}
+      if (saved?.startsWith("/") && !saved.includes("\0")) {
+        const result = await loadDirectory(saved);
+        if (!live || result !== false) return;
+      }
+      const ticket = requestId.current;
+      let home = "/";
+      try { home = await invoke<string>("sftp_home", {sessionId}); } catch {}
+      if (live && ticket === requestId.current) await loadDirectory(home);
+    };
+    void restore();
+    return () => { live = false; requestId.current++; };
+  }, [loadDirectory, sessionId, directoryStorageKey]);
 
   // 跟随模式：终端目录变化且与面板当前目录不同时自动跳转
   useEffect(() => {
@@ -683,12 +716,7 @@ export default function SftpPanel({
         </Button>
       </form>
       <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 4,
-          padding: "0 10px 7px",
-        }}
+        className="sftp-toolbar"
       >
         <Button
           variant="outline"
@@ -729,7 +757,13 @@ export default function SftpPanel({
         <Button
           variant="outline"
           size="sm"
+          aria-expanded={panePaths.length > 0}
+          aria-controls="sftp-pane-picker"
           onClick={async () => {
+            if (panePaths.length > 0) {
+              setPanePaths([]);
+              return;
+            }
             try {
               const snapshot = await invoke<{
                 panes: { id: string; path: string; command: string }[];
@@ -768,22 +802,41 @@ export default function SftpPanel({
         </Button>
       </div>
       {panePaths.length > 0 && (
-        <div style={{ padding: 8 }}>
-          <small>选择正在运行 Codex / Claude 的窗格</small>
-          {panePaths.map((pane) => (
+        <section id="sftp-pane-picker" className="sftp-pane-picker" aria-label="tmux 工作目录">
+          <div className="sftp-pane-picker-heading">
+            <strong>选择工作目录 <span className="sftp-pane-count">{paneDirectories.length}</span></strong>
+            <Button variant="ghost" size="icon-xs" aria-label="收起工作目录" onClick={() => setPanePaths([])}>
+              <IconClose size={14} />
+            </Button>
+          </div>
+          <p className="sftp-pane-hint">选择 Codex / Claude / pi 所在窗格，跳转到对应目录</p>
+          <div className="sftp-pane-list">
+          {paneDirectories.map((pane) => (
             <Button
-              variant="outline"
-              size="sm"
-              key={pane.id}
+              variant="ghost"
+              className="sftp-pane-item"
+              key={pane.path}
+              title={`${pane.id} · ${pane.command} · ${pane.path}`}
+              aria-label={`${pane.id} · ${pane.command} · ${pane.path}`}
+              aria-current={pane.path === currentPath ? "location" : undefined}
               onClick={() => {
                 void loadDirectory(pane.path);
                 setPanePaths([]);
               }}
             >
-              {pane.id} · {pane.command} · {pane.path}
+              <IconFolder size={16} />
+              <span className="sftp-pane-details">
+                <span className="sftp-pane-name">{basename(pane.path)}</span>
+                <span className="sftp-pane-path">{pane.path}</span>
+              </span>
+              <span className="sftp-pane-meta">
+                <span className="sftp-pane-command">{pane.command}</span>
+                <span className="sftp-pane-id">{pane.id}</span>
+              </span>
             </Button>
           ))}
-        </div>
+          </div>
+        </section>
       )}
       {options && (
         <div style={{ padding: 10 }}>

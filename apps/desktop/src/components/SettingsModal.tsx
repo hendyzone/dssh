@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { THEMES, getTheme, themeCategory } from "../themes";
 import SyncGuide from "./SyncGuide";
 import CollaborationSettings from "./CollaborationSettings";
+import TeamAiSettings from "./TeamAiSettings";
 import type { CollaborationSession } from "../lib/collaboration";
 import {
   collectSyncUi,
@@ -49,7 +50,7 @@ export default function SettingsModal({
   onClose,
   onServersChanged,
 }: Props) {
-  const [section, setSection] = useState<"appearance" | "sync" | "collaboration">("appearance");
+  const [section, setSection] = useState<"appearance" | "sync" | "collaboration" | "team-ai">("appearance");
   const [themeFilter, setThemeFilter] = useState("all");
   const [themeQuery, setThemeQuery] = useState("");
   const visibleThemes = THEMES.filter(
@@ -152,9 +153,11 @@ export default function SettingsModal({
             <TabsTrigger value="appearance">外观</TabsTrigger>
             <TabsTrigger value="sync">同步</TabsTrigger>
             <TabsTrigger value="collaboration">Agent 协作</TabsTrigger>
+            <TabsTrigger value="team-ai">云端摘要</TabsTrigger>
           </TabsList>
           <div className="settings-scroll">
             <TabsContent value="collaboration"><CollaborationSettings sessions={collaborationSessions}/></TabsContent>
+            <TabsContent value="team-ai"><TeamAiSettings/></TabsContent>
             <TabsContent
               forceMount
               value="appearance"
@@ -372,12 +375,12 @@ export default function SettingsModal({
               <div className="sync-action-notes">
                 <p>
                   <strong>上传备份：</strong>
-                  用本机连接、凭据、私钥和界面配置的加密备份替换仓库已有的 dssh
+                  用本机连接、凭据、私钥、团队绑定、云端模型配置及 API Key 和界面配置的加密备份替换仓库已有的 dssh
                   备份，不改动仓库其他文件。
                 </p>
                 <p>
                   <strong>下载恢复：</strong>
-                  用仓库备份整体替换本机连接列表并恢复凭据、私钥和界面配置，不合并；替换前会保留一份本机列表备份。
+                  用仓库备份整体替换本机连接列表并恢复凭据、私钥、团队绑定、云端模型配置及 API Key 和界面配置，不合并；替换前会保留一份本机列表备份。团队成员和备注仍从 Lead 的远端工作区读取，旧备份需要在原设备重新上传才会包含团队入口。
                 </p>
               </div>
               <details className="sync-troubleshoot">

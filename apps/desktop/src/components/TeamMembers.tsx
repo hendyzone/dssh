@@ -7,6 +7,8 @@ import type { ServerEntry } from "../types";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import TeamMemberNotes from "./TeamMemberNotes";
+import TeamDynamics from "./TeamDynamics";
+import { memberActivity, memberActivityLabels, type MemberActivity } from "../lib/teamMembers";
 
 export interface TeamNavigation {
   server: ServerEntry;
@@ -30,6 +32,7 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
   const [mapping, setMapping] = useState(loadTeamMappings);
   const [noteMember, setNoteMember] = useState<string>();
   const [managedMember, setManagedMember] = useState<string>();
+
   const [noteDraft, setNoteDraft] = useState<Partial<Record<MemberNoteField,string>>>({});
   const leadPrompt = teamLeadPrompt(profile,navigation.server);
   const pending = useRef(false);
@@ -73,6 +76,7 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
       <Button size="icon-sm" variant="ghost" aria-label="刷新成员" disabled={disabled} onClick={()=>void run(()=>request("members"))}><RefreshCw size={15}/></Button>
       <Button size="sm" disabled={disabled} onClick={()=>startAdd()}><Plus size={14}/> 添加成员</Button>
     </div></div>
+    <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} onUpdated={()=>request("members")}/>
     <div className="team-lead-guide">
       <Button size="sm" disabled={busy} onClick={()=>void run(async current=>{
         try {await navigator.clipboard.writeText(leadPrompt);} catch {throw new Error("复制失败，请展开“查看提示词”手动复制。");}
@@ -104,12 +108,17 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
       })}>{editing?"更新终端":"加入团队"}</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>setAdding(false)}>取消</Button></div>
       <p>服务器和工作目录会自动读取，不需要配置邮箱。</p>
     </div>}
-    {members.map(member=>{
+    {(["working","idle","unknown"] as MemberActivity[]).map(activity=>{
+      const group=members.filter(member=>memberActivity(member)===activity);
+      if(!group.length)return null;
+      return <section className={`team-activity-group team-activity-${activity}`} key={activity} aria-label={`${memberActivityLabels[activity]}成员`}>
+        <div className="team-activity-heading" title="按 Lead 的当前任务备注分类，不代表实时在线状态"><strong>{memberActivityLabels[activity]}</strong><span>{group.length}</span></div>
+        {group.map(member=>{
       const matches=matchingServers(member,navigation.servers);
       const selectedServer=mapping[memberMappingKey(member)]??(matches.length===1?matches[0].id:"");
       const server=navigation.servers.find(s=>s.id===selectedServer);
       return <article key={memberKey(member)} className="team-card">
-        <div className="team-card-main"><span className="team-avatar"><Terminal size={15}/></span><div className="team-card-title"><strong title={member.role}>{member.role}</strong><p title={`${server?.name??member.host} · ${member.tmux.name}`}>{server?.name??member.host}{member.tmux.name!==member.role ? ` · ${member.tmux.name}` : ""}</p></div></div>
+        <div className="team-card-main"><span className="team-avatar"><Terminal size={15}/></span><div className="team-card-title"><strong title={member.role}>{member.role}</strong><p title={`${server?.name??member.host} · ${member.tmux.name}`}><span className={`team-activity-badge team-activity-${activity}`}>{memberActivityLabels[activity]}</span> {server?.name??member.host}{member.tmux.name!==member.role ? ` · ${member.tmux.name}` : ""}</p></div></div>
         <div className="team-card-actions"><Button className="team-open" size="sm" disabled={disabled||!server} aria-label={`打开终端 · ${member.role}`} onClick={()=>server&&void run(()=>navigation.onOpen(member,server))}>打开</Button><Button size="sm" variant="ghost" aria-expanded={managedMember===memberKey(member)} onClick={()=>setManagedMember(old=>old===memberKey(member)?undefined:memberKey(member))}>管理</Button></div>
         <TeamMemberNotes member={member}/>
         {noteMember===memberKey(member) && <div className="team-card-extra team-member-notes">
@@ -132,6 +141,8 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
             <Button size="sm" variant="ghost" disabled={disabled} onClick={()=>void run(()=>request("memberRemove",memberKey(member)))}>从团队移除</Button></div>
         </div>}
       </article>;
+        })}
+      </section>;
     })}
     <details><summary>高级：导入或分享成员位置</summary>
       <p className="team-footnote">团队保存在 Lead 工作区，换电脑后连接同一工作区即可继续使用。</p>

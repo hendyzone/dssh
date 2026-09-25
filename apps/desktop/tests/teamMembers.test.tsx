@@ -137,7 +137,7 @@ it("reports stale sessions and never silently retargets a member", async () => {
 
 it("registers only validated location fields and does not send agent messages", async () => {
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server, servers:[server], onOpen:vi.fn()}}/>);
-  await screen.findByText("cw2");
+  await screen.findByRole("button",{name:"打开终端 · cw2"});
   fireEvent.change(screen.getByLabelText("成员位置 JSON"), {target:{value:JSON.stringify({...member, password:"secret"})}});
   fireEvent.click(screen.getByRole("button", {name:"登记到当前团队"}));
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("collaboration_request", {sessionId:"lead-ssh", profile, request:{operation:"memberSave", body:JSON.stringify(member)}}));
@@ -184,7 +184,7 @@ it("recognizes a member across servers and opens the original Lead instead of of
   expect(screen.getByText("demo · cw2")).toBeTruthy();
   expect(screen.getByLabelText("成员摘要").textContent).toContain("后端实现");
   expect(screen.queryByLabelText("项目名称")).toBeNull();
-  expect(screen.queryByText("将当前窗口设为 Lead")).toBeNull();
+  expect(screen.getByRole("button",{name:"将当前窗口设为 Lead"})).toBeTruthy();
   expect(invoke).toHaveBeenCalledWith("collaboration_request",{sessionId:"lead-ssh",profile,request:{operation:"members"}});
   fireEvent.click(screen.getByRole("button",{name:"打开 Lead 终端"}));
   await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({project:"demo",host:"lead-remote",workdir:"/lead",tmux:{id:"$1",created:100,name:"lead"}}),leadServer));
@@ -206,4 +206,69 @@ it("keeps failed membership discovery distinct from a new team",async()=>{
   await screen.findByText("部分团队尚未确认，请连接 Lead 所在服务器后刷新。");
   expect(screen.getByRole("alert").textContent).toContain("SSH disconnected");
   expect(screen.getByText("将当前窗口设为 Lead").closest("details")?.open).toBe(false);
+});
+
+it.each(["same","different-root","recreated","missing-roster"])("recovers an alternate-IP Lead only from its verified remote roster: %s",async mode=>{
+  const original={...server,id:"old-route",host:"100.66.1.7"};
+  const alternate={...server,id:"new-route",host:"192.168.1.7",port:2222};
+  saveCollaboration(original.id,profile);
+  const target={id:profile.tmuxId,created:mode==="recreated"?999:profile.tmuxCreated,name:"lead"};
+  const lead={...member,role:"Lead",host:original.host,workdir:profile.workdir,tmux:{id:profile.tmuxId,created:profile.tmuxCreated,name:"lead"}};
+  vi.mocked(invoke).mockImplementation(async command=>{
+    if(command==="collaboration_worktree")return mode==="different-root"?"/another":profile.workdir;
+    return JSON.stringify(mode==="missing-roster"?[]:[lead]);
+  });
+  render(<TeamPanel sessionId="alternate-ssh" pane={{id:"lead-alt",server:alternate,tmux:target}} navigation={{server:alternate,servers:[original,alternate],onOpen:vi.fn()}} onClose={vi.fn()}/>);
+  const restoredKey=collaborationKey(alternate.id,profile);
+  if(mode==="same"){
+    await screen.findByRole("button",{name:"退出团队"});
+    expect(loadCollaboration()[restoredKey]).toMatchObject({project:"demo",workdir:profile.workdir,membersEnabled:true,taskboardEnabled:false,mailEnabled:false});
+    expect(loadCollaboration()[collaborationKey(original.id,profile)]).toEqual(profile);
+    expect(Object.values(JSON.parse(localStorage.getItem("dssh.team-connections.v1")!))).toContain(alternate.id);
+    expect(vi.mocked(invoke).mock.calls.some(([c,a]:any)=>c==="collaboration_request"&&a.sessionId==="alternate-ssh"&&a.request.operation==="members")).toBe(true);
+  }else{
+    await screen.findByText("尚未识别到所属团队。如果这是成员窗口，请先打开已有 Lead 的团队，再回来刷新。");
+    expect(loadCollaboration()[restoredKey]).toBeUndefined();
+    expect(screen.queryByRole("button",{name:"退出团队"})).toBeNull();
+  }
+  expect(vi.mocked(invoke).mock.calls.every(([c,a]:any)=>c==="collaboration_worktree"||a.request?.operation==="members")).toBe(true);
+});
+
+it("groups current work ahead of idle members without inferring unknown status",async()=>{
+  vi.mocked(invoke).mockResolvedValue(JSON.stringify([
+    {...member,role:"空闲成员",currentTask:"空闲116h，无在飞卡"},
+    {...member,email:"busy@example.test",role:"工作成员",currentTask:"T762等待验收"},
+    {...member,email:"unknown@example.test",role:"未知成员",currentTask:"待确认\n历史：空闲"},
+  ]));
+  render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
+  const working=await screen.findByRole("region",{name:"工作中成员"});
+  expect(working.textContent).toContain("工作成员");
+  expect(screen.getByRole("region",{name:"空闲成员"}).textContent).toContain("空闲成员");
+  expect(screen.getByRole("region",{name:"待确认成员"}).textContent).toContain("未知成员");
+  expect(screen.getAllByRole("region").map(el=>el.getAttribute("aria-label"))).toEqual(["团队成员","团队动态","工作中成员","空闲成员","待确认成员"]);
+});
+
+it.each([true,false])("promotes a member only after checking the migrated roster (present=%s)",async migrated=>{
+  const leadServer={...server,id:"old-lead",host:"old-lead.test"};
+  saveCollaboration(leadServer.id,profile);
+  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
+    if(command==="collaboration_worktree")return "/repo";
+    if(command==="collaboration_request")return JSON.stringify(args.sessionId==="old-ssh"||migrated?[member]:[]);
+    return [];
+  });
+  render(<TeamPanel sessionId="new-ssh" pane={{id:"worker",server,tmux:member.tmux}} navigation={{server,servers:[server,leadServer],sessions:[{pane:{id:"old",server:leadServer},backendId:"old-ssh"}],onOpen:vi.fn()}} onClose={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole("button",{name:"将当前窗口设为 Lead"}));
+  const newKey=collaborationKey(server.id,{tmuxId:member.tmux.id,tmuxCreated:member.tmux.created,workdir:member.workdir});
+  expect(loadCollaboration()[newKey]).toBeUndefined();
+  if(migrated){
+    fireEvent.click(await screen.findByRole("button",{name:"确认设为 Lead"}));
+    await screen.findByRole("button",{name:"添加成员"});
+    expect(loadCollaboration()[newKey]).toMatchObject({project:"demo",workdir:"/repo",membersEnabled:true,tmuxId:"$2"});
+  }else{
+    expect((await screen.findByRole("alert")).textContent).toContain("没有团队名单");
+    expect(screen.queryByRole("button",{name:"确认设为 Lead"})).toBeNull();
+    expect(loadCollaboration()[newKey]).toBeUndefined();
+  }
+  expect(loadCollaboration()[collaborationKey(leadServer.id,profile)]).toEqual(profile);
+  expect(vi.mocked(invoke).mock.calls.every(([command,args]:any)=>command==="collaboration_worktree"||args.request?.operation==="members")).toBe(true);
 });

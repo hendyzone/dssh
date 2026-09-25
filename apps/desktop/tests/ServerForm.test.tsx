@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import ServerForm from "../src/components/ServerForm";
+import { invoke } from "@tauri-apps/api/core";
+import type { ServerEntry } from "../src/types";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue([]),
@@ -18,7 +20,7 @@ const server = {
 
 async function setup(
   onSubmit = vi.fn().mockResolvedValue(undefined),
-  initial = server,
+  initial: ServerEntry = server,
 ) {
   const onCancel = vi.fn();
   const result = render(
@@ -30,9 +32,93 @@ async function setup(
 }
 
 describe("server input", () => {
+  it("restores pasted content when reopened and preserves the encrypted key on save", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === "servers_read_imported_key" ? "saved-encrypted-private-key" : [],
+    );
+    const initial: ServerEntry = {
+      ...server, authMethod: "publicKey", hasPassphrase: true,
+      keyPath: "C:\\app\\imported-keys\\key-123",
+    };
+    const { form, onSubmit } = await setup(vi.fn().mockResolvedValue(undefined), initial);
+    expect((screen.getByLabelText("私钥来源") as HTMLSelectElement).value).toBe("paste");
+    expect((screen.getByLabelText("私钥内容") as HTMLTextAreaElement).value).toBe("saved-encrypted-private-key");
+    await act(async () => fireEvent.submit(form));
+    expect(onSubmit.mock.calls[0][0].keyPath).toBe(initial.keyPath);
+    expect(onSubmit.mock.calls[0][2]).toBeUndefined();
+    vi.mocked(invoke).mockResolvedValue([]);
+  });
+
+  it("reports a missing saved key and lets the user paste a replacement", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "servers_read_imported_key") throw new Error("read failed");
+      return [];
+    });
+    const { form, onSubmit } = await setup(vi.fn().mockResolvedValue(undefined), {
+      ...server, authMethod: "publicKey", keyPath: "C:\\app\\imported-keys\\key-123",
+    });
+    expect(screen.getByRole("alert").textContent).toContain("无法读取");
+    fireEvent.change(screen.getByLabelText("私钥内容"), { target: { value: "replacement-key" } });
+    vi.mocked(invoke).mockResolvedValueOnce("/new-key");
+    await act(async () => fireEvent.submit(form));
+    expect(onSubmit.mock.calls[0][0].keyPath).toBe("/new-key");
+    vi.mocked(invoke).mockResolvedValue([]);
+  });
+
+  async function pasteMode() {
+    fireEvent.change(screen.getByLabelText("认证方式"), { target: { value: "publicKey" } });
+    await act(async () => {});
+    fireEvent.change(screen.getByLabelText("私钥来源"), { target: { value: "paste" } });
+  }
+
+  it("requires pasted content and focuses the empty textarea", async () => {
+    const { form, onSubmit } = await setup();
+    await pasteMode();
+    fireEvent.submit(form);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByLabelText("私钥内容"));
+    expect(screen.getByText("请粘贴完整私钥内容")).toBeTruthy();
+  });
+
+  it("imports pasted keys once across save retries and clears an old passphrase", async () => {
+    const submit = vi.fn().mockRejectedValueOnce("暂时不可用").mockResolvedValue(undefined);
+    const { form } = await setup(submit);
+    await pasteMode();
+    fireEvent.change(screen.getByLabelText("私钥内容"), { target: { value: "synthetic-private-key" } });
+    vi.mocked(invoke).mockResolvedValueOnce("/protected/imported-key");
+    await act(async () => fireEvent.submit(form));
+    await act(async () => fireEvent.submit(form));
+    expect(invoke).toHaveBeenCalledWith("servers_import_private_key", {
+      content: "synthetic-private-key", passphrase: null,
+    });
+    expect(submit).toHaveBeenCalledTimes(2);
+    for (const call of submit.mock.calls) {
+      expect(call[0].keyPath).toBe("/protected/imported-key");
+      expect(call[2]).toBe("");
+      expect(JSON.stringify(call[0])).not.toContain("synthetic-private-key");
+    }
+  });
+
+  it("keeps import errors private and allows correcting the encrypted key password", async () => {
+    const { form, onSubmit } = await setup();
+    await pasteMode();
+    fireEvent.change(screen.getByLabelText("私钥内容"), { target: { value: "synthetic-secret" } });
+    vi.mocked(invoke).mockRejectedValueOnce("synthetic-secret");
+    await act(async () => fireEvent.submit(form));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).not.toContain("synthetic-secret");
+    fireEvent.change(screen.getByLabelText("私钥密码（如有）"), { target: { value: "correct-password" } });
+    vi.mocked(invoke).mockResolvedValueOnce("/protected/encrypted-key");
+    await act(async () => fireEvent.submit(form));
+    expect(invoke).toHaveBeenLastCalledWith("servers_import_private_key", {
+      content: "synthetic-secret", passphrase: "correct-password",
+    });
+    expect(onSubmit.mock.calls[0][2]).toBe("correct-password");
+  });
+
   it("keeps keyboard focus inside the dialog", async () => {
     await setup();
-    const first = screen.getByLabelText("名称（可空）");
+    const first = screen.getByLabelText("地址 *");
     const last = screen.getByRole("button", { name: "关闭" });
     last.focus();
     fireEvent.keyDown(last, { key: "Tab" });

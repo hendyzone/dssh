@@ -13,6 +13,12 @@ const DEFAULTS: Record<string, string> = {
   "dssh.panel-side.tasks": "right",
   "dssh.panel-side.changes": "right",
   "dssh.panel-side.monitor": "right",
+  "dssh.panel-side.team": "right",
+  "dssh.panel-side.collaboration": "right",
+  "dssh.collaboration.v2": "{}",
+  "dssh.team-connections.v1": "{}",
+  "dssh.team-ai.v1": "{}",
+  "dssh.team-ai.profiles.v1": "{}",
 };
 export function collectSyncUi(): Record<string, string> {
   return Object.fromEntries(
@@ -46,6 +52,8 @@ export function restoreSyncUi(values: Record<string, string>): void {
     throw error;
   }
   window.dispatchEvent(new Event("dssh-panel-position"));
+  window.dispatchEvent(new Event("dssh-collaboration-changed"));
+  window.dispatchEvent(new Event("dssh-team-ai-config"));
 }
 export interface SyncRestoreResult {
   message: string;
