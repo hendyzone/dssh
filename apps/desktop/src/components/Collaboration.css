@@ -18,6 +18,7 @@
 .team-members select{max-width:100%;min-width:0}
 .team-toolbar,.team-card-main{display:flex;align-items:center;gap:6px;min-width:0}
 .team-toolbar{justify-content:space-between}
+.team-summary-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
 .team-count{font-size:11px;font-weight:normal;margin-left:4px}
 .team-dynamics{padding:8px;border:1px solid var(--ui-border);border-radius:6px;display:flex;flex-direction:column;gap:6px}
 .team-dynamics small{font-size:10px;color:var(--ui-muted);font-weight:normal}
@@ -91,3 +92,13 @@
 .team-ai-profile-toolbar{display:flex;align-items:end;gap:8px}.team-ai-profile-toolbar .collaboration-field{flex:1;min-width:0;margin:0}.team-ai-profile-toolbar>button{width:auto;flex-shrink:0}.team-ai-profile-actions{display:flex;gap:8px;flex-wrap:wrap}.team-ai-profile-actions>button{width:auto}
 .team-ai-options{font-size:11px;color:var(--ui-muted)}.team-ai-options>summary{cursor:pointer}.team-ai-confirm{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--ui-border);border-radius:5px}.team-ai-confirm p{margin:0}.team-ai-confirm small{overflow-wrap:anywhere}.team-ai-confirm>div{display:flex;gap:6px}.team-dynamics .team-toolbar{justify-content:space-between}.team-ai-row>summary span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .team-ai-row .team-ai-single{flex-shrink:0;padding:2px 7px;height:24px;font-size:11px;color:var(--ui-accent)}
+.team-view-switch{display:flex;align-items:center;gap:2px}
+.team-roster-view:not([hidden]){display:flex;flex-direction:column;gap:8px}
+.team-dynamics{border:0;padding:4px 0}
+.team-ai-row{padding:10px 0}
+.team-ai-row:last-child{border-bottom:0}
+.team-ai-row>summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;cursor:pointer}
+.team-ai-row>summary .team-ai-identity{grid-column:1;min-width:0;font-size:12px}
+.team-ai-identity small{display:block;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.team-ai-row>summary .team-ai-summary{grid-column:1;grid-row:2;white-space:normal;line-height:1.5;font-size:12px}
+.team-ai-row-actions{grid-column:2;grid-row:1/3;display:flex;align-items:center;gap:2px}

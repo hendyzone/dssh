@@ -21,6 +21,7 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
   sessionId: string; profile: CollaborationProfile; navigation: TeamNavigation;
 }) {
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [view,setView]=useState<"activity"|"members">("activity");
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState("");
   const [role, setRole] = useState("");
@@ -59,7 +60,7 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
     return () => { generation.current++; pending.current = false; };
   }, [sessionId, profile]);
   const disabled = busy || !sessionId || !profile.enabled;
-  const startAdd = (member?:TeamMember) => {setAdding(true);setEditing(member);setRole(member?.role??"");setSelected("");setError("");};
+  const startAdd = (member?:TeamMember) => {setView("members");setAdding(true);setEditing(member);setRole(member?.role??"");setSelected("");setError("");};
   const setConnection = (member:TeamMember, id:string) => {
     try {
       const next = {...loadTeamMappings(), [memberMappingKey(member)]:id};
@@ -72,11 +73,19 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
     </select>
   </label>;
   return <section className="team-members" aria-label="团队成员">
-    <div className="team-toolbar"><strong>成员 {members.length > 0 && <span className="team-count">{members.length}</span>}</strong><div className="collaboration-actions">
+    <div className="team-toolbar"><div className="team-view-switch" aria-label="团队视图">
+      <Button size="sm" variant={view==="activity"?"secondary":"ghost"} aria-pressed={view==="activity"} onClick={()=>setView("activity")}>动态</Button>
+      <Button size="sm" variant={view==="members"?"secondary":"ghost"} aria-pressed={view==="members"} onClick={()=>setView("members")}>成员 {members.length}</Button>
+    </div><div className="collaboration-actions">
       <Button size="icon-sm" variant="ghost" aria-label="刷新成员" disabled={disabled} onClick={()=>void run(()=>request("members"))}><RefreshCw size={15}/></Button>
       <Button size="sm" disabled={disabled} onClick={()=>startAdd()}><Plus size={14}/> 添加成员</Button>
     </div></div>
-    <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} onUpdated={()=>request("members")}/>
+    {error && <p role="alert" className="collaboration-error">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
+    <div hidden={view!=="activity"}>
+      <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} onUpdated={()=>request("members")}/>
+    </div>
+    <div hidden={view!=="members"} className="team-roster-view">
     <div className="team-lead-guide">
       <Button size="sm" disabled={busy} onClick={()=>void run(async current=>{
         try {await navigator.clipboard.writeText(leadPrompt);} catch {throw new Error("复制失败，请展开“查看提示词”手动复制。");}
@@ -84,8 +93,6 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
       })}>复制给 Lead 的提示词</Button>
       <details><summary>查看提示词</summary><p>贴给 Lead 批量登记成员和维护备注，完成后刷新成员。</p><textarea aria-label="给 Lead 的团队管理提示词" readOnly value={leadPrompt}/></details>
     </div>
-    {error && <p role="alert" className="collaboration-error">{error}</p>}
-    {notice && <p role="status">{notice}</p>}
     {busy && <p role="status">正在处理…</p>}
     {!sessionId && <p role="status">连接 Lead 终端后即可读取团队。</p>}
     {!members.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>点击「添加成员」，从已打开的终端中选择。成员可以在不同服务器上。</p></div>}
@@ -161,5 +168,6 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
         setPosition(JSON.stringify(parseMember({id:existing?.id??`member-${crypto.randomUUID()}`,email:existing?.email??"",project:profile.project,role:existing?.role??profile.tmuxName,host:navigation.server.host,port:navigation.server.port,username:navigation.server.username,workdir:profile.workdir,tmux:{id:profile.tmuxId,created:profile.tmuxCreated,name:profile.tmuxName}},profile.project),null,2));
       })}>生成当前会话位置</Button></div>
     </details>
+    </div>
   </section>;
 }

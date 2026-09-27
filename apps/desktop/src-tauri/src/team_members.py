@@ -70,7 +70,10 @@ def read():
 
 
 if operation == 'memberLease':
-    owner = payload
+    request = json.loads(payload) if payload.startswith('{') else {'owner': payload}
+    owner = request.get('owner', '')
+    action = request.get('action', 'acquire')
+    assert action in ['acquire', 'release'], '采集锁操作无效'
     assert re.fullmatch(r'[a-zA-Z0-9-]{1,80}', owner), '采集端身份无效'
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     lease_path = root / (project + '.ai-lease.json')
@@ -78,6 +81,11 @@ if operation == 'memberLease':
         fcntl.flock(lock, fcntl.LOCK_EX)
         now = datetime.datetime.now(datetime.timezone.utc).timestamp()
         lease = json.loads(lease_path.read_text()) if lease_path.exists() else {}
+        if action == 'release':
+            released = lease.get('owner') == owner
+            if released: lease_path.unlink()
+            print(json.dumps({'released': released}))
+            sys.exit(0)
         granted = lease.get('owner') == owner or lease.get('until', 0) <= now
         if granted:
             fd, temp = tempfile.mkstemp(dir=root, prefix='.lease-')
@@ -87,7 +95,7 @@ if operation == 'memberLease':
                 os.replace(temp, lease_path)
             finally:
                 if os.path.exists(temp): os.unlink(temp)
-        print(json.dumps({'granted': granted}))
+        print(json.dumps({'granted': granted, 'retryAfter': 0 if granted else max(1, int(lease.get('until', 0) - now) + 1)}))
 elif operation == 'members':
     print(json.dumps(read(), ensure_ascii=False))
 else:

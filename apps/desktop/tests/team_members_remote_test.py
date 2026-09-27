@@ -11,6 +11,17 @@ SCRIPT = pathlib.Path(__file__).resolve().parents[1] / 'src-tauri/src/team_membe
 
 
 class RosterTest(unittest.TestCase):
+    def test_lease_release_checks_owner_and_allows_next_collector(self):
+        self.assertTrue(json.loads(self.call('memberLease', 'first').stdout)['granted'])
+        wrong = self.call('memberLease', json.dumps(dict(owner='second', action='release')))
+        self.assertFalse(json.loads(wrong.stdout)['released'])
+        blocked = json.loads(self.call('memberLease', 'second').stdout)
+        self.assertFalse(blocked['granted'])
+        self.assertGreater(blocked['retryAfter'], 0)
+        released = self.call('memberLease', json.dumps(dict(owner='first', action='release')))
+        self.assertTrue(json.loads(released.stdout)['released'])
+        self.assertTrue(json.loads(self.call('memberLease', 'second').stdout)['granted'])
+
     def test_ai_lease_and_stale_summary_rejection(self):
         self.assertTrue(json.loads(self.call('memberLease', 'device-one').stdout)['granted'])
         self.assertFalse(json.loads(self.call('memberLease', 'device-two').stdout)['granted'])

@@ -38,6 +38,7 @@ it("automatically retries failed capture when the worker SSH connection becomes 
   localStorage.setItem(TEAM_AI_CONFIG,JSON.stringify({endpoint:AI_PROVIDERS[1].endpoint,model:"example"}));
   vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
     if(command==="ssh_live_connections")return [];
+    if(command==="team_ai_capture_saved")throw new Error("连接失败");
     if(command==="team_ai_capture")return "等待派工";
     if(command==="team_ai_summarize")return {status:"idle",summary:"等待派工"};
     if(args?.request?.operation==="memberLease")return JSON.stringify({granted:true});
@@ -48,11 +49,11 @@ it("automatically retries failed capture when the worker SSH connection becomes 
   const onUpdated=vi.fn().mockResolvedValue(undefined);
   const view=render(<TeamDynamics sessionId="lead-ssh" profile={profile} members={[member]} navigation={navigation} onUpdated={onUpdated}/>);
   fireEvent.click(screen.getByText("开启自动总结"));fireEvent.click(screen.getByText("确认开启"));
-  await screen.findByText(/尚无可用 SSH 连接/);
+  await screen.findByText(/无法采集/);
   view.rerender(<TeamDynamics sessionId="lead-ssh" profile={profile} members={[member]} navigation={{...navigation,sessions:[{pane:{id:"worker-pane",server,tmux:member.tmux},backendId:"worker-ssh"}]}} onUpdated={onUpdated}/>);
   await screen.findByText("已更新 1 个摘要。");
   expect(invoke).toHaveBeenCalledWith("team_ai_capture",{sessionId:"worker-ssh",target:{id:"$2",created:123},workdir:"/repo"});
-  expect(screen.queryByText(/尚无可用 SSH 连接/)).toBeNull();
+  expect(screen.queryByText(/无法采集/)).toBeNull();
 });
 
 it("captures through backend inventory when the current window has no registered worker pane",async()=>{
@@ -72,12 +73,33 @@ it("captures through backend inventory when the current window has no registered
 
 it("explains unmatched live routes without capturing another user's terminal",async()=>{
   localStorage.setItem(TEAM_AI_CONFIG,JSON.stringify({endpoint:AI_PROVIDERS[1].endpoint,model:"example"}));
-  vi.mocked(invoke).mockResolvedValue([{sessionId:"wrong-user",host:member.host,port:22,username:"someone-else",tmux:member.tmux}]);
+  vi.mocked(invoke).mockImplementation(async(command)=>{
+    if(command==="ssh_live_connections")return [{sessionId:"wrong-user",host:member.host,port:22,username:"someone-else",tmux:member.tmux}];
+    throw new Error("认证失败");
+  });
   render(<TeamDynamics sessionId="lead-ssh" profile={profile} members={[member]} navigation={{server:{...server,id:"lead",host:"lead"},servers:[server],onOpen:vi.fn()}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
   fireEvent.click(screen.getByRole("button",{name:"总结 · 测试成员"}));
-  await screen.findByText(/后端在线连接 1 个/);
-  expect(screen.getByRole("alert").textContent).toContain("someone-else@remote:22");
+  await screen.findByText(/无法采集 dev@remote:22/);
+  expect(screen.getByRole("alert").textContent).toContain("认证失败");
   expect(vi.mocked(invoke).mock.calls.some(([c])=>c==="team_ai_capture"||c==="team_ai_summarize")).toBe(false);
+});
+
+it("summarizes unopened workers through their saved server without opening terminals",async()=>{
+  localStorage.setItem(TEAM_AI_CONFIG,JSON.stringify({endpoint:AI_PROVIDERS[1].endpoint,model:"example"}));
+  const onOpen=vi.fn();
+  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
+    if(command==="ssh_live_connections")return [];
+    if(command==="team_ai_capture_saved")return "任务完成";
+    if(command==="team_ai_summarize")return {status:"idle",summary:"任务完成"};
+    if(args?.request?.operation==="memberLease")return JSON.stringify({granted:true});
+    return JSON.stringify([member]);
+  });
+  render(<TeamDynamics sessionId="lead-ssh" profile={profile} members={[member]} navigation={{server:{...server,id:"lead",host:"lead"},servers:[server],onOpen}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
+  fireEvent.click(screen.getByText("总结全部"));
+  await screen.findByText("已更新 1/1 位 Worker。");
+  expect(invoke).toHaveBeenCalledWith("team_ai_capture_saved",{serverId:server.id,target:{id:"$2",created:123},workdir:"/repo"});
+  expect(onOpen).not.toHaveBeenCalled();
+  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==="ssh_connect"||c==="team_ai_capture")).toBe(false);
 });
 
 it("labels old AI summaries as expired instead of implying current status",()=>{
@@ -85,6 +107,110 @@ it("labels old AI summaries as expired instead of implying current status",()=>{
   render(<TeamDynamics sessionId="lead-ssh" profile={profile} members={[old]} navigation={{server,servers:[server],onOpen:vi.fn()}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
   expect(screen.getByText("摘要已过期 · 实现合账模块")).toBeTruthy();
   expect(screen.getByText("待确认")).toBeTruthy();
+});
+
+it.each([false,true])("releases its lease after a model request settles (failure=%s)",async(fail)=>{
+  localStorage.setItem(TEAM_AI_CONFIG,JSON.stringify({endpoint:AI_PROVIDERS[1].endpoint,model:"example"}));
+  const leases:string[]=[];
+  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
+    if(command==="team_ai_capture")return "等待派工";
+    if(command==="team_ai_summarize"){
+      if(fail)throw new Error("model unavailable");
+      return {status:"idle",summary:"等待派工"};
+    }
+    if(args?.request?.operation==="memberLease"){
+      leases.push(args.request.body);return JSON.stringify({granted:true});
+    }
+    return JSON.stringify([member]);
+  });
+  render(<TeamDynamics sessionId="ssh" profile={profile} members={[member]} navigation={{server,servers:[server],onOpen:vi.fn()}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
+  fireEvent.click(screen.getByRole("button",{name:"总结 · 测试成员"}));
+  await screen.findByText(fail?"model unavailable":"已更新 测试成员");
+  expect(leases).toHaveLength(2);
+  expect(JSON.parse(leases[1])).toEqual({owner:leases[0],action:"release"});
+});
+
+it("releases the lease after leaving the panel without writing a cancelled result",async()=>{
+  localStorage.setItem(TEAM_AI_CONFIG,JSON.stringify({endpoint:AI_PROVIDERS[1].endpoint,model:"example"}));
+  let finish!:(value:unknown)=>void;
+  const leases:string[]=[];
+  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
+    if(command==="team_ai_capture")return "等待派工";
+    if(command==="team_ai_summarize")return new Promise(resolve=>{finish=resolve;});
+    if(args?.request?.operation==="memberLease"){
+      leases.push(args.request.body);return JSON.stringify({granted:true});
+    }
+    return JSON.stringify([member]);
+  });
+  const view=render(<TeamDynamics sessionId="ssh" profile={profile} members={[member]} navigation={{server,servers:[server],onOpen:vi.fn()}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
+  fireEvent.click(screen.getByRole("button",{name:"总结 · 测试成员"}));
+  await waitFor(()=>expect(finish).toBeDefined());
+  view.unmount();
+  expect(leases).toHaveLength(1);
+  await act(async()=>{finish({status:"idle",summary:"等待派工"});});
+  expect(leases).toHaveLength(2);
+  expect(JSON.parse(leases[1])).toEqual({owner:leases[0],action:"release"});
+  expect(vi.mocked(invoke).mock.calls.some(([,a]:any)=>a?.request?.operation==="memberNotes")).toBe(false);
+});
+
+it("keeps automatic refresh enabled when another task holds the lease",async()=>{
+  localStorage.setItem(TEAM_AI_CONFIG,JSON.stringify({endpoint:AI_PROVIDERS[1].endpoint,model:"example"}));
+  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
+    if(command==="team_ai_capture")return "等待派工";
+    if(args?.request?.operation==="memberLease")return JSON.stringify({granted:false,retryAfter:45});
+    return JSON.stringify([member]);
+  });
+  render(<TeamDynamics sessionId="ssh" profile={profile} members={[member]} navigation={{server,servers:[server],onOpen:vi.fn()}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
+  fireEvent.click(screen.getByText("开启自动总结"));fireEvent.click(screen.getByText("确认开启"));
+  await screen.findByText(/约 45 秒后可重试/);
+  expect(screen.getByText("暂停")).toBeTruthy();
+  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==="team_ai_summarize")).toBe(false);
+  const leases=vi.mocked(invoke).mock.calls.filter(([,a]:any)=>a?.request?.operation==="memberLease");
+  expect(leases).toHaveLength(1);
+});
+
+it("excludes named and renamed Leads from summary rows, selection and capture",async()=>{
+  localStorage.setItem(TEAM_AI_CONFIG,JSON.stringify({endpoint:AI_PROVIDERS[1].endpoint,model:"example"}));
+  const lead={...member,email:"lead@example.test",role:"Lead"};
+  const renamed={...member,email:"renamed@example.test",role:"项目负责人",workdir:profile.workdir,tmux:{id:profile.tmuxId,created:profile.tmuxCreated,name:"lead"}};
+  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
+    if(command==="team_ai_capture")return "等待派工";
+    if(command==="team_ai_summarize")return {status:"idle",summary:"等待派工"};
+    if(args?.request?.operation==="memberLease")return JSON.stringify({granted:true});
+    return JSON.stringify([lead,renamed,member]);
+  });
+  render(<TeamDynamics sessionId="ssh" profile={profile} members={[lead,renamed,member]} navigation={{server,servers:[server],onOpen:vi.fn()}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
+  expect(screen.queryByText("Lead")).toBeNull();
+  expect(screen.queryByText("项目负责人")).toBeNull();
+  expect(screen.getByText("设置与详情 · 1 人")).toBeTruthy();
+  fireEvent.click(screen.getByText("开启自动总结"));fireEvent.click(screen.getByText("确认开启"));
+  await screen.findByText("已更新 1 人");
+  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==="team_ai_capture")).toHaveLength(1);
+});
+
+it("summarizes all workers beyond the automatic selection limit and continues after failure",async()=>{
+  localStorage.setItem(TEAM_AI_CONFIG,JSON.stringify({endpoint:AI_PROVIDERS[1].endpoint,model:"example"}));
+  const workers=Array.from({length:12},(_,i)=>({...member,email:`w${i}@example.test`,role:`worker ${i}`,tmux:{...member.tmux,id:`$${i+2}`}}));
+  const lead={...member,email:"lead@example.test",role:"Lead"};
+  let requests=0;
+  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
+    if(command==="team_ai_capture")return "等待派工";
+    if(command==="team_ai_summarize"){
+      if(++requests===2)throw new Error("model unavailable");
+      return {status:"idle",summary:"等待派工"};
+    }
+    if(args?.request?.operation==="memberLease")return JSON.stringify({granted:true});
+    return JSON.stringify([lead,...workers]);
+  });
+  render(<TeamDynamics sessionId="ssh" profile={profile} members={[lead,...workers]} navigation={{server,servers:[server],onOpen:vi.fn()}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
+  fireEvent.click(screen.getByLabelText("worker 0"));
+  fireEvent.click(screen.getByText("总结全部"));
+  await screen.findByText("已更新 11/12 位 Worker，未更新成员请展开查看详情。");
+  expect(requests).toBe(12);
+  expect(screen.getByText("model unavailable")).toBeTruthy();
+  expect(screen.getByText("开启自动总结")).toBeTruthy();
+  expect((screen.getByLabelText("worker 0") as HTMLInputElement).checked).toBe(false);
+  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==="team_ai_capture")).toHaveLength(12);
 });
 
 it("presets providers and stores keys only through the credential command",async()=>{
@@ -209,7 +335,7 @@ it.each([true,false])("requires preview and send; honors collector lease granted
     const call=vi.mocked(invoke).mock.calls.find(([,a]:any)=>a?.request?.operation==="memberNotes")![1] as any;
     expect(JSON.parse(call.request.body)).toMatchObject({aiStatus:"idle",aiSummary:"测试完成"});
   }else{
-    await screen.findByText(/另一台设备正在采集/);
+    await screen.findByText(/已有总结任务正在运行/);
     expect(vi.mocked(invoke).mock.calls.some(([c])=>c==="team_ai_summarize")).toBe(false);
   }
 });

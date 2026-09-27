@@ -89,14 +89,39 @@ pub fn team_ai_key(endpoint_url: String, key: Option<String>,profile_id:Option<S
 
 #[tauri::command]
 pub async fn team_ai_capture(ssh: State<'_, SshState>, session_id: String, target: Target, workdir: String) -> Result<String, String> {
+    let handle=ssh.get_handle(&session_id).await.ok_or("成员服务器未连接")?;
+    capture_handle(&handle, target, workdir).await
+}
+
+/// One-off read-only capture when the worker has no open local terminal.
+#[tauri::command]
+pub async fn team_ai_capture_saved(app: tauri::AppHandle, server_id: String, target: Target, workdir: String) -> Result<String, String> {
+    let server=servers::read_all(&app).map_err(|e|e.to_string())?.into_iter()
+        .find(|s|s.id==server_id).ok_or("保存的服务器不存在，请重新选择连接")?;
+    let params=crate::ssh::ConnectParams {
+        host:server.host, port:server.port, username:server.username,
+        secret:if server.auth_method=="publicKey" {server.key_path} else {None},
+        auth_method:server.auth_method, passphrase:None, server_id:Some(server.id),
+        cols:80, rows:24, tmux:None, tmux_workdir:None,
+    };
+    let handle=tokio::time::timeout(Duration::from_secs(20),crate::ssh::connect_handle(&params))
+        .await.map_err(|_|"连接成员服务器超时（20 秒），请检查地址和网络")?
+        .map_err(|e|e.to_string())?;
+    let handle=std::sync::Arc::new(handle);
+    let result=tokio::time::timeout(Duration::from_secs(20),capture_handle(&handle,target,workdir))
+        .await.map_err(|_|"读取成员终端超时（20 秒）".to_string()).and_then(|r|r);
+    let _=tokio::time::timeout(Duration::from_secs(3),handle.disconnect(russh::Disconnect::ByApplication,"capture complete","en")).await;
+    result
+}
+
+async fn capture_handle(handle: &crate::ssh::SharedHandle, target: Target, workdir: String) -> Result<String, String> {
     if !target.id.starts_with('$') || target.id.len()<2 || !target.id[1..].bytes().all(|b|b.is_ascii_digit())
         || target.created==0 || !workdir.starts_with('/') || workdir.contains('\0') {
         return Err("成员位置无效".into());
     }
-    let handle=ssh.get_handle(&session_id).await.ok_or("成员服务器未连接")?;
     let sid=quote(&format!("{}:",target.id));
     let command=format!("[ \"$(tmux display-message -p -t {sid} '#{{session_created}}' 2>/dev/null)\" = {} ] || {{ echo '成员会话已结束或重建' >&2; exit 1; }}; dssh_ai_pane=$(tmux display-message -p -t {sid} '#{{pane_id}}') || exit 1; dssh_ai_path=$(tmux display-message -p -t \"$dssh_ai_pane\" '#{{pane_current_path}}') || exit 1; dssh_ai_root=$(git -C \"$dssh_ai_path\" rev-parse --show-toplevel) || exit 1; [ \"$(cd \"$dssh_ai_root\" && pwd -P)\" = {} ] || {{ echo '成员工作区已变化' >&2; exit 1; }}; tmux capture-pane -p -J -t \"$dssh_ai_pane\" -S -80",target.created,quote(&workdir));
-    let text=execute(&handle,&command).await?;
+    let text=execute(handle,&command).await?;
     Ok(text.chars().rev().take(6000).collect::<String>().chars().rev().collect())
 }
 

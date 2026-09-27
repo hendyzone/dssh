@@ -15,6 +15,20 @@ const server:ServerEntry = {id:"local-device-id", name:"开发机", host:"remote
 const profile = {...emptyProfile(), enabled:true, taskboardEnabled:true, project:"demo", workdir:"/lead", tmuxId:"$1", tmuxCreated:100, tmuxName:"lead", taskboardUrl:"https://board.test"};
 beforeEach(() => { localStorage.clear(); vi.mocked(invoke).mockReset().mockResolvedValue(JSON.stringify([member])); });
 
+it("defaults to activity and switches roster views without remounting summaries",async()=>{
+  const onOpen=vi.fn().mockResolvedValue(undefined);
+  render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen}}/>);
+  const dynamics=screen.getByRole("region",{name:"团队动态"});
+  fireEvent.click(await screen.findByRole("button",{name:"打开 · cw2 · worker"}));
+  await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(member,server));
+  expect(screen.queryByRole("button",{name:"复制给 Lead 的提示词"})).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"成员 1"}));
+  expect(screen.queryByRole("region",{name:"团队动态"})).toBeNull();
+  expect(screen.getByRole("button",{name:"复制给 Lead 的提示词"})).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"动态"}));
+  expect(screen.getByRole("region",{name:"团队动态"})).toBe(dynamics);
+});
+
 it.each(["saved", "new"])("exits a %s team locally and lets the mistaken window bind a different project", async source=>{
   const pane={id:"lead",server,tmux:{id:"$1",created:100,name:"worker"}};
   const other={...profile,tmuxId:"$7"};
@@ -55,6 +69,7 @@ it("copies a project-specific executable Lead guide without credentials or remot
   Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
   const p={...profile,workdir:"/lead's repo",tokenFile:"/private/token"};
   render(<TeamMembers sessionId="ssh" profile={p} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
+  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   await screen.findByRole("button",{name:"打开终端 · cw2"});
   const count=vi.mocked(invoke).mock.calls.length;
   fireEvent.click(screen.getByRole("button",{name:"复制给 Lead 的提示词"}));
@@ -71,6 +86,7 @@ it("shows Lead notes and edits them without sending a stale terminal location",a
   const annotated={...member,responsibilities:"后端",quota:"未知",currentTask:"T12 测试中",notes:"等待审查"};
   vi.mocked(invoke).mockResolvedValue(JSON.stringify([annotated]));
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
+  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   await screen.findByText("后端",{exact:false});
   expect(screen.getByLabelText("成员摘要").textContent).toContain("T12 测试中");
   expect(screen.getByText("详细信息").closest("details")?.open).toBe(false);
@@ -106,6 +122,7 @@ it("reuses a live split pane across saved IDs only after verifying its remote wo
 it("reads the shared remote roster and opens the member with this device's connection", async () => {
   const onOpen = vi.fn().mockResolvedValue(undefined);
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server, servers:[server], onOpen}}/>);
+  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   fireEvent.click(await screen.findByRole("button", {name:"打开终端 · cw2"}));
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(member, server));
   expect(invoke).toHaveBeenCalledWith("collaboration_request", {sessionId:"lead-ssh", profile, request:{operation:"members", body:""}});
@@ -116,6 +133,7 @@ it("requires an explicit alias mapping when no endpoint matches and remembers it
   const onOpen = vi.fn().mockResolvedValue(undefined);
   const props = {sessionId:"lead-ssh", profile, navigation:{server, servers:[alias], onOpen}};
   const view = render(<TeamMembers {...props}/>);
+  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   const button = await screen.findByRole("button", {name:"打开终端 · cw2"});
   expect((button as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(screen.getByLabelText("本机连接 · cw2"), {target:{value:alias.id}});
@@ -123,6 +141,7 @@ it("requires an explicit alias mapping when no endpoint matches and remembers it
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(member, alias));
   view.unmount();
   render(<TeamMembers {...props}/>);
+  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   fireEvent.click(await screen.findByRole("button",{name:"管理"}));
   expect((await screen.findByLabelText("本机连接 · cw2") as HTMLSelectElement).value).toBe(alias.id);
 });
@@ -130,6 +149,7 @@ it("requires an explicit alias mapping when no endpoint matches and remembers it
 it("reports stale sessions and never silently retargets a member", async () => {
   const onOpen = vi.fn().mockRejectedValue(new Error("成员会话已结束"));
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server, servers:[server], onOpen}}/>);
+  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   fireEvent.click(await screen.findByRole("button", {name:"打开终端 · cw2"}));
   expect((await screen.findByRole("alert")).textContent).toContain("成员会话已结束");
   expect(onOpen).toHaveBeenCalledTimes(1);
@@ -137,6 +157,7 @@ it("reports stale sessions and never silently retargets a member", async () => {
 
 it("registers only validated location fields and does not send agent messages", async () => {
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server, servers:[server], onOpen:vi.fn()}}/>);
+  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   await screen.findByRole("button",{name:"打开终端 · cw2"});
   fireEvent.change(screen.getByLabelText("成员位置 JSON"), {target:{value:JSON.stringify({...member, password:"secret"})}});
   fireEvent.click(screen.getByRole("button", {name:"登记到当前团队"}));
@@ -148,6 +169,7 @@ it("adds an open terminal without email or JSON using its actual remote worktree
   vi.mocked(invoke).mockImplementation(async (command,args:any)=>command==="collaboration_worktree"?"/worker/repo":args.request.operation==="memberSave"?JSON.stringify([JSON.parse(args.request.body)]):"[]");
   const pane={id:"worker-pane",server,tmux:{id:"$9",created:987,name:"后端开发"}};
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server,servers:[server],sessions:[{pane,backendId:"worker-ssh"}],onOpen:vi.fn()}}/>);
+  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   await screen.findByText("把成员终端放在一起");
   fireEvent.click(screen.getByRole("button",{name:"添加成员"}));
   fireEvent.change(screen.getByLabelText("成员终端"),{target:{value:"worker-pane"}});
@@ -241,11 +263,12 @@ it("groups current work ahead of idle members without inferring unknown status",
     {...member,email:"unknown@example.test",role:"未知成员",currentTask:"待确认\n历史：空闲"},
   ]));
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
+  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   const working=await screen.findByRole("region",{name:"工作中成员"});
   expect(working.textContent).toContain("工作成员");
   expect(screen.getByRole("region",{name:"空闲成员"}).textContent).toContain("空闲成员");
   expect(screen.getByRole("region",{name:"待确认成员"}).textContent).toContain("未知成员");
-  expect(screen.getAllByRole("region").map(el=>el.getAttribute("aria-label"))).toEqual(["团队成员","团队动态","工作中成员","空闲成员","待确认成员"]);
+  expect(screen.getAllByRole("region").map(el=>el.getAttribute("aria-label"))).toEqual(["团队成员","工作中成员","空闲成员","待确认成员"]);
 });
 
 it.each([true,false])("promotes a member only after checking the migrated roster (present=%s)",async migrated=>{

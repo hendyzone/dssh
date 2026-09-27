@@ -11,12 +11,17 @@ type LiveConnection={sessionId:string;serverId?:string;host:string;port:number;u
 
 const states={working:"工作中",waiting:"等待处理",idle:"空闲",unknown:"待确认"} as const;
 type State=keyof typeof states;
+class LeaseBusyError extends Error {}
 type Clip={member:TeamMember;text:string;digest:string;source:string};
 const sourceOf=(m:TeamMember)=>JSON.stringify([m.host,m.port,m.username,m.workdir,m.tmux.id,m.tmux.created]);
-export default function TeamDynamics({sessionId,profile,navigation,members,onUpdated}:{sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>}){
+export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,onUpdated}:{sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>}){
+  const members=rosterMembers.filter(m=>!(/^lead\b/i.test(m.role.trim())||(
+    m.tmux.id===profile.tmuxId&&m.tmux.created===profile.tmuxCreated&&
+    m.workdir===profile.workdir&&m.username===navigation.server.username
+  )));
   const [config,setConfig]=useState(loadTeamAi);
   const [selection,setSelection]=useState<string[]|null>(null);
-  const selected=selection??members.slice(0,10).map(memberKey);
+  const selected=selection?.filter(id=>members.some(m=>memberKey(m)===id))??members.slice(0,10).map(memberKey);
   const [confirmAuto,setConfirmAuto]=useState(false);
   const [consent,setConsent]=useState("");
   const [clips,setClips]=useState<Clip[]>([]);
@@ -24,6 +29,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members,onUpd
   const [allowAuto,setAllowAuto]=useState(false);
   const [busy,setBusy]=useState(false);
   const [singleBusy,setSingleBusy]=useState<string>();
+  const [batchProgress,setBatchProgress]=useState("");
   const [notice,setNotice]=useState("");
   const [issues,setIssues]=useState<Record<string,string>>({});
   const running=useRef(false);
@@ -60,8 +66,11 @@ export default function TeamDynamics({sessionId,profile,navigation,members,onUpd
           backend=resolved.backend;server=resolved.server??server;
         }
         if(!server)throw new Error("未找到对应连接，请在成员管理里选择本机服务器");
-        if(!backend)throw new Error(`服务器“${server.name}”尚无可用 SSH 连接：${server.username}@${server.host}:${server.port}\n成员会话：${member.tmux.id} · 创建时间 ${member.tmux.created} · ${member.workdir}\n后端在线连接 ${live.length} 个：\n${live.map(s=>`${s.username}@${s.host}:${s.port} · ${s.tmux?`${s.tmux.id} / ${s.tmux.created}`:"普通 SSH"}${s.tmuxWorkdir?` · ${s.tmuxWorkdir}`:""}`).join("\n")||"无"}\n请打开此成员终端后重试；地址不同可在成员管理中重新选择连接。`);
-        const raw=await invoke<string>("team_ai_capture",{sessionId:backend,target:{id:member.tmux.id,created:member.tmux.created},workdir:member.workdir});
+        const target={id:member.tmux.id,created:member.tmux.created};
+        if(!alive.current||version!==revision.current)break;
+        const raw=backend
+          ?await invoke<string>("team_ai_capture",{sessionId:backend,target,workdir:member.workdir})
+          :await invoke<string>("team_ai_capture_saved",{serverId:server.id,target,workdir:member.workdir}).catch(e=>{throw new Error(`无法采集 ${server!.username}@${server!.host}:${server!.port}：${String(e)}。请在成员管理中核对连接地址和已保存的凭据。`);});
         const text=redactTerminal(raw);if(!text)throw new Error("没有可总结的输出");
         const source=sourceOf(member);
         const digest=await excerptDigest(JSON.stringify([config,source,text]));
@@ -78,7 +87,8 @@ export default function TeamDynamics({sessionId,profile,navigation,members,onUpd
       const current=latest.current.find(m=>memberKey(m)===memberKey(clip.member));
       if(!current||sourceOf(current)!==clip.source)continue;
       const lease=JSON.parse(await collaborationRequest(sessionId,profile,{operation:"memberLease",body:owner.current}));
-      if(lease.granted!==true)throw new Error("另一台设备正在采集此团队，请稍后重试（最多等待 3 分钟）。");
+      if(lease.granted!==true)throw new LeaseBusyError(`已有总结任务正在运行，约 ${Math.min(180,Math.max(1,Number(lease.retryAfter)||180))} 秒后可重试；自动总结会继续重试。`);
+      try{
       if(!alive.current||version!==revision.current)break;
       const roster:TeamMember[]=JSON.parse(await collaborationRequest(sessionId,profile,{operation:"members"})).map((m:unknown)=>parseMember(m,profile.project));
       const fresh=roster.find(m=>memberKey(m)===memberKey(clip.member));
@@ -90,12 +100,17 @@ export default function TeamDynamics({sessionId,profile,navigation,members,onUpd
         aiSummary:summary.summary,aiStatus:summary.status,aiUpdatedAt:new Date().toISOString(),aiDigest:clip.digest,aiSource:clip.source,aiEvidence:clip.text.slice(-1000)})});
       count++;
       await onUpdated();
+      }finally{
+        // Keep the lease until an in-flight model request settles, even after
+        // unmount/cancellation. Release only our own lease on every exit path.
+        await collaborationRequest(sessionId,profile,{operation:"memberLease",body:JSON.stringify({owner:owner.current,action:"release"})}).catch(()=>{});
+      }
     }
     return count;
   };
   const perform=async(action:()=>Promise<void>,stopAutoOnError=true)=>{
     if(running.current)return;running.current=true;setBusy(true);setNotice("");
-    try{await action();}catch(e){if(alive.current){setNotice(String(e));if(stopAutoOnError)setAuto(false);}}
+    try{await action();}catch(e){if(alive.current){setNotice(e instanceof Error?e.message:String(e));if(stopAutoOnError&&!(e instanceof LeaseBusyError))setAuto(false);}}
     finally{running.current=false;if(alive.current)setBusy(false);}
   };
   const summarizeMember=(member:TeamMember)=>void perform(async()=>{
@@ -105,6 +120,24 @@ export default function TeamDynamics({sessionId,profile,navigation,members,onUpd
       const count=await summarize(batch,version,true);
       if(alive.current&&version===revision.current)setNotice(count?`已更新 ${member.role}`:`${member.role} 未能更新，请展开查看详情。`);
     }finally{if(alive.current)setSingleBusy(undefined);}
+  },false);
+  const summarizeAll=()=>void perform(async()=>{
+    const version=revision.current;
+    const ids=members.map(memberKey);
+    let count=0;
+    try{
+      for(let index=0;index<ids.length;index++){
+        if(!alive.current||version!==revision.current)return;
+        setBatchProgress(`总结中 ${index+1}/${ids.length}`);
+        const batch=await capture(version,[ids[index]],true);
+        try{count+=await summarize(batch,version,true);}
+        catch(e){
+          if(e instanceof LeaseBusyError)throw e;
+          if(alive.current&&version===revision.current)setIssues(old=>({...old,[ids[index]]:e instanceof Error?e.message:String(e)}));
+        }
+      }
+      if(alive.current&&version===revision.current)setNotice(`已更新 ${count}/${ids.length} 位 Worker${count<ids.length?"，未更新成员请展开查看详情。":"。"}`);
+    }finally{if(alive.current)setBatchProgress("");}
   },false);
   const scope=JSON.stringify([config,selected.map(id=>{const m=members.find(m=>memberKey(m)===id);return m?[id,sourceOf(m)]:[id];})]);
   useEffect(()=>{revision.current++;setAuto(false);setConfirmAuto(false);},[scope]);
@@ -134,7 +167,10 @@ export default function TeamDynamics({sessionId,profile,navigation,members,onUpd
   },[connectionKey,auto]);
   return <section className="team-dynamics" aria-label="团队动态">
     <div className="team-toolbar"><strong>团队动态 <small>{auto?"每分钟自动更新":"AI 摘要"}</small></strong>
+      <div className="team-summary-actions">
+      <Button size="sm" variant="outline" disabled={busy||!members.length||!config.endpoint||!config.model} title={`使用 ${configName(config)} 发送并总结全部 ${members.length} 位 Worker 的终端输出`} onClick={summarizeAll}>{batchProgress||"总结全部"}</Button>
       {auto?<Button size="sm" variant="ghost" onClick={()=>{revision.current++;setAuto(false);setNotice("已暂停");}}>暂停</Button>:<Button size="sm" disabled={busy||!selected.length||!config.endpoint||!config.model} onClick={()=>consent===scope?startAuto():setConfirmAuto(true)}>开启自动总结</Button>}
+      </div>
     </div>
     {(!config.endpoint||!config.model)&&<p>先到「设置 → 云端摘要」添加模型配置。</p>}
     {confirmAuto&&<div className="team-ai-confirm">
@@ -163,7 +199,11 @@ export default function TeamDynamics({sessionId,profile,navigation,members,onUpd
         const valid=m.aiSource===sourceOf(m)&&m.aiSummary;
         const expired=valid&&!(Date.now()-Date.parse(m.aiUpdatedAt??"")<300000);
         const {server}=connection(m);
-        return <details className="team-ai-row" key={memberKey(m)}><summary><strong title={m.role}>{m.role}</strong><span>{issues[memberKey(m)]?"采集失败，待确认":valid?`${expired?"摘要已过期 · ":""}${m.aiSummary}`:"尚未总结"}</span><Button className="team-ai-single" size="sm" variant="ghost" aria-label={`总结 · ${m.role}`} title={`使用 ${configName(config)} 发送并总结此成员的终端输出`} disabled={busy||!config.endpoint||!config.model} onClick={e=>{e.preventDefault();e.stopPropagation();summarizeMember(m);}}>{singleBusy===memberKey(m)?"总结中…":"总结"}</Button></summary>
+        return <details className="team-ai-row" key={memberKey(m)}><summary><strong className="team-ai-identity" title={`${m.role} · ${m.tmux.name}`}>
+          {m.role}<small>{m.tmux.name}</small>
+        </strong><span className="team-ai-summary">{issues[memberKey(m)]?"采集失败，待确认":valid?`${expired?"摘要已过期 · ":""}${m.aiSummary}`:"尚未总结"}</span>
+        <div className="team-ai-row-actions"><Button size="sm" variant="ghost" disabled={!server||busy} aria-label={`打开 · ${m.role} · ${m.tmux.name}`} onClick={e=>{e.preventDefault();e.stopPropagation();if(server)void perform(()=>navigation.onOpen(m,server));}}>打开</Button>
+        <Button className="team-ai-single" size="sm" variant="ghost" aria-label={`总结 · ${m.role}`} title={`使用 ${configName(config)} 发送并总结此成员的终端输出`} disabled={busy||!config.endpoint||!config.model} onClick={e=>{e.preventDefault();e.stopPropagation();summarizeMember(m);}}>{singleBusy===memberKey(m)?"总结中…":"总结"}</Button></div></summary>
           <p>AI 推测，非实时状态。更新时间：{valid&&m.aiUpdatedAt?new Date(m.aiUpdatedAt).toLocaleString():"暂无"}</p>
           {issues[memberKey(m)]&&<p role="alert" style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{issues[memberKey(m)]}</p>}
           {valid&&m.aiEvidence&&<details><summary>上次成功采集的片段</summary><pre>{m.aiEvidence}</pre></details>}

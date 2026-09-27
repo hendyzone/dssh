@@ -38,6 +38,11 @@ pub fn run() {
             let menu = Menu::default(app.handle())?;
             menu.append(&view)?;
             app.set_menu(menu)?;
+            // Hide the Windows menu strip while retaining native accelerators.
+            #[cfg(windows)]
+            for window in app.webview_windows().values() {
+                window.hide_menu()?;
+            }
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -60,6 +65,7 @@ pub fn run() {
             team_ai::team_ai_key,
             team_ai::team_ai_models,
             team_ai::team_ai_capture,
+            team_ai::team_ai_capture_saved,
             team_ai::team_ai_summarize,
             collaboration::collaboration_request,
             collaboration::collaboration_worktree,

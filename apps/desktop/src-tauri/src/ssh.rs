@@ -202,6 +202,13 @@ pub async fn ssh_connect(
         params.auth_method
     );
 
+    let handle = connect_handle(&params).await?;
+    open_terminal(app, state, params, handle).await
+}
+
+/// Authenticate without opening a PTY or starting/attaching a shell.
+pub(crate) async fn connect_handle(params: &ConnectParams) -> Result<ClientHandle, SshError> {
+
     let config = Arc::new(russh::client::Config {
         // 不主动断连；每 15s 发 keepalive 防 NAT/防火墙断线
         inactivity_timeout: None,
@@ -258,7 +265,10 @@ pub async fn ssh_connect(
     if !auth_result.success() {
         return Err(SshError::Other("认证失败：用户名或密码/密钥不正确".into()));
     }
+    Ok(handle)
+}
 
+async fn open_terminal(app: AppHandle, state: State<'_, SshState>, params: ConnectParams, handle: ClientHandle) -> Result<String, SshError> {
     // ---- 打开交互式 shell 通道 ----
     let channel = handle.channel_open_session().await?;
     channel
