@@ -342,6 +342,16 @@ it("subscribes to output before injecting the directory hook", async () => {
   expect(visible).toContain("ready$ ");
 });
 
+it("restores an ordinary shell directory after the echo marker and reports its cwd", async () => {
+  render(<TerminalView {...props} session={{ ...props.session, restoreCwd: "/repo/中文 folder" }} />);
+  await settle();
+  const command = mocks.invoke.mock.calls.find(c => c[0] === "ssh_write")?.[1].data;
+  expect(command).toContain("cd -- '/repo/中文 folder'");
+  expect(command).toContain("export DSSH_PANE_ID='pane' DSSH_CONNECTION_ID='backend'");
+  expect(command.indexOf("dssh-init-")).toBeLessThan(command.indexOf("cd --"));
+  expect(command.endsWith("; __dssh_osc7\r")).toBe(true);
+});
+
 it("starts tmux only after subscribing and never types a shell hook into its pane", async () => {
   const tmux = { id: "$2", created: 123, name: "work" };
   mocks.invoke.mockImplementation(async (command: string) => {
@@ -352,7 +362,7 @@ it("starts tmux only after subscribing and never types a shell hook into its pan
         "ssh://backend/data",
       ]);
   });
-  render(<TerminalView {...props} session={{ ...props.session, tmux }} />);
+  render(<TerminalView {...props} session={{ ...props.session, tmux, restoreCwd: "/repo" }} />);
   await settle();
   expect(mocks.invoke).toHaveBeenCalledWith(
     "ssh_connect",
@@ -395,6 +405,32 @@ it("reattaches the same tmux identity on manual reconnect without shell injectio
   expect(
     mocks.invoke.mock.calls.filter((c) => c[0] === "ssh_write"),
   ).toHaveLength(0);
+});
+
+it("keeps an unavailable restored tmux target disconnected without falling back to a shell", async () => {
+  mocks.invoke.mockRejectedValue(new Error("tmux session no longer exists"));
+  render(<TerminalView {...props} session={{ ...props.session, tmux: { id: "$2", created: 123, name: "work" }, restoreCwd: "/repo" }} />);
+  await settle();
+  expect(screen.getByRole("button", { name: /点此重连/ })).toBeTruthy();
+  expect(mocks.invoke.mock.calls.filter(c => c[0] === "ssh_connect")).toHaveLength(1);
+  expect(mocks.invoke.mock.calls.some(c => c[0] === "ssh_write")).toBe(false);
+});
+
+it("uses the latest observed cwd when a restored ordinary shell reconnects", async () => {
+  const callbacks = new Map<string, (event: { payload: any }) => void>();
+  mocks.listen.mockImplementation(async (event: string, callback: (event: { payload: any }) => void) => {
+    callbacks.set(event, callback);
+    return () => {};
+  });
+  render(<TerminalView {...props} session={{ ...props.session, restoreCwd: "/old" }} />);
+  await settle();
+  const command = mocks.invoke.mock.calls.find(c => c[0] === "ssh_write")![1].data;
+  const marker = command.match(/dssh-init-[a-f0-9-]+/)![0];
+  act(() => callbacks.get("ssh://backend/data")!({ payload: `\x1b]1337;${marker}\x07\x1b]7;file://host/new\x07` }));
+  act(() => callbacks.get("ssh://backend/exit")!({ payload: 0 }));
+  fireEvent.click(screen.getByRole("button", { name: /点此重连/ }));
+  await settle();
+  expect(mocks.invoke.mock.calls.filter(c => c[0] === "ssh_write").at(-1)![1].data).toContain("cd -- '/new'");
 });
 
 it("automatically recovers network loss but does not reattach after an intentional detach", async () => {

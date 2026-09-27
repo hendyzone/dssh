@@ -4,6 +4,8 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import TasksPanel, { useTasks } from "./components/TasksPanel";
 import { useClaudeStatus, claudeTaskId, type ClaudeHost } from "./lib/claudeStatus";
+import { useAiStatus, aiTaskId } from "./lib/aiStatus";
+import { invoke } from "@tauri-apps/api/core";
 import ChangesPanel from "./components/ChangesPanel";
 import { focusTask, taskLabels } from "./lib/taskStatus";
 import ToolRail from "./components/ToolRail";
@@ -13,6 +15,7 @@ import { collaborationKey, useActiveCollaboration, useCollaboration } from "./li
 import { connectedMemberTab, type TeamMember } from "./lib/teamMembers";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWindowClose } from "./lib/useWindowClose";
+import { loadWorkspace, saveWorkspace } from "./lib/workspaceRestore";
 import { confirmAction } from "./lib/confirm";
 import { preventBrowserContextMenu } from "./lib/contextMenu";
 import logoUrl from "./assets/logo.png";
@@ -92,6 +95,8 @@ export default function App() {
   const [recentIds, setRecentIds] = useState(loadRecentConnections);
   const [sidebarRevision, setSidebarRevision] = useState(0);
   const [tabs, setTabs] = useState<TabInfo[]>([]);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [connectionGroups, setConnectionGroups] = useState<ConnectionGroup[]>(
     [],
   );
@@ -111,15 +116,55 @@ export default function App() {
     const sessionId = backendIds[pane.id];
     if (sessionId && !claudeHosts.has(pane.server.id)) claudeHosts.set(pane.server.id, {serverId:pane.server.id, name:pane.server.name, sessionId});
   }));
-  const claudeSnapshots = useClaudeStatus([...claudeHosts.values()]);
+  const aiSnapshots = useAiStatus([...claudeHosts.values()], tabs.flatMap(tab => tab.panes), backendIds);
+  const claudeSnapshots = useClaudeStatus([...claudeHosts.values()], Object.entries(aiSnapshots).flatMap(([serverId, snapshot]) =>
+    snapshot.tasks.filter(task => task.provider === "claude" && task.tmux).map(task => ({ serverId, id: task.tmux!.id, created: task.tmux!.created }))));
+  const [taskNavigationError, setTaskNavigationError] = useState<string | null>(null);
   useEffect(() => {
     const tab = tabs.find(item => item.id === activeTabId);
     const pane = tab?.panes[tab.activePane];
     if (!pane?.tmux || document.hidden || !document.hasFocus()) return;
+    const remote = pane.tmux;
+    const ai = aiSnapshots[pane.server.id]?.tasks.find(task => task.active && task.tmux?.id === remote.id && task.tmux?.created === remote.created);
+    if (ai) { focusTask(aiTaskId(pane.server.id, ai.id)); return; }
     const task = claudeSnapshots[pane.server.id]?.tasks.find(item => item.tmux?.id === pane.tmux?.id);
     if (task) focusTask(claudeTaskId(pane.server.id, task.id));
-  }, [claudeSnapshots, activeTabId, tabs]);
+  }, [claudeSnapshots, aiSnapshots, activeTabId, tabs]);
   const selectTask = (id: string) => {
+    setTaskNavigationError(null);
+    if (id.startsWith("ai:")) {
+      for (const host of claudeHosts.values()) {
+        const task = aiSnapshots[host.serverId]?.tasks.find(item => aiTaskId(host.serverId, item.id) === id);
+        if (!task) continue;
+        const server = servers.find(item => item.id === host.serverId);
+        if (!server) return;
+        if (task.tmux) {
+          // Verify the incarnation and pane membership before changing remote focus.
+          const remote = task.tmux;
+          void invoke("tmux_action", { sessionId: host.sessionId, request: {
+            action: "select-pane", session: { id: remote.id, created: remote.created }, target: remote.pane,
+          } }).then(() => {
+            const existing = findTmuxTab(tabs, server, remote, activeTabId);
+            if (existing) {
+              setActiveTabId(existing.tab.id); focusPane(existing.tab.id, existing.paneIndex);
+              setConnectionGroups(groups => groups.map(group => group.id === existing.tab.groupId ? { ...group, collapsed: false } : group));
+            }
+            else connect(server, undefined, remote);
+            focusTask(id);
+          }).catch(error => setTaskNavigationError(`无法打开 AI 窗格：${String(error)}`));
+        } else {
+          const tab = tabs.find(item => item.panes.some(pane => pane.id === task.paneId && pane.server.id === host.serverId));
+          if (tab) {
+            setActiveTabId(tab.id); focusPane(tab.id, tab.panes.findIndex(pane => pane.id === task.paneId)); focusTask(id);
+            setConnectionGroups(groups => groups.map(group => group.id === tab.groupId ? { ...group, collapsed: false } : group));
+          }
+          else setTaskNavigationError("来源终端已关闭，无法跳转到旧的 AI 会话。");
+        }
+        return;
+      }
+      setTaskNavigationError("AI 会话当前不可用，请连接对应服务器后重试。");
+      return;
+    }
     if (id.startsWith("claude:")) {
       for (const tab of tabs) for (const pane of tab.panes) {
         const task = claudeSnapshots[pane.server.id]?.tasks.find(item => claudeTaskId(pane.server.id, item.id) === id);
@@ -141,6 +186,16 @@ export default function App() {
       focusTask(id);
     }
   };
+  const selectTaskRef = useRef(selectTask);
+  selectTaskRef.current = selectTask;
+  useEffect(() => {
+    const open = (event: Event) => {
+      const id = (event as CustomEvent<unknown>).detail;
+      if (typeof id === "string") selectTaskRef.current(id);
+    };
+    window.addEventListener("dssh-open-task", open);
+    return () => window.removeEventListener("dssh-open-task", open);
+  }, []);
   const [sidePanels, setSidePanels] = useState<Record<string, SidePanel>>({});
   const [formTarget, setFormTarget] = useState<ServerEntry | null | undefined>(
     null,
@@ -179,10 +234,27 @@ export default function App() {
   const closeError = useWindowClose(Object.values(backendIds).some(Boolean));
 
   useEffect(() => {
+    let disposed = false;
     applyTheme(getTheme(settings.themeId));
     loadServers()
-      .then(setServers)
-      .catch((e) => console.error("加载服务器列表失败:", e));
+      .then(loaded => {
+        if (disposed) return;
+        setServers(loaded);
+        try {
+          const saved = loadWorkspace(loaded);
+          setTabs(saved.tabs);
+          setActiveTabId(saved.activeTabId);
+          setConnectionGroups(saved.groups);
+          setPaneCwds(saved.cwds);
+          setWorkspaceReady(true);
+        } catch (error) {
+          setWorkspaceError(`工作现场恢复失败，原记录已保留，本次不会覆盖：${String(error)}`);
+        }
+      })
+      .catch((e) => {
+        if (!disposed) setWorkspaceError(`加载服务器列表失败，未恢复工作现场：${String(e)}`);
+      });
+    return () => { disposed = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -211,6 +283,16 @@ export default function App() {
 
   /** 各窗格远端 shell 的当前目录（TerminalView 经 OSC 7 上报） */
   const [paneCwds, setPaneCwds] = useState<Record<string, string>>({});
+  useEffect(() => {
+    // Never overwrite the saved workspace with the initial empty render.
+    if (!workspaceReady) return;
+    try {
+      saveWorkspace({ tabs, activeTabId, groups: connectionGroups, cwds: paneCwds });
+      setWorkspaceError(null);
+    } catch (error) {
+      setWorkspaceError(`工作现场保存失败：${String(error)}`);
+    }
+  }, [workspaceReady, tabs, activeTabId, connectionGroups, paneCwds]);
   const collaborationPane=tabs.find(t=>t.id===activeTabId)?.panes[tabs.find(t=>t.id===activeTabId)?.activePane??0];
   const activeCollaboration=useActiveCollaboration(collaborationProfiles,collaborationPane,backendIds[collaborationPane?.id??""],paneCwds[collaborationPane?.id??""]);
   const setPaneCwd = useCallback((paneId: string, cwd: string) => {
@@ -712,6 +794,8 @@ export default function App() {
 
   return (
     <div className="app">
+      {workspaceError && <div role="alert">{workspaceError}</div>}
+      {taskNavigationError && <div role="alert">{taskNavigationError}</div>}
       {closeError && (
         <div className="window-close-error" role="alert">
           {closeError}
@@ -891,6 +975,9 @@ export default function App() {
                   {panel === "tasks" && (
                     <PanelDock kind="tasks">
                       <TasksPanel
+                        sessionId={activePaneBackend ?? undefined}
+                        serverName={t.panes[t.activePane]?.server.name}
+                        statusError={aiSnapshots[t.panes[t.activePane]?.server.id]?.error}
                         onClose={() => togglePanel(t.id, null)}
                         onSelect={selectTask}
                       />

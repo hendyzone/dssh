@@ -1,6 +1,7 @@
 mod commands;
 mod collaboration;
 mod claude;
+mod ai;
 mod diagnostics;
 mod forward;
 mod monitor;
@@ -71,6 +72,8 @@ pub fn run() {
             collaboration::collaboration_worktree,
             collaboration::collaboration_export_guide,
             claude::claude_status,
+            ai::ai_status,
+            ai::ai_setup,
             commands::desktop_devtools,
             commands::desktop_report_error,
             commands::desktop_restart,

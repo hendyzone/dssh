@@ -1,6 +1,8 @@
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 
 export type TaskPhase =
+  | "ready"
+  | "stopped"
   | "running"
   | "working"
   | "waiting"
@@ -17,13 +19,18 @@ export interface TaskStatus {
   estimated: boolean;
   updated: number;
   unread: boolean;
+  provider?: "claude" | "codex" | "pi";
+  sourcePaneId?: string;
 }
 const states = new Map<string, TaskStatus>();
 const tails = new Map<string, string>();
 const subscribers = new Set<() => void>();
 let focused = "";
 let desktop = false;
+const openTask = (id: string) => window.dispatchEvent(new CustomEvent("dssh-open-task", { detail: id }));
 export const taskLabels: Record<TaskPhase, string> = {
+  ready: "等待输入",
+  stopped: "工具已退出",
   running: "有新输出",
   working: "处理中",
   waiting: "需要关注",
@@ -34,7 +41,8 @@ export const taskLabels: Record<TaskPhase, string> = {
   disconnected: "连接断开",
 };
 export function taskSnapshot() {
-  return [...states.values()].sort((a, b) => b.updated - a.updated);
+  const linked = new Set([...states.values()].map(task => task.sourcePaneId).filter(Boolean));
+  return [...states.values()].filter(task => !linked.has(task.id)).sort((a, b) => b.updated - a.updated);
 }
 export function subscribeTasks(fn: () => void) {
   subscribers.add(fn);
@@ -44,11 +52,13 @@ export function subscribeTasks(fn: () => void) {
 }
 export function focusTask(id: string) {
   focused = id;
-  const task = states.get(id);
-  if (task?.unread) {
-    states.set(id, { ...task, unread: false });
-    subscribers.forEach((fn) => fn());
-  }
+  let changed = false;
+  states.forEach((task, key) => {
+    if ((key === id || task.sourcePaneId === id) && task.unread) {
+      states.set(key, { ...task, unread: false }); changed = true;
+    }
+  });
+  if (changed) subscribers.forEach((fn) => fn());
 }
 export function removeTask(id: string) {
   states.delete(id);
@@ -79,13 +89,15 @@ export function reportTask(
   estimated = false,
   notify = true,
   eventTime?: number,
+  metadata?: Pick<TaskStatus, "provider" | "sourcePaneId">,
 ) {
   const old = states.get(id);
-  const background=focused !== id || document.hidden || !document.hasFocus();
+  const meta = metadata ?? (old?.provider ? { provider: old.provider, sourcePaneId: old.sourcePaneId } : undefined);
+  const background=(focused !== id && focused !== meta?.sourcePaneId) || document.hidden || !document.hasFocus();
   const important = ["waiting", "done", "idle", "error", "disconnected"].includes(
     phase,
   );
-  const changed = !old || old.phase !== phase || old.message !== message || (eventTime !== undefined && old.updated !== eventTime);
+  const changed = !old || old.phase !== phase || old.message !== message || old.estimated !== estimated || old.sourcePaneId !== meta?.sourcePaneId || (eventTime !== undefined && old.updated !== eventTime);
   if (!changed && Date.now() - (old?.updated ?? 0) < 1500) return;
   states.set(id, {
     id,
@@ -95,6 +107,7 @@ export function reportTask(
     estimated,
     updated: eventTime ?? Date.now(),
     unread: important && background && ((notify && changed) || !!old?.unread),
+    ...meta,
   });
   if (
     important &&
@@ -105,48 +118,63 @@ export function reportTask(
   ) {
     try {
       if ("__TAURI_INTERNALS__" in window) {
-        sendNotification({title:name, body:taskLabels[phase]});
-      } else if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(name, {
+        sendNotification({title:name, body:taskLabels[phase] + (estimated ? "（推测）" : ""), extra: { taskId: id }});
+      } else if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        const notice = new Notification(name, {
         body: taskLabels[phase] + (estimated ? "（推测）" : ""),
         tag: id,
       });
+        notice.onclick = () => { window.focus(); openTask(id); notice.close(); };
+      }
     } catch {}
   }
   subscribers.forEach((fn) => fn());
 }
 export function ingestTaskOutput(id: string, name: string, chunk: string) {
+  const linked = [...states.values()].find(task => task.sourcePaneId === id && task.provider);
   const combined = (tails.get(id) ?? "") + chunk;
   tails.set(id, combined.slice(-8192));
   // Explicit terminal notification protocols, including a small adapter protocol.
   const matches = [
     ...combined.matchAll(
-      /\x1b\](?:777;notify;([^;]*);([^\x07\x1b]*)|9;([^\x07\x1b]*)|777;dssh;(running|waiting|done|error);([^\x07\x1b]*))(?:\x07|\x1b\\)/g,
+      /\x1b\](?:777;notify;([^;]*);([^\x07\x1b]*)|9;([^\x07\x1b]*)|777;dssh;(running|working|waiting|idle|done|error);([^\x07\x1b]*))(?:\x07|\x1b\\)/g,
     ),
   ];
   if (matches.length) {
     const m = matches[matches.length - 1];
     tails.set(id, combined.slice((m.index ?? 0) + m[0].length));
+    if (linked && !m[4]) return; // Generic OSC toasts must not overwrite lifecycle hooks.
     reportTask(
-      id,
-      name,
+      linked?.id ?? id,
+      linked?.name ?? name,
       (m[4] as TaskPhase) || "waiting",
       m[5] || m[2] || m[3] || m[1] || "工具发出通知",
       false,
+      true,
+      undefined,
+      linked ? { provider: linked.provider, sourcePaneId: linked.sourcePaneId } : undefined,
     );
     return;
   }
   const text = chunk
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/[\x00-\x1f]/g, " ");
+  if (linked && linked.provider !== "pi") return;
   if (
     /(?:Do you want to proceed|Allow this|needs your (?:input|permission)|是否允许|需要批准)/i.test(
       text,
     )
   ) {
-    reportTask(id, name, "waiting", "终端出现确认提示", true);
+    reportTask(linked?.id ?? id, linked?.name ?? name, "waiting", "终端出现确认提示", true, true, undefined,
+      linked ? { provider: linked.provider, sourcePaneId: linked.sourcePaneId } : undefined);
     return;
   }
-  if (/(?:Worked for \d|task completed|任务已完成)/i.test(text)) {
+  if (linked) return;
+  if (/Worked for \d/i.test(text)) {
+    reportTask(id, name, "idle", "终端出现本轮结束提示", true);
+    return;
+  }
+  if (/(?:task completed|任务已完成)/i.test(text)) {
     reportTask(id, name, "done", "终端出现完成提示", true);
     return;
   }

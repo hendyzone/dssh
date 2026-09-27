@@ -1,7 +1,12 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import App from "../src/App";
-import { deleteServer } from "../src/store";
+import { deleteServer, loadServers } from "../src/store";
+import { loadWorkspace, saveWorkspace } from "../src/lib/workspaceRestore";
+import { StrictMode, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+
+const terminalMock = vi.hoisted(() => ({ connected: false }));
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
@@ -37,10 +42,18 @@ vi.mock("../src/components/TerminalView", () => ({
   default: ({
     active,
     inputEnabled = true,
+    session,
+    onBackendReady,
   }: {
     active: boolean;
     inputEnabled?: boolean;
-  }) => (
+    session: { id: string };
+    onBackendReady: (id: string, backend: string) => void;
+  }) => {
+    useEffect(() => {
+      if (terminalMock.connected) onBackendReady(session.id, `ssh-${session.id}`);
+    }, [session.id, onBackendReady]);
+    return (
     <div className="terminal-view">
       <textarea
         aria-label="Terminal input"
@@ -48,15 +61,67 @@ vi.mock("../src/components/TerminalView", () => ({
         data-enabled={inputEnabled}
       />
     </div>
-  ),
+    );
+  },
 }));
 vi.mock("../src/components/MonitorBar", () => ({ default: () => null }));
 vi.mock("../src/components/SftpPanel", () => ({ default: () => null }));
 vi.mock("../src/components/ForwardPanel", () => ({ default: () => null }));
 
 beforeEach(() => {
+  terminalMock.connected = false;
+  vi.mocked(invoke).mockReset().mockResolvedValue([]);
   vi.mocked(deleteServer).mockReset().mockResolvedValue(undefined);
   vi.spyOn(window, "confirm").mockReturnValue(true);
+});
+
+it("routes an AI notification to the exact tmux pane with the backend request contract", async () => {
+  terminalMock.connected = true;
+  const servers = await loadServers();
+  const remote = { id: "$7", created: 123, name: "agent", pane: "%9" };
+  const task = { id: "a".repeat(64), provider: "codex", phase: "waiting", updated: 100, revision: "1", tmux: remote };
+  vi.mocked(invoke).mockImplementation(async command => command === "ai_status" ? [task] : []);
+  saveWorkspace({ tabs: [{ id: "saved", activePane: 0, panes: [{ id: "one", server: servers[0], tmux: remote }] }],
+    activeTabId: "saved", groups: [], cwds: {} });
+  const view = render(<App />);
+  await act(async () => {});
+  await act(async () => window.dispatchEvent(new CustomEvent("dssh-open-task", { detail: `ai:server:${task.id}` })));
+  expect(invoke).toHaveBeenCalledWith("tmux_action", { sessionId: "ssh-one", request: {
+    action: "select-pane", session: { id: "$7", created: 123 }, target: "%9",
+  } });
+  expect(view.container.querySelectorAll(".tab")).toHaveLength(1);
+  expect(view.container.querySelector(".tab.active")).toBeTruthy();
+});
+
+it("restores the workspace after server loading even in StrictMode and persists changes across reopening", async () => {
+  const servers = await loadServers();
+  saveWorkspace({
+    tabs: [{ id: "saved", customTitle: "恢复的工作", splitDir: "column", activePane: 1,
+      panes: [{ id: "one", server: servers[0] }, { id: "two", server: servers[0], tmux: { id: "$7", created: 123, name: "agent" } }] }],
+    activeTabId: "saved", groups: [], cwds: { one: "/repo" },
+  });
+  const first = render(<StrictMode><App /></StrictMode>);
+  await act(async () => {});
+  expect(first.container.querySelectorAll(".tab")).toHaveLength(1);
+  expect(first.container.querySelectorAll(".pane")).toHaveLength(2);
+  expect((first.container.querySelector(".panes") as HTMLElement).style.flexDirection).toBe("column");
+  expect(first.container.querySelectorAll(".pane")[1].classList.contains("focused")).toBe(true);
+  expect(loadWorkspace(servers).tabs[0].panes[1].tmux).toEqual({ id: "$7", created: 123, name: "agent" });
+  fireEvent.doubleClick(first.container.querySelector(".server-item")!);
+  first.unmount();
+  const reopened = render(<App />);
+  await act(async () => {});
+  expect(reopened.container.querySelectorAll(".tab")).toHaveLength(2);
+  expect(reopened.container.querySelectorAll(".pane")).toHaveLength(3);
+  expect(reopened.container.querySelector(".tab")?.textContent).toContain("恢复的工作");
+});
+
+it("reports damaged workspace data without overwriting it on startup", async () => {
+  localStorage.setItem("dssh.workspace.v1", "broken");
+  render(<App />);
+  await act(async () => {});
+  expect(screen.getByRole("alert").textContent).toContain("工作现场恢复失败");
+  expect(localStorage.getItem("dssh.workspace.v1")).toBe("broken");
 });
 
 it("requires explicit confirmation before deleting a saved connection", async () => {

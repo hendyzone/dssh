@@ -35,6 +35,8 @@ export interface SessionInfo {
   tmux?: { id: string; created: number; name: string };
   /** Expected member worktree, checked again on each SSH attachment. */
   tmuxWorkdir?: string;
+  /** Last observed directory, used only when opening a fresh non-tmux shell. */
+  restoreCwd?: string;
 }
 
 /** 一个标签页：1-2 个窗格（分屏） */

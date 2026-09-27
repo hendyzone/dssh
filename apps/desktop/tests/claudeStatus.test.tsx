@@ -19,3 +19,10 @@ it("monitors independently of panels, notifies only new events, and marks failur
   expect(reportTask).toHaveBeenCalledWith("claude:host:task", "Server", "disconnected", "无法读取 Claude 状态", false);
   view.unmount();
 });
+it("does not duplicate a legacy Claude notification after unified tmux events are available", async () => {
+  const tmux = { id: "$1", created: 123 };
+  vi.mocked(invoke).mockResolvedValue([{ id: "task", title: "Fix", tmux, status: { phase: "idle", updated: 1 } }]);
+  const view = renderHook(() => useClaudeStatus([{serverId:"host", name:"Server", sessionId:"ssh"}], [{serverId:"host", ...tmux}]));
+  await waitFor(() => expect(view.result.current.host).toBeTruthy());
+  expect(reportTask).not.toHaveBeenCalled();
+});

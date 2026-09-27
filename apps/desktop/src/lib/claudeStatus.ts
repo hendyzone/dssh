@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { TmuxSession } from "./tmux";
 import { reportTask, removeTask } from "./taskStatus";
@@ -16,7 +16,9 @@ export const claudeLabels: Record<ClaudePhase, string> = {
 export interface ClaudeHost {serverId: string; name: string; sessionId: string}
 export interface ClaudeSnapshot {tasks: ClaudeTask[]; error: string; loading: boolean}
 export const claudeTaskId = (serverId: string, taskId: string) => `claude:${serverId}:${taskId}`;
-export function useClaudeStatus(hosts: ClaudeHost[]) {
+export function useClaudeStatus(hosts: ClaudeHost[], unifiedTmux: { serverId: string; id: string; created: number }[] = []) {
+  const unifiedRef = useRef(unifiedTmux);
+  unifiedRef.current = unifiedTmux;
   const [snapshots, setSnapshots] = useState<Record<string, ClaudeSnapshot>>({});
   const key = JSON.stringify(hosts);
   useEffect(() => {
@@ -34,6 +36,10 @@ export function useClaudeStatus(hosts: ClaudeHost[]) {
         setSnapshots(old => ({...old, [host.serverId]:{tasks, error:"", loading:false}}));
         for (const task of tasks) {
           const id = claudeTaskId(host.serverId, task.id);
+          if (task.tmux && unifiedRef.current.some(item => item.serverId === host.serverId &&
+              item.id === task.tmux?.id && item.created === task.tmux?.created)) {
+            removeTask(id); taskIds.delete(id); seen.delete(id); continue;
+          }
           taskIds.add(id);
           const revision = `${task.status.updated}:${task.status.phase}`;
           // Only event changes produce reminders. Silence is never completion.

@@ -15,6 +15,7 @@ import { findImageAtPoint } from "../lib/kittyPreview";
 import { createEchoSuppressor, type EchoSuppressor } from "../lib/echoSuppress";
 import { isAppShortcut, isComposingKey } from "../lib/keyboard";
 import { OSC7_HOOK } from "../lib/shellIntegration";
+import { restoreDirectoryCommand } from "../lib/workspaceRestore";
 import { trackTerminalIme } from "../lib/terminalIme";
 import { trackTerminalInputScroll } from "../lib/terminalInputScroll";
 import { createTerminalOutput } from "../lib/terminalOutput";
@@ -341,6 +342,7 @@ export default function TerminalView({
     let disposed = false;
     let term: Terminal | null = null;
     let backendId: string | null = null;
+    let lastCwd = session.restoreCwd;
     // session 变化时，先把外部状态点恢复为连接中。
     setConnectionState("connecting");
     onStateChangeRef.current?.(session.id, "connecting");
@@ -638,8 +640,10 @@ export default function TerminalView({
           const handleChunk = (chunk: string) => {
             const scanned = scanOsc7(oscCarry, chunk);
             oscCarry = scanned.carry;
-            if (scanned.path)
+            if (scanned.path) {
+              lastCwd = scanned.path;
               onCwdChangeRef.current?.(session.id, scanned.path);
+            }
             output!.push(chunk);
           };
           const dataUnlisten = await listen<string>(
@@ -696,7 +700,10 @@ export default function TerminalView({
             }
           }, 6000);
           const command =
-            OSC7_HOOK.slice(0, -1) + `; printf '\\033]1337;${marker}\\007'\r`;
+            OSC7_HOOK.slice(0, -1) + `; export DSSH_PANE_ID='${session.id.replace(/'/g, "'\"'\"'")}'` +
+            ` DSSH_CONNECTION_ID='${newBackendId.replace(/'/g, "'\"'\"'")}'` +
+            `; printf '\\033]1337;${marker}\\007'` +
+            restoreDirectoryCommand(lastCwd) + "; __dssh_osc7\r";
           await invoke("ssh_write", { sessionId: newBackendId, data: command });
           if (!disposed && backendId === newBackendId) updateState("connected");
         } catch (e) {

@@ -122,7 +122,8 @@ it.each([
 ])("executes %s after mouse down and up", async (action, remaining) => {
   const view = await setup();
   fireEvent.contextMenu(tab("Beta"));
-  clickMenuItem(action);
+  // Closing other/right tabs awaits the connection confirmation before committing.
+  await act(async () => clickMenuItem(action));
   expect(view.container.querySelectorAll(".tab")).toHaveLength(remaining.length);
   for (const name of remaining) expect(tab(name)).toBeTruthy();
   expect(screen.queryByRole("menu")).toBeNull();
