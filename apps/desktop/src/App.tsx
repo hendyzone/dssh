@@ -29,6 +29,8 @@ import {
   IconSplitV,
 } from "./components/Icons";
 import MonitorBar from "./components/MonitorBar";
+import LinuxTitleBar, { linuxTitleBar } from "./components/LinuxTitleBar";
+import { LOCAL_SHELL, isLocalShell } from "./lib/localShell";
 import TmuxPanel from "./components/TmuxPanel";
 import { findTmuxTab } from "./lib/tmuxTabs";
 import type { TmuxSession } from "./lib/tmux";
@@ -113,6 +115,7 @@ export default function App() {
   const taskStates = useTasks();
   const claudeHosts = new Map<string, ClaudeHost>();
   tabs.forEach(tab => tab.panes.forEach(pane => {
+    if (isLocalShell(pane.server)) return;
     const sessionId = backendIds[pane.id];
     if (sessionId && !claudeHosts.has(pane.server.id)) claudeHosts.set(pane.server.id, {serverId:pane.server.id, name:pane.server.name, sessionId});
   }));
@@ -310,7 +313,7 @@ export default function App() {
     tmuxWorkdir?: string,
   ) => {
     // 每点一次开一个新连接（同一服务器可开任意多个标签）
-    setRecentIds((previous) => rememberConnection(previous, server.id));
+    if (!isLocalShell(server)) setRecentIds((previous) => rememberConnection(previous, server.id));
     const pane: SessionInfo = { id: crypto.randomUUID(), server, tmux, tmuxWorkdir };
     const tab: TabInfo = {
       id: crypto.randomUUID(),
@@ -393,7 +396,7 @@ export default function App() {
     if (!pane) return;
     if (
       backendIds[pane.id] &&
-      !(await confirmAction("此窗格仍有 SSH 会话连接中，确定要关闭吗？"))
+      !(await confirmAction("此窗格仍有终端会话运行中，确定要关闭吗？"))
     )
       return;
     if (tab.panes.length === 1) {
@@ -448,7 +451,7 @@ export default function App() {
 
   const closeOtherTabs = async (tabId: string) => {
     const ids = tabs.filter((tab) => tab.id !== tabId).map((tab) => tab.id);
-    if (!(await confirmClose(ids, "其他标签仍有 SSH 会话连接中，确定要关闭吗？")))
+    if (!(await confirmClose(ids, "其他标签仍有终端会话运行中，确定要关闭吗？")))
       return;
     removeTabs(ids, tabId);
     setContextMenu(null);
@@ -458,7 +461,7 @@ export default function App() {
     const index = tabs.findIndex((tab) => tab.id === tabId);
     if (index < 0) return;
     const ids = tabs.slice(index + 1).map((tab) => tab.id);
-    if (!(await confirmClose(ids, "右侧标签仍有 SSH 会话连接中，确定要关闭吗？")))
+    if (!(await confirmClose(ids, "右侧标签仍有终端会话运行中，确定要关闭吗？")))
       return;
     removeTabs(ids, tabId);
     setContextMenu(null);
@@ -678,7 +681,7 @@ export default function App() {
     if (
       !(await confirmClose(
         ids,
-        "此分组仍有 SSH 会话连接中，确定要关闭组内全部连接吗？",
+        "此分组仍有终端会话运行中，确定要关闭组内全部连接吗？",
       ))
     )
       return;
@@ -793,7 +796,8 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app${linuxTitleBar ? " has-linux-titlebar" : ""}`}>
+      <LinuxTitleBar />
       {workspaceError && <div role="alert">{workspaceError}</div>}
       {taskNavigationError && <div role="alert">{taskNavigationError}</div>}
       {closeError && (
@@ -900,10 +904,12 @@ export default function App() {
             >
               ＋ 新建服务器
             </Button>
+            <Button variant="outline" size="sm" onClick={() => connect(LOCAL_SHELL)}>打开本地终端</Button>
           </div>
         ) : (
           tabs.map((t) => {
-            const panel = sidePanels[t.id] ?? null;
+            const local = isLocalShell(t.panes[t.activePane].server);
+            const panel = local ? null : sidePanels[t.id] ?? null;
             const activePaneBackend =
               backendIds[t.panes[t.activePane]?.id ?? ""] ?? null;
             const collaboration = t.id === activeTabId ? activeCollaboration : undefined;
@@ -914,20 +920,20 @@ export default function App() {
                 hidden={t.id !== activeTabId}
               >
                 <div className="session-content">
-                  <ToolRail
+                  {!local && <ToolRail
                     side="left"
                     teamEnabled={!!t.panes[t.activePane]?.tmux}
                     collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
-                  />
-                  <ToolRail
+                  />}
+                  {!local && <ToolRail
                     side="right"
                     teamEnabled={!!t.panes[t.activePane]?.tmux}
                     collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
-                  />
+                  />}
                   <div
                     className="panes"
                     style={{
@@ -1051,12 +1057,12 @@ export default function App() {
                     </PanelDock>
                   )}
                 </div>
-                <MonitorBar
+                {!local && <MonitorBar
                   backendId={activePaneBackend}
                   detailsOpen={panel === "monitor"}
                   onDetailsToggle={() => togglePanel(t.id, "monitor")}
                   targetId={"monitor-dock-" + t.id}
-                />
+                />}
               </div>
             );
           })
@@ -1146,6 +1152,9 @@ export default function App() {
             onMouseDown={(event) => event.stopPropagation()}
           >
             <h3 id="server-picker-title">新建标签</h3>
+            <Button variant="outline" className="server-picker-item" onClick={() => {
+              connect(LOCAL_SHELL); setServerPickerOpen(false);
+            }}><strong>本地终端</strong><span>在这台电脑上打开 shell</span></Button>
             <p className="server-picker-hint">
               选择一个服务器建立新会话 · 最近使用优先
             </p>

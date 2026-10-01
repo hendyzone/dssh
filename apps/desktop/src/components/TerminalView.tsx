@@ -14,6 +14,7 @@ import wasmUrl from "ghostty-web/ghostty-vt.wasm?url";
 import { findImageAtPoint } from "../lib/kittyPreview";
 import { createEchoSuppressor, type EchoSuppressor } from "../lib/echoSuppress";
 import { isAppShortcut, isComposingKey } from "../lib/keyboard";
+import { isLocalShell, quoteLocalPath } from "../lib/localShell";
 import { OSC7_HOOK } from "../lib/shellIntegration";
 import { restoreDirectoryCommand } from "../lib/workspaceRestore";
 import { trackTerminalIme } from "../lib/terminalIme";
@@ -86,6 +87,9 @@ export default function TerminalView({
   onStateChange,
   onCwdChange,
 }: Props) {
+  const local = isLocalShell(session.server);
+  const protocol = local ? "local" : "ssh";
+  const terminalCommand = (action: string) => `${protocol}_${action}`;
   const taskName =
     session.server.name + (session.tmux ? " · " + session.tmux.name : "");
   useEffect(() => {
@@ -119,6 +123,7 @@ export default function TerminalView({
     try {
       let text = remoteOnly ? "" : (termRef.current?.getSelection() ?? "");
       if (!text) {
+        if (local) throw new Error("请先选中要复制的终端文本");
         if (!target) throw new Error("SSH 连接已断开");
         text = await invoke<string>("tmux_copy_buffer", { sessionId: target });
       }
@@ -138,6 +143,7 @@ export default function TerminalView({
   };
   const imageBusy = useRef(false);
   const pasteImage = async (blob?: Blob) => {
+    if (local) { setClipboardError("本地终端暂不支持截图粘贴，请粘贴文本或文件路径。"); return; }
     const target = backendRef.current;
     if (
       !target ||
@@ -176,6 +182,11 @@ export default function TerminalView({
     }
   };
   const pasteFiles = async (files: File[] = [], localPaths: string[] = []) => {
+    if (local) {
+      if (localPaths.length) termRef.current?.paste(localPaths.map(p => quoteLocalPath(p)).join(" ") + " ");
+      else setClipboardError("请从文件管理器复制文件路径，再粘贴到本地终端。");
+      return;
+    }
     const target = backendRef.current;
     if (!target || imageBusy.current || !activeRef.current || !inputEnabledRef.current) return;
     imageBusy.current = true;
@@ -342,6 +353,7 @@ export default function TerminalView({
     let disposed = false;
     let term: Terminal | null = null;
     let backendId: string | null = null;
+    let localWrites: Promise<unknown> = Promise.resolve();
     let lastCwd = session.restoreCwd;
     // session 变化时，先把外部状态点恢复为连接中。
     setConnectionState("connecting");
@@ -532,14 +544,17 @@ export default function TerminalView({
       // 输入和 resize 回调始终复用这个 Terminal；连接断开时 backendId 会被清空。
       const dataSub = t.onData((data: string) => {
         if (backendId) {
-          invoke("ssh_write", { sessionId: backendId, data }).catch(() => {});
+          const sessionId = backendId;
+          if (local) {
+            localWrites = localWrites.then(() => disposed ? undefined : invoke("local_write", { sessionId, data })).catch(() => {});
+          } else invoke("ssh_write", { sessionId, data }).catch(() => {});
         }
       });
       cleanups.push(() => dataSub.dispose());
       const resizeSub = t.onResize(
         ({ cols, rows }: { cols: number; rows: number }) => {
           if (backendId) {
-            invoke("ssh_resize", { sessionId: backendId, cols, rows }).catch(
+            invoke(terminalCommand("resize"), { sessionId: backendId, cols, rows }).catch(
               () => {},
             );
           }
@@ -555,7 +570,7 @@ export default function TerminalView({
 
         let newBackendId: string;
         try {
-          newBackendId = await invoke<string>("ssh_connect", {
+          newBackendId = local ? await invoke<string>("local_connect", { cols: t.cols, rows: t.rows, cwd: lastCwd ?? null }) : await invoke<string>("ssh_connect", {
             params: {
               host: server.host,
               port: server.port,
@@ -589,7 +604,7 @@ export default function TerminalView({
         }
 
         if (disposed) {
-          invoke("ssh_disconnect", { sessionId: newBackendId }).catch(() => {});
+          invoke(terminalCommand("disconnect"), { sessionId: newBackendId }).catch(() => {});
           return;
         }
 
@@ -600,7 +615,7 @@ export default function TerminalView({
         // 先注册 exit，再注册 data，确保连接刚建立就断开时仍能反馈给 UI。
         try {
           const exitUnlisten = await listen<number>(
-            `ssh://${newBackendId}/exit`,
+            `${protocol}://${newBackendId}/exit`,
             (e: { payload: number }) => {
               // 旧连接排队中的事件不能影响新连接。
               if (backendId !== newBackendId || disposed) return;
@@ -613,7 +628,7 @@ export default function TerminalView({
                 session.id,
                 taskName,
                 "disconnected",
-                "SSH 终端连接已断开，远程任务可能仍在运行",
+                local ? "本地 shell 已退出" : "SSH 终端连接已断开，远程任务可能仍在运行",
               );
               const msg =
                 e.payload >= 0 ? `进程退出 (exit=${e.payload})` : "连接已断开";
@@ -621,7 +636,7 @@ export default function TerminalView({
                 `\r\n\x1b[33m⟫ ${msg}\r\n⟫ [已断开] 按 R 或点此重连\x1b[0m\r\n`,
               );
               // 从后端会话表移除已失效句柄，避免重连留下旧连接。
-              invoke("ssh_disconnect", { sessionId: newBackendId }).catch(
+              invoke(terminalCommand("disconnect"), { sessionId: newBackendId }).catch(
                 () => {},
               );
               if (session.tmux && e.payload < 0) {
@@ -647,7 +662,7 @@ export default function TerminalView({
             output!.push(chunk);
           };
           const dataUnlisten = await listen<string>(
-            `ssh://${newBackendId}/data`,
+            `${protocol}://${newBackendId}/data`,
             (e: { payload: string }) => {
               if (backendId !== newBackendId || disposed) return;
               ingestTaskOutput(session.id, taskName, e.payload);
@@ -672,11 +687,11 @@ export default function TerminalView({
           }
           backendListeners.push(dataUnlisten);
 
-          await invoke("ssh_start", { sessionId: newBackendId });
+          await invoke(terminalCommand("start"), { sessionId: newBackendId });
           if (disposed || backendId !== newBackendId) return;
           // An attached tmux pane may be running vim, a REPL or a foreground job.
           // Never inject shell initialization into it.
-          if (session.tmux) {
+          if (session.tmux || local) {
             recovering = false;
             retryCount = 0;
             updateState("connected");
@@ -704,7 +719,7 @@ export default function TerminalView({
             ` DSSH_CONNECTION_ID='${newBackendId.replace(/'/g, "'\"'\"'")}'` +
             `; printf '\\033]1337;${marker}\\007'` +
             restoreDirectoryCommand(lastCwd) + "; __dssh_osc7\r";
-          await invoke("ssh_write", { sessionId: newBackendId, data: command });
+          await invoke(terminalCommand("write"), { sessionId: newBackendId, data: command });
           if (!disposed && backendId === newBackendId) updateState("connected");
         } catch (e) {
           detachBackendListeners();
@@ -714,7 +729,7 @@ export default function TerminalView({
             onBackendReady(session.id, null);
             updateState("disconnected");
             t.write(`\x1b[31m✗ 初始化终端失败：${String(e)}\x1b[0m\r\n`);
-            invoke("ssh_disconnect", { sessionId: newBackendId }).catch(
+            invoke(terminalCommand("disconnect"), { sessionId: newBackendId }).catch(
               () => {},
             );
           }
@@ -754,7 +769,7 @@ export default function TerminalView({
       cleanups.forEach((fn) => fn());
       if (backendId) {
         onBackendReady(session.id, null);
-        invoke("ssh_disconnect", { sessionId: backendId }).catch(() => {});
+        invoke(terminalCommand("disconnect"), { sessionId: backendId }).catch(() => {});
       }
       backendRef.current = null;
       fitRef.current = null;
@@ -904,8 +919,7 @@ export default function TerminalView({
       )}
       {connectionState === "connecting" && (
         <div className="terminal-connection-status" role="status">
-          正在连接 {session.server.username}@{session.server.host}:
-          {session.server.port}…
+          {local ? "正在启动本地 shell…" : `正在连接 ${session.server.username}@${session.server.host}:${session.server.port}…`}
         </div>
       )}
       {isDisconnected && (

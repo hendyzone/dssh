@@ -1,4 +1,5 @@
 mod commands;
+mod local_shell;
 mod collaboration;
 mod claude;
 mod ai;
@@ -27,6 +28,7 @@ pub fn run() {
             #[cfg(windows)]
             diagnostics::watch_webview_process(app.handle());
             app.manage(ssh::SshState::default());
+            app.manage(local_shell::LocalState::default());
             app.manage(preview::PreviewState::default());
             app.manage(monitor::MonitorState::default());
             app.manage(forward::ForwardState::default());
@@ -39,12 +41,19 @@ pub fn run() {
             let menu = Menu::default(app.handle())?;
             menu.append(&view)?;
             app.set_menu(menu)?;
-            // Hide the Windows menu strip while retaining native accelerators.
-            #[cfg(windows)]
+            // Desktop menu strips clash with the themed workspace on Linux too.
+            #[cfg(any(windows, target_os = "linux"))]
             for window in app.webview_windows().values() {
                 window.hide_menu()?;
+                #[cfg(target_os = "linux")]
+                if window.label() == "main" { window.set_decorations(false)?; }
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.state::<local_shell::LocalState>().shutdown();
+            }
         })
         .on_menu_event(|app, event| {
             if let Some(window) = app.get_webview_window("main") {
@@ -63,6 +72,11 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            local_shell::local_connect,
+            local_shell::local_start,
+            local_shell::local_write,
+            local_shell::local_resize,
+            local_shell::local_disconnect,
             team_ai::team_ai_key,
             team_ai::team_ai_models,
             team_ai::team_ai_capture,

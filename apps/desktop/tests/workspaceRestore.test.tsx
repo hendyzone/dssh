@@ -1,6 +1,18 @@
 import { expect, it } from "vitest";
 import { loadWorkspace, saveWorkspace, restoreDirectoryCommand, type Workspace } from "../src/lib/workspaceRestore";
 import type { ServerEntry } from "../src/types";
+import { LOCAL_SHELL, quoteLocalPath } from "../src/lib/localShell";
+
+it("restores local split panes without an SSH server or credentials", () => {
+  saveWorkspace({ tabs: [{ id: "local-tab", activePane: 1, splitDir: "row", panes: [
+    { id: "local-1", server: LOCAL_SHELL }, { id: "local-2", server: LOCAL_SHELL },
+  ] }], activeTabId: "local-tab", groups: [], cwds: {} });
+  const restored = loadWorkspace([]);
+  expect(restored.tabs[0].panes.map(p => p.server)).toEqual([LOCAL_SHELL, LOCAL_SHELL]);
+  expect(restored.tabs[0].activePane).toBe(1);
+  expect(quoteLocalPath("/tmp/a'b $(whoami)", false)).toBe("'/tmp/a'\"'\"'b $(whoami)'");
+  expect(quoteLocalPath("C:\\a'b $(whoami)", true)).toBe("'C:\\a''b $(whoami)'");
+});
 
 const server: ServerEntry = { id: "server", name: "Host", host: "example.com", port: 22, username: "root", authMethod: "publicKey", keyPath: "secret-key-path" };
 const fixture = (): Workspace => ({

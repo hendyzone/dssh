@@ -1,6 +1,7 @@
 import type { ServerEntry, SessionInfo, TabInfo } from "../types";
 import type { ConnectionGroup } from "./connectionGroups";
 import { sameSshEndpoint } from "./tmuxTabs";
+import { LOCAL_SHELL, isLocalShell } from "./localShell";
 
 const KEY = "dssh.workspace.v1";
 export interface Workspace {
@@ -22,7 +23,7 @@ export function saveWorkspace({ tabs, activeTabId, groups, cwds }: Workspace): v
       id: tab.id, groupId: tab.groupId, customTitle: tab.customTitle,
       splitDir: tab.splitDir, activePane: tab.activePane,
       panes: tab.panes.map(pane => ({
-        id: pane.id, serverId: pane.server.id,
+        id: pane.id, serverId: pane.server.id, kind: pane.server.kind,
         endpoint: { host: pane.server.host, port: pane.server.port, username: pane.server.username },
         tmux: pane.tmux, tmuxWorkdir: pane.tmuxWorkdir,
         cwd: cwds[pane.id] ?? pane.restoreCwd,
@@ -55,9 +56,10 @@ export function loadWorkspace(servers: ServerEntry[]): Workspace {
     let activePane = 0;
     for (const [index, pane] of tab.panes.slice(0, 2).entries()) {
       if (!object(pane) || typeof pane.id !== "string" || ids.has(pane.id)) continue;
-      const server = servers.find(s => s.id === pane.serverId);
-      if (!server || !object(pane.endpoint) || typeof pane.endpoint.host !== "string" ||
-          !sameSshEndpoint(server, pane.endpoint as ServerEntry)) continue;
+      const server = pane.kind === "local" ? LOCAL_SHELL : servers.find(s => s.id === pane.serverId);
+      if (!server || (!isLocalShell(server) && (!object(pane.endpoint) || typeof pane.endpoint.host !== "string" ||
+          !sameSshEndpoint(server, pane.endpoint as ServerEntry)))) continue;
+      if (isLocalShell(server) && (pane.tmux || pane.tmuxWorkdir)) continue;
       // An invalid tmux identity must never silently become an ordinary shell.
       if (pane.tmux !== undefined && (!object(pane.tmux) ||
           typeof pane.tmux.id !== "string" || !/^\$\d+$/.test(pane.tmux.id) ||

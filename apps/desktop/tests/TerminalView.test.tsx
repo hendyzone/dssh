@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import TerminalView from "../src/components/TerminalView";
+import { LOCAL_SHELL } from "../src/lib/localShell";
 
 const mocks = vi.hoisted(() => ({
   init: vi.fn(),
@@ -90,6 +91,22 @@ const props = {
   settings: { themeId: "tokyo-night", fontSize: 14, fontFamily: "monospace" },
   onBackendReady: vi.fn(),
 };
+
+it("starts local shells only after listeners, routes input and cleans up without SSH", async () => {
+  mocks.invoke.mockImplementation(async command => command === "local_connect" ? "local-test" : undefined);
+  const view = render(<TerminalView {...props} session={{ id: "local-pane", server: LOCAL_SHELL }} />);
+  await act(async () => {});
+  expect(mocks.invoke).toHaveBeenCalledWith("local_connect", { cols: 80, rows: 24, cwd: null });
+  expect(mocks.listen).toHaveBeenCalledWith("local://local-test/data", expect.any(Function));
+  const listenOrder = mocks.listen.mock.invocationCallOrder.at(-1)!;
+  const startIndex = mocks.invoke.mock.calls.findIndex(([command]) => command === "local_start");
+  expect(mocks.invoke.mock.invocationCallOrder[startIndex]).toBeGreaterThan(listenOrder);
+  await act(async () => { mocks.instances[0].data("echo hello\r"); });
+  expect(mocks.invoke).toHaveBeenCalledWith("local_write", { sessionId: "local-test", data: "echo hello\r" });
+  view.unmount();
+  expect(mocks.invoke).toHaveBeenCalledWith("local_disconnect", { sessionId: "local-test" });
+  expect(mocks.invoke.mock.calls.some(([command]) => command.startsWith("ssh_"))).toBe(false);
+});
 
 beforeEach(() => {
   mocks.instances.length = 0;

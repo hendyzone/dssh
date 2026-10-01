@@ -22,7 +22,7 @@ export function useWindowClose(hasActiveSession: boolean): string | null {
         try {
           if (
             activeRef.current &&
-            !(await confirm("仍有 SSH 会话连接中，确定要退出 dssh 吗？", {
+            !(await confirm("仍有终端会话运行中，确定要退出 dssh 吗？", {
               title: "退出 dssh",
               kind: "warning",
               okLabel: "退出",

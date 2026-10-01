@@ -1,5 +1,6 @@
 /** 服务器条目（与后端 ServerRecord 对应，不含明文密钥） */
 export interface ServerEntry {
+  kind?: "local";
   id: string;
   name: string;
   host: string;

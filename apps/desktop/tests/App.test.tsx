@@ -75,6 +75,19 @@ beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 
+it("opens and splits a local terminal without creating an SSH connection", async () => {
+  localStorage.clear();
+  const view = render(<App />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "打开本地终端" }));
+  expect(screen.getAllByLabelText("Terminal input")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "左右分屏" }));
+  expect(screen.getAllByLabelText("Terminal input")).toHaveLength(2);
+  expect(loadWorkspace([]).tabs[0].panes.every(p => p.server.kind === "local")).toBe(true);
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "ssh_connect")).toBe(false);
+  view.unmount();
+});
+
 it("routes an AI notification to the exact tmux pane with the backend request contract", async () => {
   terminalMock.connected = true;
   const servers = await loadServers();

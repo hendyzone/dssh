@@ -45,6 +45,18 @@ body {
   height: 100vh;
 }
 
+.app.has-linux-titlebar { padding-top: 32px; }
+.linux-titlebar {
+  position: absolute; top: 0; left: 0; right: 0; height: 32px;
+  display: flex; align-items: center; background: var(--ui-panel);
+  color: var(--ui-fg); border-bottom: 1px solid var(--ui-border);
+  user-select: none; z-index: 10;
+}
+.linux-titlebar-drag { flex: 1; height: 100%; padding: 6px 12px; font-size: 12px; }
+.linux-titlebar button { border: 0; background: transparent; color: inherit; height: 32px; width: 44px; cursor: pointer; }
+.linux-titlebar button:hover { background: var(--ui-panelAlt); }
+.linux-titlebar .window-close:hover { background: var(--ui-danger); color: white; }
+
 /* 细滚动条 */
 ::-webkit-scrollbar {
   width: 8px;
