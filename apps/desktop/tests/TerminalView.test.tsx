@@ -545,8 +545,8 @@ it("starts clipboard reads before native IPC and falls back from image reads to 
   }
 });
 
-it("pastes Mac event text even when clipboard APIs and native file lookup fail", async () => {
-  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+it.each(["MacIntel", "Linux x86_64"])("pastes %s event text even when clipboard APIs and native file lookup fail", async (os) => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue(os);
   mocks.invoke.mockImplementation(async (command: string) => {
     if (command === "ssh_connect") return "backend";
     if (command === "clipboard_file_paths") throw new Error("Clipboard busy");
@@ -561,6 +561,54 @@ it("pastes Mac event text even when clipboard APIs and native file lookup fail",
     expect(mocks.instances[0].pastedData).toHaveBeenCalledExactlyOnceWith("中文 text\nsecond line");
     expect(mocks.invoke.mock.calls.some(([command, args]) => command === "ssh_write" && args.data === "pasted text")).toBe(false);
   } finally { view.unmount(); platform.mockRestore(); }
+});
+
+it("preserves Linux native paste shortcuts when browser clipboard reads are denied", async () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+  const readText = vi.fn().mockRejectedValue(new Error("NotAllowedError"));
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText } });
+  const view = render(<TerminalView {...props} />);
+  await settle();
+  try {
+    const input = screen.getByLabelText("Terminal input");
+    for (const shiftKey of [false, true]) {
+      expect(fireEvent.keyDown(input, { key: "v", code: "KeyV", ctrlKey: true, shiftKey })).toBe(true);
+    }
+    fireEvent.paste(input, { clipboardData: { files: [], items: [], getData: () => "中文\ntext" } });
+    await settle();
+    expect(readText).not.toHaveBeenCalled();
+    expect(mocks.instances[0].pastedData).toHaveBeenCalledExactlyOnceWith("中文\ntext");
+  } finally {
+    view.unmount();
+    platform.mockRestore();
+    Reflect.deleteProperty(navigator, "clipboard");
+  }
+});
+
+it("uses the Linux native paste command from the context menu", async () => {
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+  const original = Object.getOwnPropertyDescriptor(document, "execCommand");
+  const execCommand = vi.fn(() => {
+    fireEvent.paste(screen.getByLabelText("Terminal input"), {
+      clipboardData: { files: [], items: [], getData: () => "系统剪贴板" },
+    });
+    return true;
+  });
+  Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+  const view = render(<TerminalView {...props} />);
+  await settle();
+  try {
+    fireEvent.contextMenu(screen.getByLabelText("Terminal input"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "粘贴" }));
+    await settle();
+    expect(execCommand).toHaveBeenCalledWith("paste");
+    expect(mocks.instances[0].pastedData).toHaveBeenCalledExactlyOnceWith("系统剪贴板");
+  } finally {
+    view.unmount();
+    platform.mockRestore();
+    if (original) Object.defineProperty(document, "execCommand", original);
+    else Reflect.deleteProperty(document, "execCommand");
+  }
 });
 
 it("uploads a Mac screenshot from its native paste event without reading the browser clipboard", async () => {

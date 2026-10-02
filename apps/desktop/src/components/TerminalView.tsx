@@ -220,6 +220,12 @@ export default function TerminalView({
     const target = backendRef.current;
     if (!target || imageBusy.current || !activeRef.current || !inputEnabledRef.current) return;
     try {
+      // WebKitGTK can deny the async Clipboard API. Its native paste command
+      // supplies ClipboardEvent data without requesting browser read permission.
+      if (/Linux/i.test(navigator.platform)) {
+        terminal?.focus();
+        if (document.execCommand?.("paste")) return;
+      }
       // Start browser reads in the user gesture, before awaiting native IPC.
       // WebKit may reject image reads even when plain text can be read.
       const [itemsResult, textResult, pathsResult] = await Promise.allSettled([
@@ -260,7 +266,7 @@ export default function TerminalView({
       setClipboardError("无法读取剪贴板，请使用系统“编辑 → 粘贴”重试。");
     }
   };
-  const pasteMacData = async (files: File[], image: Blob | null, text: string) => {
+  const pasteNativeData = async (files: File[], image: Blob | null, text: string) => {
     const terminal = termRef.current;
     const target = backendRef.current;
     if (!target || imageBusy.current || !activeRef.current || !inputEnabledRef.current) return;
@@ -818,9 +824,9 @@ export default function TerminalView({
             active &&
             inputEnabled
           ) {
-            // Cmd+V must keep its native paste event on WebKit. The paste
+            // WebKit must keep its native paste event on macOS and Linux. The paste
             // capture below routes the event's text, files and images.
-            if (event.metaKey && !event.ctrlKey) return;
+            if ((event.metaKey && !event.ctrlKey) || /Linux/i.test(navigator.platform)) return;
             event.preventDefault();
             event.stopPropagation();
             void pasteClipboard();
@@ -828,13 +834,13 @@ export default function TerminalView({
         }}
         onPasteCapture={(event) => {
           const files = Array.from(event.clipboardData?.files ?? []);
-          if (/Mac/i.test(navigator.platform) && active && inputEnabled) {
+          if (/Mac|Linux/i.test(navigator.platform) && active && inputEnabled) {
             event.preventDefault();
             event.stopPropagation();
             const image = [...(event.clipboardData?.items ?? [])]
               .find((item) => item.type === "image/png")?.getAsFile()
               ?? files.find((file) => file.type === "image/png") ?? null;
-            void pasteMacData(files, image, event.clipboardData?.getData("text/plain") ?? "");
+            void pasteNativeData(files, image, event.clipboardData?.getData("text/plain") ?? "");
             return;
           }
           if (files.length && !(files.length === 1 && files[0].type === "image/png") && active && inputEnabled) {
