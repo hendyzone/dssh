@@ -6,13 +6,15 @@ import { IconClose } from "./Icons";
 import "./Collaboration.css";
 import AgentGuide from "./AgentGuide";
 import TeamMembers, { type TeamNavigation } from "./TeamMembers";
+import TaskLookup from "./TaskLookup";
+import type { BoardSource, ProjectReason } from "../lib/taskLookup";
 
 type Row = Record<string, unknown>;
 const rows = (value:unknown):Row[] => Array.isArray(value) ? value.filter((v):v is Row=>!!v&&typeof v==="object"&&!Array.isArray(v)) : [];
 const text = (value:unknown) => value == null ? "" : String(value);
 const kinds:Record<string,string>={request:"请求协助",ack:"已收到",progress:"进度",blocked:"阻塞",handoff:"交接",result:"结果",question:"提问",answer:"回答"};
 
-export default function CollaborationPanel({sessionId,profile,onClose,teamNavigation}:{sessionId:string;profile:CollaborationProfile;onClose:()=>void;teamNavigation?:TeamNavigation}){
+export default function CollaborationPanel({sessionId,profile,onClose,teamNavigation,taskLookup}:{sessionId:string;profile:CollaborationProfile;onClose:()=>void;teamNavigation?:TeamNavigation;taskLookup?:{source?:BoardSource;inferred?:{project:string;reason:ProjectReason}}}){
   const [context,setContext]=useState<Row|null>(null);
   const [updatedAt,setUpdatedAt]=useState("");
   const [task,setTask]=useState("");
@@ -76,6 +78,7 @@ export default function CollaborationPanel({sessionId,profile,onClose,teamNaviga
     <header data-panel-drag-handle tabIndex={0}><strong>Agent 协作 · {profile.project}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭 Agent 协作" onClick={onClose}><IconClose/></Button></header>
     <div className="collaboration-content">
       <p>{profile.tmuxName || profile.tmuxId} · {profile.workdir}</p>
+      {taskLookup && <details className="task-lookup-details"><summary>查任务（编号 → 状态卡片）</summary><TaskLookup source={taskLookup.source} inferred={taskLookup.inferred}/></details>}
       {teamNavigation && <TeamMembers sessionId={sessionId} profile={profile} navigation={teamNavigation}/>}
       <details><summary>发送接入手册给 Agent</summary><AgentGuide profile={profile}/></details>
       {!sessionId&&<p role="status">终端已断开，请先打开对应终端。</p>}

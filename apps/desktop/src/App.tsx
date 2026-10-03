@@ -12,6 +12,7 @@ import ToolRail from "./components/ToolRail";
 import CollaborationPanel from "./components/CollaborationPanel";
 import TeamPanel from "./components/TeamPanel";
 import { collaborationKey, useActiveCollaboration, useCollaboration } from "./lib/collaboration";
+import { boardSource, inferProject, paneProfiles, useLookupSettings } from "./lib/taskLookup";
 import { connectedMemberTab, type TeamMember } from "./lib/teamMembers";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWindowClose } from "./lib/useWindowClose";
@@ -298,6 +299,21 @@ export default function App() {
   }, [workspaceReady, tabs, activeTabId, connectionGroups, paneCwds]);
   const collaborationPane=tabs.find(t=>t.id===activeTabId)?.panes[tabs.find(t=>t.id===activeTabId)?.activePane??0];
   const activeCollaboration=useActiveCollaboration(collaborationProfiles,collaborationPane,backendIds[collaborationPane?.id??""],paneCwds[collaborationPane?.id??""]);
+  const lookupSettings = useLookupSettings();
+  /** Board route and project for one pane: lock > collaboration binding > manual choice. */
+  const paneTaskContext = (pane: SessionInfo) => {
+    const verified = pane.id === collaborationPane?.id ? activeCollaboration : undefined;
+    const boardProfile = verified?.taskboardEnabled ? verified : paneProfiles(collaborationProfiles, pane).find((p) => p.taskboardEnabled);
+    return {
+      source: boardSource(lookupSettings, boardProfile, backendIds[pane.id] ?? undefined),
+      inferred: inferProject(lookupSettings, pane, collaborationProfiles, verified),
+    };
+  };
+  const paneTaskLinks = (pane: SessionInfo) => {
+    if (!lookupSettings.terminalLinks) return undefined;
+    const { source, inferred } = paneTaskContext(pane);
+    return source && inferred ? { source, project: inferred.project } : undefined;
+  };
   const setPaneCwd = useCallback((paneId: string, cwd: string) => {
     setPaneCwds((prev) =>
       prev[paneId] === cwd ? prev : { ...prev, [paneId]: cwd },
@@ -969,6 +985,7 @@ export default function App() {
                           onBackendReady={setBackendId}
                           onStateChange={setPaneState}
                           onCwdChange={setPaneCwd}
+                          taskLinks={paneTaskLinks(p)}
                         />
                       </div>
                     ))}
@@ -993,11 +1010,11 @@ export default function App() {
                     </PanelDock>
                   )}
                   {panel === "team" && t.id === activeTabId && t.panes[t.activePane]?.tmux && <PanelDock kind="team">
-                    <TeamPanel key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                    <TeamPanel key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
                     <PanelDock kind="collaboration">
-                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} onClose={()=>togglePanel(t.id,null)} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (

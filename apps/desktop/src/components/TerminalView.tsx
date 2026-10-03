@@ -22,6 +22,9 @@ import { trackTerminalInputScroll } from "../lib/terminalInputScroll";
 import { createTerminalOutput } from "../lib/terminalOutput";
 import { getTheme } from "../themes";
 import type { AppSettings, SessionInfo } from "../types";
+import { useTaskIndex, type BoardSource, type IndexTask } from "../lib/taskLookup";
+import { createTaskLinkProvider } from "../lib/taskLinks";
+import TerminalTaskLayer, { type TaskHover } from "./TerminalTaskLayer";
 import TerminalContextMenu, {
   type TerminalMenuPosition,
 } from "./TerminalContextMenu";
@@ -74,6 +77,8 @@ interface Props {
   onStateChange?: (paneId: string, state: ConnectionState) => void;
   /** 远端 shell 当前目录变化回调（OSC 7，供 SFTP 定位/跟随使用） */
   onCwdChange?: (paneId: string, cwd: string) => void;
+  /** 识别该项目看板上真实存在的任务编号；未设置则不识别。 */
+  taskLinks?: { source: BoardSource; project: string };
 }
 
 // ghostty-web 终端组件，经 Electron IPC 与 Rust SSH 后台（russh）交互
@@ -86,6 +91,7 @@ export default function TerminalView({
   onBackendReady,
   onStateChange,
   onCwdChange,
+  taskLinks,
 }: Props) {
   const local = isLocalShell(session.server);
   const protocol = local ? "local" : "ssh";
@@ -285,6 +291,14 @@ export default function TerminalView({
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const [menu, setMenu] = useState<TerminalMenuPosition | null>(null);
+  // Task codes: the provider reads refs so the terminal is not rebuilt when the index refreshes.
+  const taskIndex = useTaskIndex(taskLinks?.source, taskLinks?.project, !!taskLinks);
+  const taskIndexRef = useRef<Map<string, IndexTask> | undefined>(undefined);
+  taskIndexRef.current = taskLinks && taskIndex?.project === taskLinks.project ? taskIndex.byCode : undefined;
+  const pointerRef = useRef({ x: 0, y: 0, width: 0 });
+  const [taskHover, setTaskHover] = useState<TaskHover | null>(null);
+  const [taskOpened, setTaskOpened] = useState<{ code: string; seq: number } | null>(null);
+  useEffect(() => { setTaskHover(null); setTaskOpened(null); }, [taskLinks?.project, taskLinks?.source.key]);
   const [clipboardError, setClipboardError] = useState<string | null>(null);
   const [clipboardNoticeVersion, setClipboardNoticeVersion] = useState(0);
   const clipboardSuccess =
@@ -427,6 +441,29 @@ export default function TerminalView({
         }
       };
       t.open(containerRef.current);
+      {
+        const root = containerRef.current;
+        const track = (event: MouseEvent) => {
+          const rect = root.getBoundingClientRect();
+          pointerRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top, width: rect.width };
+        };
+        root.addEventListener("mousemove", track, { passive: true });
+        cleanups.push(() => root.removeEventListener("mousemove", track));
+        t.registerLinkProvider?.(createTaskLinkProvider(t, {
+          index: () => taskIndexRef.current,
+          onHover: (task) => {
+            if (disposed) return;
+            const { x, y, width } = pointerRef.current;
+            setTaskHover(task ? { task, x: Math.max(8, Math.min(x + 12, width - 340)), y: y + 18 } : null);
+          },
+          onActivate: (task, event) => {
+            // A drag selection ending on a code is a copy, not a click.
+            if (disposed || event.button !== 0 || t.getSelection()) return;
+            setTaskHover(null);
+            setTaskOpened((prev) => ({ code: task.code, seq: (prev?.seq ?? 0) + 1 }));
+          },
+        }));
+      }
       cleanups.push(trackTerminalInputScroll(t, containerRef.current, () =>
         !disposed && activeRef.current && inputEnabledRef.current && connectionStateRef === "connected"));
       output = createTerminalOutput((data) => t.write(data));
@@ -871,6 +908,15 @@ export default function TerminalView({
           });
         }}
       />
+      {taskLinks && (
+        <TerminalTaskLayer
+          source={taskLinks.source}
+          project={taskLinks.project}
+          hover={taskHover}
+          opened={taskOpened}
+          onClose={() => setTaskOpened(null)}
+        />
+      )}
       {menu && (
         <TerminalContextMenu
           position={menu}

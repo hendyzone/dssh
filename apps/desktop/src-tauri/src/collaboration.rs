@@ -217,16 +217,7 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
         if !profile.taskboard_enabled {
             return Err("任务看板未开启".into());
         }
-        let url = reqwest::Url::parse(&profile.taskboard_url).map_err(|_| "看板 URL 无效")?;
-        if !matches!(url.scheme(), "http" | "https")
-            || url.host_str().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err("看板地址须为 HTTP(S)，且不能含凭据、查询参数或片段".into());
-        }
+        crate::taskboard::board_url(&profile.taskboard_url)?;
         environment.push(format!(
             "TASKBOARD_URL={}",
             literal(&profile.taskboard_url)?
@@ -360,6 +351,57 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
     ))
 }
 
+/// Python helper for read-only board GETs from the SSH server. It prints
+/// `{"status":<http>,"body":<text>}`; transport failures exit non-zero.
+const BOARD_SCRIPT: &str = r#"import json,sys,urllib.request,urllib.error
+url=sys.argv[1].rstrip('/')+sys.argv[2]
+limit=16*1024*1024
+try:
+    r=urllib.request.urlopen(urllib.request.Request(url,headers={'Accept':'application/json'}),timeout=15)
+    status=r.status;body=r.read(limit+1)
+except urllib.error.HTTPError as e:
+    status=e.code;body=e.read(65536)
+except Exception as e:
+    sys.stderr.write('看板不可达：%s'%e);sys.exit(1)
+if len(body)>limit:
+    sys.stderr.write('看板响应过大');sys.exit(1)
+text=body.decode('utf-8','replace')
+if sys.argv[3] and status==200:
+    keys=sys.argv[3].split(',')
+    try:
+        data=json.loads(text)
+        text=json.dumps({'tasks':[{k:t.get(k,'') for k in keys} for t in data.get('tasks',[]) if isinstance(t,dict) and isinstance(t.get('code'),str)]},ensure_ascii=False)
+    except Exception:
+        pass
+print(json.dumps({'status':status,'body':text},ensure_ascii=False))
+"#;
+
+/// Read-only taskboard GET through this binding's SSH server; same tmux/worktree guard
+/// as every other collaboration request.
+pub(crate) fn board_command(profile: &Profile, path: &str, index: bool) -> Result<String, String> {
+    if !profile.enabled || !profile.taskboard_enabled {
+        return Err("此会话未开启任务看板".into());
+    }
+    crate::taskboard::board_path(path)?;
+    let url = crate::taskboard::board_url(&profile.taskboard_url)?;
+    let directory = absolute_path(&profile.workdir)?;
+    let resolve = worktree_command(&Target {
+        id: profile.tmux_id.clone(),
+        created: profile.tmux_created,
+    })?;
+    let fields = if index { crate::taskboard::INDEX_FIELDS.join(",") } else { String::new() };
+    Ok(format!(
+        "dssh_collab_actual=$({}) || exit 1; [ \"$dssh_collab_actual\" = {} ] || {{ echo 'worktree changed; select its collaboration configuration' >&2; exit 1; }}; {} -c {} {} {} {}",
+        resolve,
+        directory,
+        literal(&profile.python_bin)?,
+        quote(BOARD_SCRIPT),
+        quote(url.as_str()),
+        quote(path),
+        quote(&fields)
+    ))
+}
+
 #[tauri::command]
 pub async fn collaboration_worktree(
     ssh: State<'_, SshState>,
@@ -489,6 +531,23 @@ mod tests {
         assert!(build_command(&p, &request(Operation::Send), "s").is_err());
         p.taskboard_enabled = false;
         assert!(build_command(&p, &request(Operation::Context), "s").is_err());
+    }
+    #[test]
+    fn board_command_is_guarded_read_only_and_quoted() {
+        let p = profile();
+        let command = board_command(&p, "/api/v1/projects/demo/tasks", true).unwrap();
+        assert!(command.contains("#{session_created}"));
+        assert!(command.contains("[ \"$dssh_collab_actual\" = '/repo with space' ]"));
+        assert!(command.contains("'https://board.example.test/' '/api/v1/projects/demo/tasks' 'code,title,status_key,assignee,updated_at'"));
+        assert!(!command.contains("TASKBOARD_TOKEN"));
+        assert!(board_command(&p, "/api/v1/projects/demo/tasks/T1", false).unwrap().ends_with(" ''"));
+        assert!(board_command(&p, "/api/v1/projects/demo/tasks/T1/claim", false).is_err());
+        let mut off = p.clone();
+        off.taskboard_enabled = false;
+        assert!(board_command(&off, "/api/v1/projects", false).is_err());
+        off = p.clone();
+        off.enabled = false;
+        assert!(board_command(&off, "/api/v1/projects", false).is_err());
     }
     #[test]
     fn context_clears_inherited_credentials() {

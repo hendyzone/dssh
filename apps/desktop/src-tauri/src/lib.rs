@@ -1,6 +1,7 @@
 mod commands;
 mod local_shell;
 mod collaboration;
+mod taskboard;
 mod claude;
 mod ai;
 mod diagnostics;
@@ -85,6 +86,8 @@ pub fn run() {
             collaboration::collaboration_request,
             collaboration::collaboration_worktree,
             collaboration::collaboration_export_guide,
+            taskboard::taskboard_get,
+            taskboard::taskboard_open,
             claude::claude_status,
             ai::ai_status,
             ai::ai_setup,

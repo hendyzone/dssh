@@ -9,14 +9,17 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { IconClose } from "./Icons";
 import "./Collaboration.css";
+import TaskLookup from "./TaskLookup";
+import type { BoardSource, ProjectReason } from "../lib/taskLookup";
 
 const DETACHED="dssh.team-detached.v1";
 function detachedBindings():string[]{
   try{const value=JSON.parse(localStorage.getItem(DETACHED)??"[]");return Array.isArray(value)?value.filter(v=>typeof v==="string"):[];}catch{return [];}
 }
 
-export default function TeamPanel({sessionId, pane, profile, navigation, onClose}: {
+export default function TeamPanel({sessionId, pane, profile, navigation, onClose, taskLookup}: {
   sessionId: string; pane: SessionInfo; profile?: CollaborationProfile; navigation: TeamNavigation; onClose: () => void;
+  taskLookup?: { source?: BoardSource; inferred?: { project: string; reason: ProjectReason } };
 }) {
   const [created, setCreated] = useState<CollaborationProfile>();
   const [project, setProject] = useState("");
@@ -62,6 +65,7 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
   return <aside className="workspace-panel collaboration-panel">
     <header data-panel-drag-handle tabIndex={0}><strong>团队{active ? ` · ${active.project}` : ""}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭团队" onClick={onClose}><IconClose/></Button></header>
     <div className="collaboration-content">
+      {taskLookup && <TaskLookup source={taskLookup.source} inferred={taskLookup.inferred}/>}
       {active ? <>
         <div className="team-binding">
           <div><p title={`${pane.server.name} · ${active.tmuxName || active.tmuxId}`}>{pane.server.name} · {active.tmuxName || active.tmuxId}</p></div>
