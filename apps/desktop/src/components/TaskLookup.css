@@ -37,7 +37,6 @@
 .tb-card-detail summary{cursor:pointer;font-size:11px;color:var(--ui-muted)}
 .tb-card-detail pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:280px;overflow:auto;margin:6px 0 0}
 .tb-card-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.tb-card-foot small{font-size:10px;color:var(--ui-muted)}
 .task-lookup-choices{display:flex;flex-direction:column;gap:2px}
 .task-browser summary{cursor:pointer;font-size:12px}
 .task-browser[open]>summary{margin-bottom:6px}

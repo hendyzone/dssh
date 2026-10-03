@@ -109,7 +109,7 @@ it("renders blocked reason prominently, collapses detail, follows dependencies a
   fireEvent.click(dep);
   expect(open).toHaveBeenCalledWith("smart-table", "T1091");
   fireEvent.click(screen.getByRole("button", { name: "在看板中打开" }));
-  await waitFor(() => expect(state.opened).toEqual(["http://board.test:8091/?project=smart-table"]));
+  await waitFor(() => expect(state.opened).toEqual(["http://board.test:8091/?project=smart-table&task=T1090"]));
   view.unmount();
 
   const blocked = await loadCard(source, "smart-table", "T1091");

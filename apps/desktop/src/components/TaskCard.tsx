@@ -44,8 +44,7 @@ export default function TaskCard({ card, source, onOpenCode, now = Date.now() }:
     </div>}
     {task.detail && <details className="tb-card-detail"><summary>详细记录</summary><pre>{task.detail}</pre></details>}
     <footer className="tb-card-foot">
-      <Button size="sm" variant="outline" title={boardLink(source, project)} onClick={() => { setOpenError(""); openBoard(boardLink(source, project)).catch(e => setOpenError(String(e))); }}>在看板中打开</Button>
-      <small>看板网页按项目打开，需在页面中找到 {task.code}</small>
+      <Button size="sm" variant="outline" title={boardLink(source, project, task.code)} onClick={() => { setOpenError(""); openBoard(boardLink(source, project, task.code)).catch(e => setOpenError(String(e))); }}>在看板中打开</Button>
     </footer>
     {openError && <p role="alert" className="collaboration-error">{openError}</p>}
   </article>;

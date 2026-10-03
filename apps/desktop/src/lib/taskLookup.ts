@@ -276,9 +276,10 @@ export function formatAge(iso: string, now = Date.now()): string {
   if (hours < 48) return `${hours} 小时`;
   return `${Math.floor(hours / 24)} 天`;
 }
-/** The web board has no per-task link; `?project=` opens the right project. */
-export function boardLink(source: BoardSource, project: string): string {
-  return `${source.webUrl.replace(/\/+$/, "")}/?project=${encodeURIComponent(project)}`;
+/** Web board link: `?project=` selects the project; with a code, `&task=` opens that task's detail directly. */
+export function boardLink(source: BoardSource, project: string, code?: string): string {
+  const base = `${source.webUrl.replace(/\/+$/, "")}/?project=${encodeURIComponent(project)}`;
+  return code ? `${base}&task=${encodeURIComponent(code)}` : base;
 }
 export function openBoard(url: string): Promise<void> { return invoke("taskboard_open", { url }); }
 
