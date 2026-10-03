@@ -10,6 +10,7 @@ struct Session {
     reader: Option<Box<dyn Read + Send>>,
     command: Option<CommandBuilder>,
     killer: Option<Box<dyn ChildKiller + Send + Sync>>,
+    cwd: Option<String>,
 }
 impl Drop for Session {
     fn drop(&mut self) { if let Some(child) = self.killer.as_mut() { let _ = child.kill(); } }
@@ -25,7 +26,7 @@ fn size(cols: u16, rows: u16) -> PtySize {
     PtySize { cols: cols.max(1), rows: rows.max(1), pixel_width: 0, pixel_height: 0 }
 }
 
-fn connect(state: &LocalState, cols: u16, rows: u16, cwd: Option<String>) -> Result<String, String> {
+fn connect(state: &LocalState, cols: u16, rows: u16, cwd: Option<String>, tmux: Option<crate::tmux::Target>, tmux_workdir: Option<String>) -> Result<String, String> {
     let pair = native_pty_system().openpty(size(cols, rows)).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     let mut command = CommandBuilder::new_default_prog();
@@ -38,15 +39,25 @@ fn connect(state: &LocalState, cols: u16, rows: u16, cwd: Option<String>) -> Res
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
     command.env("TERM_PROGRAM", "dssh");
+    if let Some(target) = tmux {
+        if cfg!(windows) { return Err("Windows 原生终端不支持 tmux，请连接 Linux / WSL 的 SSH 服务使用".into()); }
+        let script = if let Some(root) = tmux_workdir {
+            crate::collaboration::member_attach_command(&target, &root)?
+        } else { crate::tmux::attach_command(&target)? };
+        command = CommandBuilder::new("/bin/sh");
+        command.args(["-lc", &script]);
+        command.env("TERM", "xterm-256color");
+        command.env("COLORTERM", "truecolor");
+    }
     let cwd = cwd.filter(|p| std::path::Path::new(p).is_dir())
         .or_else(|| std::env::var("HOME").ok()).or_else(|| std::env::var("USERPROFILE").ok());
-    if let Some(cwd) = cwd { command.cwd(cwd); }
+    if let Some(cwd) = &cwd { command.cwd(cwd); }
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let id = format!("local-{:032x}", rand::random::<u128>());
     state.sessions.lock().map_err(|e| e.to_string())?.insert(id.clone(), Session {
         master: pair.master, slave: Some(pair.slave), writer: Arc::new(Mutex::new(writer)), reader: Some(reader),
-        command: Some(command), killer: None,
+        command: Some(command), killer: None, cwd,
     });
     Ok(id)
 }
@@ -136,6 +147,21 @@ fn disconnect(state: &LocalState, session_id: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn control_rejects_closed_sessions() {
+        let error = execute(&LocalState::default(), "local-missing", "echo test", std::time::Duration::from_secs(1)).await.unwrap_err();
+        assert!(error.contains("已关闭"));
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn control_runs_separately_and_enforces_timeout() {
+        let state = LocalState::default();
+        let id = connect(&state, 80, 24, Some("/tmp".into()), None, None).unwrap();
+        let result = execute(&state, &id, "printf 'local-control-ok'", std::time::Duration::from_secs(2)).await.unwrap();
+        assert_eq!(result, "local-control-ok");
+        assert!(execute(&state, &id, "exec sleep 5", std::time::Duration::from_millis(100)).await.unwrap_err().contains("超时"));
+        disconnect(&state, id).unwrap();
+    }
     #[test]
     fn pty_delivers_output_and_resizes() {
         let pair = native_pty_system().openpty(size(80, 24)).unwrap();
@@ -177,7 +203,7 @@ mod tests {
     #[test]
     fn disconnecting_an_unstarted_session_releases_it() {
         let state = LocalState::default();
-        let id = connect(&state, 80, 24, None).unwrap();
+        let id = connect(&state, 80, 24, None, None, None).unwrap();
         resize(&state, id.clone(), 120, 40).unwrap();
         disconnect(&state, id.clone()).unwrap();
         assert!(write(&state, id.clone(), "hello".into()).is_err());
@@ -195,9 +221,35 @@ mod tests {
 }
 
 #[tauri::command]
-pub async fn local_connect(state: State<'_, LocalState>, cols: u16, rows: u16, cwd: Option<String>) -> Result<String, String> {
+pub async fn local_connect(state: State<'_, LocalState>, cols: u16, rows: u16, cwd: Option<String>, tmux: Option<crate::tmux::Target>, tmux_workdir: Option<String>) -> Result<String, String> {
     let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || connect(&state, cols, rows, cwd)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || connect(&state, cols, rows, cwd, tmux, tmux_workdir)).await.map_err(|e| e.to_string())?
+}
+
+/// Control commands run separately from the interactive PTY, with bounded output/time.
+pub(crate) async fn execute(state: &LocalState, id: &str, script: &str, timeout: std::time::Duration) -> Result<String, String> {
+    let cwd = state.sessions.lock().map_err(|e| e.to_string())?
+        .get(id).ok_or("本地终端已关闭")?.cwd.clone();
+    if cfg!(windows) { return Err("Windows 原生终端不支持 tmux 协作，请连接 Linux / WSL 的 SSH 服务使用".into()); }
+    use tokio::io::AsyncReadExt;
+    let mut command = tokio::process::Command::new("/bin/sh");
+    command.args(["-lc", script]).env_remove("TMUX").kill_on_drop(true)
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    if let Some(cwd) = cwd { command.current_dir(cwd); }
+    let mut child = command.spawn().map_err(|e| e.to_string())?;
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    async fn read(stream: impl tokio::io::AsyncRead + Unpin) -> Result<Vec<u8>, String> {
+        let mut data = Vec::new();
+        stream.take(2 * 1024 * 1024 + 1).read_to_end(&mut data).await.map_err(|e| e.to_string())?;
+        if data.len() > 2 * 1024 * 1024 { return Err("本地命令输出超过限制".into()); }
+        Ok(data)
+    }
+    let (output, errors, status) = tokio::time::timeout(timeout, async {
+        tokio::try_join!(read(stdout), read(stderr), async { child.wait().await.map_err(|e| e.to_string()) })
+    }).await.map_err(|_| "本地操作超时，请刷新确认状态".to_string())??;
+    if !status.success() { return Err(format!("本地操作失败：{}", String::from_utf8_lossy(&errors).trim())); }
+    Ok(String::from_utf8_lossy(&output).into_owned())
 }
 
 #[tauri::command]

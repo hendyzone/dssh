@@ -3,6 +3,14 @@ import { loadWorkspace, saveWorkspace, restoreDirectoryCommand, type Workspace }
 import type { ServerEntry } from "../src/types";
 import { LOCAL_SHELL, quoteLocalPath } from "../src/lib/localShell";
 
+it("restores a local tmux incarnation and its project binding", () => {
+  const tmux = { id: "$8", created: 456, name: "local-agent" };
+  saveWorkspace({ tabs: [{ id: "local-tab", activePane: 0, panes: [
+    { id: "local-pane", server: LOCAL_SHELL, tmux, tmuxWorkdir: "/repo" },
+  ] }], activeTabId: "local-tab", groups: [], cwds: {} });
+  expect(loadWorkspace([]).tabs[0].panes[0]).toMatchObject({ server: LOCAL_SHELL, tmux, tmuxWorkdir: "/repo" });
+});
+
 it("restores local split panes without an SSH server or credentials", () => {
   saveWorkspace({ tabs: [{ id: "local-tab", activePane: 1, splitDir: "row", panes: [
     { id: "local-1", server: LOCAL_SHELL }, { id: "local-2", server: LOCAL_SHELL },

@@ -59,7 +59,6 @@ export function loadWorkspace(servers: ServerEntry[]): Workspace {
       const server = pane.kind === "local" ? LOCAL_SHELL : servers.find(s => s.id === pane.serverId);
       if (!server || (!isLocalShell(server) && (!object(pane.endpoint) || typeof pane.endpoint.host !== "string" ||
           !sameSshEndpoint(server, pane.endpoint as ServerEntry)))) continue;
-      if (isLocalShell(server) && (pane.tmux || pane.tmuxWorkdir)) continue;
       // An invalid tmux identity must never silently become an ordinary shell.
       if (pane.tmux !== undefined && (!object(pane.tmux) ||
           typeof pane.tmux.id !== "string" || !/^\$\d+$/.test(pane.tmux.id) ||

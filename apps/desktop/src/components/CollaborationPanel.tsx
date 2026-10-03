@@ -14,6 +14,7 @@ const kinds:Record<string,string>={request:"请求协助",ack:"已收到",progre
 
 export default function CollaborationPanel({sessionId,profile,onClose,teamNavigation}:{sessionId:string;profile:CollaborationProfile;onClose:()=>void;teamNavigation?:TeamNavigation}){
   const [context,setContext]=useState<Row|null>(null);
+  const [updatedAt,setUpdatedAt]=useState("");
   const [task,setTask]=useState("");
   const [mailOutput,setMailOutput]=useState("");
   const [uid,setUid]=useState("");
@@ -39,12 +40,14 @@ export default function CollaborationPanel({sessionId,profile,onClose,teamNaviga
     const data:unknown=JSON.parse(value);
     if(!data||typeof data!=="object"||Array.isArray(data))throw new Error("看板返回格式无效");
     setContext(data as Row);
+    setUpdatedAt(new Date().toLocaleTimeString());
   });
   useEffect(()=>{
     setBusy(false);
-    setContext(null);setMailOutput("");setPreview(null);setError("");setStatus("");setTask("");setUid("");setTo("");setBody("");
+    setContext(null);setUpdatedAt("");setMailOutput("");setPreview(null);setError("");setStatus("");setTask("");setUid("");setTo("");setBody("");
     if(profile.enabled&&profile.taskboardEnabled&&sessionId)void refresh();
-    return()=>{generation.current++;pending.current=false;};
+    const timer=window.setInterval(()=>{if(!document.hidden && profile.enabled && profile.taskboardEnabled && sessionId)void refresh();},15000);
+    return()=>{window.clearInterval(timer);generation.current++;pending.current=false;};
   },[sessionId,profile]);
   const edit=(fn:()=>void)=>{setPreview(null);setStatus("");fn();};
   const makePreview=()=>{
@@ -67,7 +70,7 @@ export default function CollaborationPanel({sessionId,profile,onClose,teamNaviga
     });
   };
   const disabled=busy||!sessionId||!profile.enabled;
-  const tasks=rows(context?.tasks);
+  const tasks=rows(context?.tasks).filter(t=>!task.trim() || text(t.code).toLowerCase()===task.trim().toLowerCase());
   const checkpoints=rows(context?.checkpoints).filter(cp=>!task||cp.task_code===task);
   return <aside className="workspace-panel collaboration-panel">
     <header data-panel-drag-handle tabIndex={0}><strong>Agent 协作 · {profile.project}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭 Agent 协作" onClick={onClose}><IconClose/></Button></header>
@@ -75,16 +78,17 @@ export default function CollaborationPanel({sessionId,profile,onClose,teamNaviga
       <p>{profile.tmuxName || profile.tmuxId} · {profile.workdir}</p>
       {teamNavigation && <TeamMembers sessionId={sessionId} profile={profile} navigation={teamNavigation}/>}
       <details><summary>发送接入手册给 Agent</summary><AgentGuide profile={profile}/></details>
-      {!sessionId&&<p role="status">SSH 已断开，请先连接此服务器。</p>}
+      {!sessionId&&<p role="status">终端已断开，请先打开对应终端。</p>}
       {error&&<p role="alert" className="collaboration-error">{error}</p>}
       {status&&<p role="status">{status}</p>}
-      {busy&&<p role="status">正在请求远端服务…</p>}
-      <label className="collaboration-field">任务编号<Input disabled={disabled} value={task} placeholder="例如 T1（发消息时必填）" onChange={e=>edit(()=>setTask(e.target.value))}/></label>
+      {busy&&<p role="status">正在查询协作服务…</p>}
+      <label className="collaboration-field">任务编号<Input disabled={disabled} value={task} placeholder="例如 T1；留空查看项目全部任务" onChange={e=>edit(()=>setTask(e.target.value))}/></label>
       {profile.taskboardEnabled&&<section>
-        <div className="collaboration-actions"><strong>任务看板</strong><Button size="sm" disabled={disabled} onClick={()=>void refresh()}>刷新看板</Button></div>
+        <div className="collaboration-actions"><strong>任务看板 · {profile.project}</strong><Button size="sm" disabled={disabled} onClick={()=>void refresh()}>刷新看板</Button></div>
+        <p>每 15 秒刷新；{updatedAt ? `上次成功查询 ${updatedAt}` : "尚未取得任务状态"}。任务编号留空可查看全部任务。</p>
         {context&&<>
           <p>{text((context.project as Row|undefined)?.note)}</p>
-          {tasks.length===0&&<p>暂无任务。</p>}
+          {tasks.length===0&&<p>未找到对应任务。</p>}
           {tasks.map(t=><article key={text(t.id)||text(t.code)}>
             <Button variant="ghost" size="sm" disabled={disabled} onClick={()=>edit(()=>setTask(text(t.code)))}>{text(t.code)} · {text(t.title)}</Button>
             <p>{text(t.status_key)} · {text(t.summary)}</p>

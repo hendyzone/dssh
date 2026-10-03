@@ -1,5 +1,15 @@
 # 可选 Agent 协作：taskboard 与 amail
 
+## 本地终端与任务状态
+
+Linux（包括 Mint）和 macOS 的本地终端支持右侧「tmux 会话」面板：创建、附加、重命名、分组、窗格管理和复制缓冲区。关闭附加标签只关闭客户端，tmux 中的任务继续运行；「结束」才会终止会话。重启 dssh 后可恢复本地 tmux 标签，并核验会话 ID 与创建时间，避免误附加到同名的新会话。
+
+在本地安装 tmux（Mint：`sudo apt install tmux`），打开本地终端并通过面板附加会话。在「设置 → Agent 协作」选择该本地 tmux 会话，读取 worktree，填写 Taskboard 项目编号、服务地址及本机 taskboard 可执行文件，开启任务看板并保存。项目目录须是此会话当前 Git worktree 根目录；本地服务地址和令牌路径都从本机解析。
+
+此后在该终端的「Agent 协作」面板查询任务状态、负责人和交接。输入任务编号（如 T1）筛选，留空显示项目全部任务。打开面板时每 15 秒刷新，也可手动刷新；错误时保留上次结果与成功查询时间，不能将旧数据当作最新状态。查询不会认领、修改任务或向终端注入命令。
+
+Windows 原生 PowerShell 终端保留现有能力；tmux 协作需连接 Linux 或 WSL 的 SSH 服务。此版本不自动安装或启动 WSL，也不把 Windows 终端误当成 Linux shell。
+
 从零创建 worktree、tmux 会话和独立邮箱，见 [Agent 操作手册](agent-playbook.md)。
 agent 已在 tmux 内运行时，同一手册提供“接入运行中的 agent”流程：复用会话/worktree，不要求重启或重新创建。
 

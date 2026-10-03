@@ -236,7 +236,7 @@ export default function TmuxPanel({
       )}
       {snapshot && !snapshot.installed && (
         <p className="tmux-note">
-          远端未找到 tmux。请先在服务器上安装 tmux，再刷新。
+          当前终端所在机器未找到 tmux，请安装后刷新（Mint：sudo apt install tmux）。
         </p>
       )}
       {edit && (
@@ -283,7 +283,7 @@ export default function TmuxPanel({
               <datalist id={groupInputId}>
                 {groupNames.filter(Boolean).map((name) => <option key={name} value={name} />)}
               </datalist>
-              <p className="tmux-note">选择已有分组或输入新名称，同一远端 tmux 服务的 SSH 连接共享分组。</p>
+              <p className="tmux-note">选择已有分组或输入新名称，连接到同一 tmux 服务的终端共享分组。</p>
             </>
           )}
           <div>
@@ -430,7 +430,7 @@ export default function TmuxPanel({
             ))}
             {!snapshot.sessions.length && (
               <p className="tmux-note">
-                暂无会话，创建后即使 SSH 断开，任务也会继续运行。
+                暂无会话，创建后即使关闭附加标签，任务也会继续运行。
               </p>
             )}
           </div>

@@ -1,5 +1,6 @@
 //! tmux control through separate SSH exec channels. Never type commands into an interactive pane.
 use crate::ssh::{SharedHandle, SshState};
+use crate::local_shell::LocalState;
 use std::time::Duration;
 use tauri::State;
 const SEPARATOR: &str = "|DSSH-TMUX|";
@@ -135,6 +136,11 @@ pub(crate) async fn execute_with_timeout(handle: &SharedHandle, command: &str, t
     let _ = channel.close().await;
     result
 }
+pub(crate) async fn execute_session(ssh: &SshState, local: &LocalState, id: &str, command: &str, timeout: Duration) -> Result<String, String> {
+    if id.starts_with("local-") { return crate::local_shell::execute(local, id, command, timeout).await; }
+    let handle = ssh.get_handle(id).await.ok_or("终端连接已断开")?;
+    execute_with_timeout(&handle, command, timeout).await
+}
 fn parse_snapshot(text: &str) -> Result<Snapshot, String> {
     if text.trim() == "DSSH_TMUX_MISSING" {
         return Ok(Snapshot {
@@ -209,10 +215,10 @@ fn parse_snapshot(text: &str) -> Result<Snapshot, String> {
 #[tauri::command]
 pub async fn tmux_snapshot(
     ssh: State<'_, SshState>,
+    local: State<'_, LocalState>,
     session_id: String,
 ) -> Result<Snapshot, String> {
-    let handle = ssh.get_handle(&session_id).await.ok_or("SSH 连接已断开")?;
-    parse_snapshot(&execute(&handle, &SNAPSHOT.replace("\\t", SEPARATOR)).await?)
+    parse_snapshot(&execute_session(&ssh, &local, &session_id, &SNAPSHOT.replace("\\t", SEPARATOR), Duration::from_secs(12)).await?)
 }
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -331,12 +337,12 @@ fn action_command(action: &Action) -> Result<String, String> {
 #[tauri::command]
 pub async fn tmux_action(
     ssh: State<'_, SshState>,
+    local: State<'_, LocalState>,
     session_id: String,
     request: Action,
 ) -> Result<(), String> {
     let command = action_command(&request)?;
-    let handle = ssh.get_handle(&session_id).await.ok_or("SSH 连接已断开")?;
-    execute(&handle, &command).await.map(|_| ())
+    execute_session(&ssh, &local, &session_id, &command, Duration::from_secs(12)).await.map(|_| ())
 }
 #[cfg(test)]
 mod tests {
@@ -589,7 +595,6 @@ mod live_tests {
 
 /// Explicit user action: fetch the latest buffer from this SSH user's default tmux server.
 #[tauri::command]
-pub async fn tmux_copy_buffer(ssh: State<'_, SshState>, session_id: String) -> Result<String, String> {
-    let handle = ssh.get_handle(&session_id).await.ok_or("SSH 连接已断开")?;
-    execute(&handle, "unset TMUX; tmux save-buffer -").await.map_err(|_| "未能读取 tmux 复制内容，请先在 tmux 中选择并复制文字".into())
+pub async fn tmux_copy_buffer(ssh: State<'_, SshState>, local: State<'_, LocalState>, session_id: String) -> Result<String, String> {
+    execute_session(&ssh, &local, &session_id, "unset TMUX; tmux save-buffer -", Duration::from_secs(12)).await.map_err(|_| "未能读取 tmux 复制内容，请先在 tmux 中选择并复制文字".into())
 }

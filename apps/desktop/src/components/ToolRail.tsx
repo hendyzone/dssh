@@ -16,12 +16,14 @@ import {
 } from "./Icons";
 export default function ToolRail({
   side,
+  local = false,
   active,
   onSelect,
   collaborationEnabled = false,
   teamEnabled = false,
 }: {
   side: "left" | "right";
+  local?: boolean;
   active: string | null;
   collaborationEnabled?: boolean;
   teamEnabled?: boolean;
@@ -43,6 +45,7 @@ export default function ToolRail({
         aria-label={side === "left" ? "左侧工具" : "右侧工具"}
       >
         {(["sftp", "tmux", "team", "forward", "tasks", "changes", "monitor", "collaboration"] as const)
+          .filter(kind => !local || ["tmux", "tasks", "collaboration"].includes(kind))
           .filter(kind => kind !== "team" || teamEnabled)
           .filter(kind => kind !== "collaboration" || collaborationEnabled)
           .filter(

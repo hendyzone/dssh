@@ -123,7 +123,7 @@ export default function TerminalView({
     try {
       let text = remoteOnly ? "" : (termRef.current?.getSelection() ?? "");
       if (!text) {
-        if (local) throw new Error("请先选中要复制的终端文本");
+        if (local && !session.tmux) throw new Error("请先选中要复制的终端文本");
         if (!target) throw new Error("SSH 连接已断开");
         text = await invoke<string>("tmux_copy_buffer", { sessionId: target });
       }
@@ -576,7 +576,7 @@ export default function TerminalView({
 
         let newBackendId: string;
         try {
-          newBackendId = local ? await invoke<string>("local_connect", { cols: t.cols, rows: t.rows, cwd: lastCwd ?? null }) : await invoke<string>("ssh_connect", {
+          newBackendId = local ? await invoke<string>("local_connect", { cols: t.cols, rows: t.rows, cwd: lastCwd ?? null, tmux: session.tmux ? { id: session.tmux.id, created: session.tmux.created } : null, tmuxWorkdir: session.tmuxWorkdir ?? null }) : await invoke<string>("ssh_connect", {
             params: {
               host: server.host,
               port: server.port,

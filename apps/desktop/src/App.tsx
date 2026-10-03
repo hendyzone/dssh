@@ -909,7 +909,8 @@ export default function App() {
         ) : (
           tabs.map((t) => {
             const local = isLocalShell(t.panes[t.activePane].server);
-            const panel = local ? null : sidePanels[t.id] ?? null;
+            const requestedPanel = sidePanels[t.id] ?? null;
+            const panel = local && !["tmux", "tasks", "collaboration"].includes(requestedPanel ?? "") ? null : requestedPanel;
             const activePaneBackend =
               backendIds[t.panes[t.activePane]?.id ?? ""] ?? null;
             const collaboration = t.id === activeTabId ? activeCollaboration : undefined;
@@ -920,20 +921,22 @@ export default function App() {
                 hidden={t.id !== activeTabId}
               >
                 <div className="session-content">
-                  {!local && <ToolRail
+                  <ToolRail
+                    local={local}
                     side="left"
                     teamEnabled={!!t.panes[t.activePane]?.tmux}
                     collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
-                  />}
-                  {!local && <ToolRail
+                  />
+                  <ToolRail
+                    local={local}
                     side="right"
                     teamEnabled={!!t.panes[t.activePane]?.tmux}
                     collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
-                  />}
+                  />
                   <div
                     className="panes"
                     style={{

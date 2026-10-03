@@ -1,6 +1,7 @@
 import type { ServerEntry, SessionInfo, TabInfo } from "../types";
 
 export const sameSshEndpoint=(a:ServerEntry,b:ServerEntry)=>
+  (a.kind === "local") === (b.kind === "local") &&
   a.host.trim().toLowerCase()===b.host.trim().toLowerCase()&&a.port===b.port&&a.username===b.username;
 
 /** Match the remote user and stable tmux identity, including split panes. */

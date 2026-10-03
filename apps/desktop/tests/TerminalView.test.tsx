@@ -92,11 +92,20 @@ const props = {
   onBackendReady: vi.fn(),
 };
 
+it("passes local tmux identity and worktree to the PTY backend", async () => {
+  mocks.invoke.mockImplementation(async command => command === "local_connect" ? "local-test" : undefined);
+  const tmux = { id: "$9", created: 123, name: "worker" };
+  const view = render(<TerminalView {...props} session={{ id: "local-pane", server: LOCAL_SHELL, tmux, tmuxWorkdir: "/repo" }} />);
+  await act(async () => {});
+  expect(mocks.invoke).toHaveBeenCalledWith("local_connect", { cols: 80, rows: 24, cwd: null, tmux: { id: "$9", created: 123 }, tmuxWorkdir: "/repo" });
+  view.unmount();
+});
+
 it("starts local shells only after listeners, routes input and cleans up without SSH", async () => {
   mocks.invoke.mockImplementation(async command => command === "local_connect" ? "local-test" : undefined);
   const view = render(<TerminalView {...props} session={{ id: "local-pane", server: LOCAL_SHELL }} />);
   await act(async () => {});
-  expect(mocks.invoke).toHaveBeenCalledWith("local_connect", { cols: 80, rows: 24, cwd: null });
+  expect(mocks.invoke).toHaveBeenCalledWith("local_connect", { cols: 80, rows: 24, cwd: null, tmux: null, tmuxWorkdir: null });
   expect(mocks.listen).toHaveBeenCalledWith("local://local-test/data", expect.any(Function));
   const listenOrder = mocks.listen.mock.invocationCallOrder.at(-1)!;
   const startIndex = mocks.invoke.mock.calls.findIndex(([command]) => command === "local_start");

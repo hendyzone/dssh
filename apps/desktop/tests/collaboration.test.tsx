@@ -1,4 +1,4 @@
-import { fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { COLLABORATION_KEY, collaborationKey, collaborationMailHome, collaborationRequest, emptyProfile, loadCollaboration, saveCollaboration, useActiveCollaboration, type CollaborationProfile } from "../src/lib/collaboration";
@@ -13,6 +13,40 @@ const profile=():CollaborationProfile=>({...emptyProfile(),tmuxId:"$1",tmuxCreat
 const server:ServerEntry={id:"s1",name:"开发机",host:"dev.example.test",port:22,username:"dev",authMethod:"password"};
 
 describe("optional collaboration",()=>{
+  it("refreshes task status while mounted and stops after closing",async()=>{
+    vi.useFakeTimers();
+    vi.mocked(invoke).mockResolvedValue('{"tasks":[]}');
+    const view=render(<CollaborationPanel sessionId="local-test" profile={{...profile(),mailEnabled:false}} onClose={()=>{}}/>);
+    try {
+      await act(async()=>{});
+      expect(invoke).toHaveBeenCalledTimes(1);
+      await act(async()=>{await vi.advanceTimersByTimeAsync(15000);});
+      expect(invoke).toHaveBeenCalledTimes(2);
+      view.unmount();
+      await act(async()=>{await vi.advanceTimersByTimeAsync(30000);});
+      expect(invoke).toHaveBeenCalledTimes(2);
+    } finally {view.unmount();vi.useRealTimers();}
+  });
+  it("exposes local tmux and enabled collaboration without SSH-only tools",()=>{
+    render(<ToolRail local side="right" active={null} collaborationEnabled onSelect={()=>{}}/>);
+    expect(screen.getByRole("button",{name:"tmux 会话"})).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Agent 协作"})).toBeTruthy();
+    expect(screen.queryByRole("button",{name:"文件 · SFTP"})).toBeNull();
+    expect(screen.queryByRole("button",{name:"端口转发"})).toBeNull();
+  });
+  it("queries a local project's board and filters task status by code",async()=>{
+    vi.mocked(invoke).mockResolvedValue(JSON.stringify({tasks:[
+      {code:"T1",title:"First task",status_key:"doing"},
+      {code:"T2",title:"Second task",status_key:"done"},
+    ]}));
+    render(<CollaborationPanel sessionId="local-test" profile={{...profile(),mailEnabled:false}} onClose={()=>{}}/>);
+    await screen.findByText("T2 · Second task");
+    expect(invoke).toHaveBeenCalledWith("collaboration_request",expect.objectContaining({sessionId:"local-test",profile:expect.objectContaining({project:"demo"}),request:{operation:"context"}}));
+    fireEvent.change(screen.getByLabelText("任务编号"),{target:{value:"t1"}});
+    expect(screen.getByText("T1 · First task")).toBeTruthy();
+    expect(screen.queryByText("T2 · Second task")).toBeNull();
+    expect(screen.getByText(/doing/)).toBeTruthy();
+  });
   it("isolates tmux incarnations and worktrees on the same server, ignoring legacy server settings",()=>{
     localStorage.setItem("dssh.collaboration.v1",JSON.stringify({s1:profile()}));
     expect(loadCollaboration()).toEqual({});

@@ -1,7 +1,7 @@
 //! Optional collaboration through separate SSH exec channels; no terminal injection.
 use crate::{
     ssh::SshState,
-    tmux::{execute_with_timeout, quote, Target},
+    tmux::{execute_session, quote, Target},
 };
 use serde::Deserialize;
 use std::time::Duration;
@@ -363,12 +363,12 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
 #[tauri::command]
 pub async fn collaboration_worktree(
     ssh: State<'_, SshState>,
+    local: State<'_, crate::local_shell::LocalState>,
     session_id: String,
     target: Target,
 ) -> Result<String, String> {
     let command = worktree_command(&target)?;
-    let handle = ssh.get_handle(&session_id).await.ok_or("SSH 已断开")?;
-    let output = execute_with_timeout(&handle, &command, Duration::from_secs(15)).await?;
+    let output = execute_session(&ssh, &local, &session_id, &command, Duration::from_secs(15)).await?;
     let root = output.trim_end_matches('\n').trim_end_matches('\r');
     absolute_path(root)?;
     Ok(root.to_string())
@@ -377,16 +377,13 @@ pub async fn collaboration_worktree(
 #[tauri::command]
 pub async fn collaboration_request(
     ssh: State<'_, SshState>,
+    local: State<'_, crate::local_shell::LocalState>,
     session_id: String,
     profile: Profile,
     request: Request,
 ) -> Result<String, String> {
     let command = build_command(&profile, &request, &session_id)?;
-    let handle = ssh
-        .get_handle(&session_id)
-        .await
-        .ok_or("SSH 已断开，请先连接配置对应的服务器")?;
-    execute_with_timeout(&handle, &command, Duration::from_secs(60))
+    execute_session(&ssh, &local, &session_id, &command, Duration::from_secs(60))
         .await
         .map_err(|e| e.replace("tmux", "协作服务"))
 }
