@@ -45,6 +45,8 @@ export function defaultSettings(): AppSettings {
     themeId: "tokyo-night",
     fontSize: 14,
     fontFamily: "JetBrains Mono, SF Mono, Consolas, monospace",
+    scrollSensitivity: 1,
+    touchpadInertiaFilter: true,
   };
 }
 

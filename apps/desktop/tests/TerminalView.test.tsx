@@ -55,6 +55,7 @@ vi.mock("ghostty-web", () => ({
     pastedData = vi.fn();
     paste = this.pastedData;
     selectAll = vi.fn();
+    attachCustomWheelEventHandler = vi.fn();
     attachCustomKeyEventHandler(
       handler: (event: KeyboardEvent) => boolean | undefined,
     ) {

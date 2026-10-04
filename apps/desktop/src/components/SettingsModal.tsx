@@ -289,6 +289,39 @@ export default function SettingsModal({
                   placeholder="JetBrains Mono, monospace"
                 />
               </label>
+              <label>
+                滚动灵敏度：{(settings.scrollSensitivity ?? 1).toFixed(2)}×
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  aria-label="滚动灵敏度"
+                  value={settings.scrollSensitivity ?? 1}
+                  onChange={(e) =>
+                    onChange({
+                      ...settings,
+                      scrollSensitivity: Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
+                <input
+                  type="checkbox"
+                  style={{ width: 16, height: 16, padding: 0, margin: 0, flex: "none" }}
+                  checked={settings.touchpadInertiaFilter !== false}
+                  onChange={(e) =>
+                    onChange({
+                      ...settings,
+                      touchpadInertiaFilter: e.target.checked,
+                    })
+                  }
+                />
+                触摸板惯性过滤（松手后的低速滑行不再继续滚动）
+              </label>
             </TabsContent>
             <TabsContent
               forceMount

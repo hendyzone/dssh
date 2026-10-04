@@ -19,6 +19,7 @@ import { OSC7_HOOK } from "../lib/shellIntegration";
 import { restoreDirectoryCommand } from "../lib/workspaceRestore";
 import { trackTerminalIme } from "../lib/terminalIme";
 import { trackTerminalInputScroll } from "../lib/terminalInputScroll";
+import { attachTerminalWheel } from "../lib/terminalWheel";
 import { createTerminalOutput } from "../lib/terminalOutput";
 import { getTheme } from "../themes";
 import type { AppSettings, SessionInfo } from "../types";
@@ -103,6 +104,9 @@ export default function TerminalView({
   }, [active, session.id]);
   useEffect(() => () => removeTask(session.id), [session.id]);
   const backendRef = useRef<string | null>(null);
+  // 滚轮处理每个事件都读最新设置，灵敏度/惯性过滤改动即时生效。
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const clipboardWriteRevision = useRef(0);
   const writeClipboardText = async (text: string) => {
     const revision = ++clipboardWriteRevision.current;
@@ -464,6 +468,8 @@ export default function TerminalView({
           },
         }));
       }
+      // 滚轮/触摸板：按像素累积换算行数，tmux 等鼠标模式下按行数节流发送滚动报告。
+      cleanups.push(attachTerminalWheel(t, containerRef.current, () => settingsRef.current));
       cleanups.push(trackTerminalInputScroll(t, containerRef.current, () =>
         !disposed && activeRef.current && inputEnabledRef.current && connectionStateRef === "connected"));
       output = createTerminalOutput((data) => t.write(data));

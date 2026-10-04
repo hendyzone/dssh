@@ -59,6 +59,10 @@ export interface AppSettings {
   themeId: string;
   fontSize: number;
   fontFamily: string;
+  /** 终端滚轮/触摸板滚动灵敏度倍率（0.5–2，默认 1） */
+  scrollSensitivity?: number;
+  /** 丢弃触摸板松手后惯性滚动的低速尾巴（默认开） */
+  touchpadInertiaFilter?: boolean;
 }
 
 /** GitHub 仓库连通性检查结果（PAT 不会返回到前端或界面回显）。 */
