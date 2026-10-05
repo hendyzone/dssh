@@ -129,3 +129,197 @@
   outline-offset: -2px;
   background: color-mix(in srgb, var(--ui-accent) 18%, transparent) !important;
 }
+
+.sftp-tree-row.multi-selected {
+  background: color-mix(in srgb, var(--ui-accent) 22%, transparent) !important;
+}
+
+/* 文件夹下载传输项 */
+.sftp-tree-transfer {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--ui-panelAlt);
+  font-size: 12px;
+}
+.sftp-transfer-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sftp-transfer-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sftp-transfer-name svg {
+  display: inline;
+  vertical-align: -2px;
+}
+.sftp-transfer-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--ui-muted);
+}
+.sftp-transfer-bar {
+  position: relative;
+  height: 5px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--ui-panelAlt);
+}
+.sftp-transfer-bar > div {
+  height: 100%;
+  background: var(--ui-accent);
+  transition: width 120ms linear;
+}
+.sftp-transfer-bar > div[data-tone="danger"] {
+  background: var(--ui-danger);
+}
+.sftp-transfer-bar > div[data-tone="warn"] {
+  background: var(--ui-muted);
+}
+.sftp-transfer-bar.indeterminate > div {
+  position: absolute;
+  animation: sftp-scan 1.1s ease-in-out infinite;
+}
+@keyframes sftp-scan {
+  from { left: -30%; }
+  to { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sftp-transfer-bar.indeterminate > div { animation: none; left: 0; }
+}
+.sftp-transfer-percent {
+  width: 34px;
+  text-align: right;
+}
+.sftp-transfer-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ui-muted);
+}
+.sftp-transfer-meta[data-tone="danger"] {
+  color: var(--ui-danger);
+}
+.sftp-transfer-current {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-size: 11px;
+  color: var(--ui-muted);
+}
+.sftp-transfer-toggle {
+  margin-top: 3px;
+  padding: 0 4px;
+  height: 22px;
+}
+.sftp-transfer-issues {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 140px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+.sftp-transfer-issues li {
+  display: flex;
+  flex-direction: column;
+  padding: 3px 0;
+  border-top: 1px dashed var(--ui-panelAlt);
+}
+.sftp-transfer-issues li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sftp-transfer-issues li[data-kind="failure"] small {
+  color: var(--ui-danger);
+}
+.sftp-transfer-issues li small {
+  color: var(--ui-muted);
+}
+
+/* 冲突一次性选择 */
+.sftp-conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(320px, 100%);
+  padding: 24px;
+}
+.sftp-conflict-target {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.sftp-conflict-names {
+  margin: 0;
+  padding: 6px 8px;
+  list-style: none;
+  border-radius: 4px;
+  background: var(--ui-panelAlt);
+  font-size: 12px;
+}
+.sftp-conflict fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.sftp-conflict-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.sftp-conflict-option:has(input:checked) {
+  border-color: var(--ui-accent);
+}
+.sftp-conflict-option span {
+  display: flex;
+  flex-direction: column;
+}
+.sftp-conflict-option small {
+  color: var(--ui-muted);
+}
+.sftp-conflict-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.sftp-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ui-accent) 14%, transparent);
+  font-size: 12px;
+}
+.sftp-selection-bar > span {
+  margin-right: auto;
+}
+.sftp-concurrency {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}

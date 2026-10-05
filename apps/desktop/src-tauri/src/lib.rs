@@ -10,6 +10,7 @@ mod monitor;
 mod preview;
 mod servers;
 mod sftp;
+mod sftp_tree;
 mod ssh;
 mod sync;
 mod tmux;
@@ -132,6 +133,8 @@ pub fn run() {
             sftp::sftp_save_text,
             sftp::sftp_open_local,
             sftp::sftp_download,
+            sftp_tree::sftp_download_tree,
+            sftp_tree::sftp_local_conflicts,
             sftp::sftp_upload,
             sftp::cancel_upload,
             sftp::sftp_mkdir,

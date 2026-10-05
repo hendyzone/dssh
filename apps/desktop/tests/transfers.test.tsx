@@ -48,3 +48,17 @@ it("still expires successful transfers after five seconds", async () => {
   vi.advanceTimersByTime(1);
   expect(api.current()).toEqual([]);
 });
+it("keeps canceled or partially failed folder downloads until dismissed", async () => {
+  const api = await setup();
+  const event = vi.mocked(listen).mock.calls[0][1] as (event: any) => void;
+  const tree = api.createTransfer("session", "项目", "download", "tree");
+  expect(api.current().find((t) => t.transferId === tree)?.tree?.phase).toBe("scanning");
+  event({ payload: { transferId: tree, direction: "download", fileName: "项目", transferredBytes: 10, totalBytes: 100, done: true,
+    tree: { phase: "done", canceled: true, totalFiles: 5, completedFiles: 2, failureCount: 0, skippedCount: 0 } } });
+  const canceled = api.current().find((t) => t.transferId === tree)!;
+  expect(canceled.status).toBe("canceled");
+  vi.advanceTimersByTime(60_000);
+  expect(api.current().some((t) => t.transferId === tree)).toBe(true);
+  api.dismissTransfer(tree);
+  expect(api.current().some((t) => t.transferId === tree)).toBe(false);
+});

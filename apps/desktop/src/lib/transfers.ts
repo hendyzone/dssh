@@ -2,7 +2,53 @@ import { listen } from "@tauri-apps/api/event";
 import type { Event, UnlistenFn } from "@tauri-apps/api/event";
 
 export type TransferDirection = "upload" | "download";
-export type TransferStatus = "active" | "done" | "error";
+export type TransferStatus = "active" | "done" | "error" | "canceled";
+
+export interface TransferIssue {
+  path: string;
+  reason: string;
+}
+
+/** 文件夹 / 多选下载：整体作为一个传输项，附带文件计数与失败明细。 */
+export interface TreeProgress {
+  phase: "scanning" | "transferring" | "done";
+  discoveredFiles: number;
+  totalFiles: number;
+  completedFiles: number;
+  downloadedFiles: number;
+  skippedExisting: number;
+  currentFile: string;
+  failureCount: number;
+  skippedCount: number;
+  failures: TransferIssue[];
+  skipped: TransferIssue[];
+  localRoots: string[];
+  canceled: boolean;
+}
+
+export function emptyTreeProgress(): TreeProgress {
+  return {
+    phase: "scanning",
+    discoveredFiles: 0,
+    totalFiles: 0,
+    completedFiles: 0,
+    downloadedFiles: 0,
+    skippedExisting: 0,
+    currentFile: "",
+    failureCount: 0,
+    skippedCount: 0,
+    failures: [],
+    skipped: [],
+    localRoots: [],
+    canceled: false,
+  };
+}
+
+/** 有失败、跳过或被取消的文件夹传输需要用户看完再关，不自动消失。 */
+export function treeNeedsAttention(transfer: Transfer): boolean {
+  const tree = transfer.tree;
+  return !!tree && (tree.canceled || tree.failureCount > 0 || tree.skippedCount > 0);
+}
 
 export interface Transfer {
   transferId: string;
@@ -15,6 +61,7 @@ export interface Transfer {
   status: TransferStatus;
   error?: string;
   completedAt?: number;
+  tree?: TreeProgress;
 }
 
 interface TransferProgressPayload {
@@ -25,6 +72,7 @@ interface TransferProgressPayload {
   totalBytes: number;
   done: boolean;
   error?: string | null;
+  tree?: TreeProgress | null;
 }
 
 type Subscriber = (transfers: Transfer[]) => void;
@@ -85,9 +133,11 @@ function ensureListener(sessionId: string): void {
       });
       const status: TransferStatus = payload.error
         ? "error"
-        : payload.done
-          ? "done"
-          : "active";
+        : payload.tree?.canceled && payload.done
+          ? "canceled"
+          : payload.done
+            ? "done"
+            : "active";
 
       transfers.set(payload.transferId, {
         transferId: payload.transferId,
@@ -100,8 +150,14 @@ function ensureListener(sessionId: string): void {
         status,
         ...(status !== "active" ? {completedAt:previous?.completedAt ?? Date.now()} : {}),
         ...(payload.error ? { error: payload.error } : {}),
+        ...(payload.tree ? { tree: payload.tree } : previous?.tree ? { tree: previous.tree } : {}),
       });
-      if (status !== "active" && !dismissalTimers.has(payload.transferId)) {
+      const current = transfers.get(payload.transferId)!;
+      if (
+        status !== "active" &&
+        !dismissalTimers.has(payload.transferId) &&
+        !treeNeedsAttention(current)
+      ) {
         dismissalTimers.set(payload.transferId, setTimeout(
           () => dismissTransfer(payload.transferId),
           status === "error" ? 10_000 : 5_000,
@@ -132,6 +188,7 @@ export function createTransfer(
   sessionId: string,
   fileName: string,
   direction: TransferDirection,
+  kind: "file" | "tree" = "file",
 ): string {
   ensureListener(sessionId);
   const randomId = globalThis.crypto?.randomUUID?.();
@@ -146,6 +203,7 @@ export function createTransfer(
     totalBytes: 0,
     speedBytesPerSecond: 0,
     status: "active",
+    ...(kind === "tree" ? { tree: emptyTreeProgress() } : {}),
   });
   notify(sessionId);
   return transferId;

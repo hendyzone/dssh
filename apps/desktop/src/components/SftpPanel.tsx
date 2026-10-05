@@ -30,6 +30,12 @@ import {
   waitForTransferListener,
   type Transfer,
 } from "../lib/transfers";
+import {
+  FolderConflictDialog,
+  TreeTransferItem,
+  type ConflictPolicy,
+  type LocalConflict,
+} from "./SftpTreeTransfer";
 
 interface FileEntry {
   name: string;
@@ -97,6 +103,26 @@ function formatSize(size: number | null | undefined, isDir: boolean): string {
     unit += 1;
   }
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+/** 去掉已被选中的祖先目录覆盖的项，避免同一文件被下载两次。 */
+export function topLevelSelection<T extends { path: string; isDir: boolean }>(items: T[]): T[] {
+  return items.filter(
+    (item) =>
+      !items.some(
+        (other) =>
+          other !== item && other.isDir && item.path.startsWith(`${other.path.replace(/\/$/, "")}/`),
+      ),
+  );
+}
+
+function readConcurrency(): number {
+  try {
+    const value = Number(localStorage.getItem("dssh.sftp.concurrency") ?? "8");
+    return Number.isInteger(value) && value >= 1 && value <= 16 ? value : 8;
+  } catch {
+    return 8;
+  }
 }
 
 function formatTime(mtime: number | null | undefined): string {
@@ -188,7 +214,19 @@ export default function SftpPanel({
   const requestId = useRef(0);
   const [currentPath, setCurrentPath] = useState("/");
   const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedPath, setSelectedPathState] = useState<string | null>(null);
+  /** 多选（Ctrl/⌘ 点击切换，Shift 点击连选）；单击时只含当前项。 */
+  const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
+  const setSelectedPath = (path: string | null) => {
+    setSelectedPathState(path);
+    setSelectedPaths(path ? [path] : []);
+  };
+  const [concurrency, setConcurrency] = useState(readConcurrency);
+  const [conflictPrompt, setConflictPrompt] = useState<{
+    localDir: string;
+    conflicts: LocalConflict[];
+    resolve: (policy: ConflictPolicy | null) => void;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
@@ -469,6 +507,80 @@ export default function SftpPanel({
     })();
   };
 
+  /** 文件夹 / 多选下载：选本地目录 → 一次性处理冲突 → 作为一个传输项递归下载。 */
+  const downloadTree = async (selected: FileEntry[]) => {
+    const items = topLevelSelection(selected);
+    if (!items.length) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const picked = await open({
+        directory: true,
+        multiple: false,
+        title: items.length === 1 ? `将“${items[0].name}”下载到…` : `将 ${items.length} 项下载到…`,
+      });
+      const localDir = Array.isArray(picked) ? picked[0] : picked;
+      if (!localDir) return;
+      const conflicts = await invoke<LocalConflict[]>("sftp_local_conflicts", {
+        localDir,
+        entries: items.map((item) => ({ name: item.name, isDir: item.isDir })),
+      });
+      let policy: ConflictPolicy = "overwrite";
+      if (conflicts.length) {
+        const chosen = await new Promise<ConflictPolicy | null>((resolve) =>
+          setConflictPrompt({ localDir, conflicts, resolve }),
+        );
+        setConflictPrompt(null);
+        if (!chosen) return;
+        policy = chosen;
+      }
+      const label = items.length === 1 ? items[0].name : `${items[0].name} 等 ${items.length} 项`;
+      const transferId = createTransfer(sessionId, label, "download", "tree");
+      await waitForTransferListener(sessionId);
+      const summary = await invoke<{
+        canceled: boolean;
+        completedFiles: number;
+        totalFiles: number;
+        failureCount: number;
+        localRoots: string[];
+      }>("sftp_download_tree", {
+        sessionId,
+        remotePaths: items.map((item) => item.path),
+        localDir,
+        transferId,
+        policy,
+        concurrency,
+      });
+      if (!summary.canceled)
+        setNotice(
+          `已下载 ${summary.completedFiles}/${summary.totalFiles} 个文件到 ${summary.localRoots.join("、") || localDir}` +
+            (summary.failureCount ? `，${summary.failureCount} 个失败（见传输列表）` : ""),
+        );
+    } catch (reason) {
+      setError(String(reason));
+    }
+  };
+
+  const selectEntry = (
+    entry: FileEntry,
+    event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean },
+    order: string[],
+  ) => {
+    if (event.shiftKey && selectedPath && order.includes(selectedPath)) {
+      const [a, b] = [order.indexOf(selectedPath), order.indexOf(entry.path)].sort((x, y) => x - y);
+      setSelectedPaths(order.slice(a, b + 1));
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) {
+      setSelectedPathState(entry.path);
+      setSelectedPaths((old) =>
+        old.includes(entry.path) ? old.filter((path) => path !== entry.path) : [...old, entry.path],
+      );
+      return;
+    }
+    setSelectedPath(entry.path);
+  };
+
   const cancelTransfer = (transfer: Transfer) => {
     void invoke("cancel_upload", { transferId: transfer.transferId }).catch(
       (reason) => setError(String(reason)),
@@ -556,6 +668,13 @@ export default function SftpPanel({
     }
   };
   flatten(entries);
+  const knownEntries = new Map<string, FileEntry>();
+  for (const entry of [...entries, ...Object.values(children).flat()])
+    knownEntries.set(entry.path, entry);
+  const selectedEntries = selectedPaths
+    .map((path) => knownEntries.get(path))
+    .filter((entry): entry is FileEntry => !!entry);
+  const visibleOrder = visible.map((entry) => entry.path);
   return (
     <aside
       ref={panelRef}
@@ -866,6 +985,23 @@ export default function SftpPanel({
           >
             选择应用程序
           </Button>
+          <label className="sftp-concurrency">
+            文件夹下载并发数
+            <Input
+              type="number"
+              min={1}
+              max={16}
+              aria-label="文件夹下载并发数"
+              value={concurrency}
+              onChange={(event) => {
+                const value = Math.min(16, Math.max(1, Math.round(Number(event.target.value)) || 1));
+                setConcurrency(value);
+                try { localStorage.setItem("dssh.sftp.concurrency", String(value)); } catch {}
+              }}
+              style={{ width: 64 }}
+            />
+          </label>
+          <small>文件夹下载在同一条 SFTP 通道内并发（不额外占用 SSH 会话）；大文件自动分段并行。</small>
         </div>
       )}
       <Input
@@ -915,6 +1051,14 @@ export default function SftpPanel({
             )}
           </div>
           {visibleTransfers.map((transfer) => {
+            if (transfer.tree)
+              return (
+                <TreeTransferItem
+                  key={transfer.transferId}
+                  transfer={transfer}
+                  onCancel={cancelTransfer}
+                />
+              );
             const percent = transferPercent(transfer);
             const finished = transfer.status === "done";
             const failed = transfer.status === "error";
@@ -1042,6 +1186,17 @@ export default function SftpPanel({
         </div>
       )}
 
+      {selectedEntries.length > 1 && (
+        <div className="sftp-selection-bar" role="toolbar" aria-label="多选操作">
+          <span>已选 {selectedEntries.length} 项</span>
+          <Button variant="outline" size="sm" onClick={() => void downloadTree(selectedEntries)}>
+            <UiDownload size={13} /> 下载所选
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSelectedPath(null)}>
+            清除
+          </Button>
+        </div>
+      )}
       <div data-sftp-drop-directory={currentPath} style={{ flex: 1, overflowY: "auto", padding: "0 5px 8px" }}>
         {loading ? (
           <div style={{ padding: 14, color: "var(--ui-muted)" }}>
@@ -1055,7 +1210,8 @@ export default function SftpPanel({
           visible.map((entry) => (
             <div
               key={entry.path}
-              className={`sftp-tree-row${selectedPath === entry.path ? " selected" : ""}`}
+              className={`sftp-tree-row${selectedPaths.includes(entry.path) ? " selected" : ""}${selectedPaths.length > 1 && selectedPaths.includes(entry.path) ? " multi-selected" : ""}`}
+              aria-selected={selectedPaths.includes(entry.path)}
               data-sftp-drop-directory={entry.isDir ? entry.path : entry.path.slice(0, entry.path.lastIndexOf("/")) || "/"}
               data-sftp-drop-active={entry.isDir && dropDirectory === entry.path || undefined}
               onDragStart={(event) => event.preventDefault()}
@@ -1065,13 +1221,13 @@ export default function SftpPanel({
                 remoteDrag.current = { entry, x: event.clientX, y: event.clientY, pointerId: event.pointerId, active: false };
               }}
               title={`${entry.name} · ${formatSize(entry.size, entry.isDir)} · ${formatTime(entry.mtime)}`}
-              onClick={() => setSelectedPath(entry.path)}
+              onClick={(event) => selectEntry(entry, event, visibleOrder)}
               onDoubleClick={() => enter(entry)}
               onContextMenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 setFileMenu({ entry, x: event.clientX, y: event.clientY });
-                setSelectedPath(entry.path);
+                if (!selectedPaths.includes(entry.path)) setSelectedPath(entry.path);
               }}
               style={{
                 display: "flex",
@@ -1082,7 +1238,7 @@ export default function SftpPanel({
                 marginLeft: entry.depth * 14,
                 borderRadius: 4,
                 background:
-                  selectedPath === entry.path
+                  selectedPaths.includes(entry.path)
                     ? "var(--ui-border)"
                     : "transparent",
                 cursor: "default",
@@ -1148,20 +1304,19 @@ export default function SftpPanel({
                     编辑
                   </Button>
                 )}
-                {!entry.isDir && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    type="button"
-                    title="下载"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      download(entry);
-                    }}
-                  >
-                    <UiDownload size={14} />
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  type="button"
+                  title={entry.isDir ? "下载文件夹" : "下载"}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (entry.isDir) void downloadTree([entry]);
+                    else download(entry);
+                  }}
+                >
+                  <UiDownload size={14} />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -1209,9 +1364,19 @@ export default function SftpPanel({
             onClose={() => setFileMenu(null)}
             label="文件操作"
           >
+            {selectedEntries.length > 1 && selectedPaths.includes(fileMenu.entry.path) && (
+              <MenuItem onClick={() => void downloadTree(selectedEntries)}>
+                下载所选 {selectedEntries.length} 项…
+              </MenuItem>
+            )}
             <MenuItem onClick={() => enter(fileMenu.entry)}>
               {fileMenu.entry.isDir ? "进入目录" : "下载并打开"}
             </MenuItem>
+            {fileMenu.entry.isDir && (
+              <MenuItem onClick={() => void downloadTree([fileMenu.entry])}>
+                下载文件夹…
+              </MenuItem>
+            )}
             {!fileMenu.entry.isDir && (
               <>
                 <MenuItem onClick={() => void editFile(fileMenu.entry)}>
@@ -1240,6 +1405,15 @@ export default function SftpPanel({
               删除
             </MenuItem>
           </PositionedMenu>,
+          document.body,
+        )}
+      {conflictPrompt &&
+        createPortal(
+          <FolderConflictDialog
+            localDir={conflictPrompt.localDir}
+            conflicts={conflictPrompt.conflicts}
+            onResolve={conflictPrompt.resolve}
+          />,
           document.body,
         )}
       {editor &&

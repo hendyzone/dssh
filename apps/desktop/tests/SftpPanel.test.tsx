@@ -1,6 +1,7 @@
 import {render,screen,fireEvent,waitFor,within} from "@testing-library/react";
 import {it,expect,vi} from "vitest";
 import {invoke} from "@tauri-apps/api/core";
+import {open} from "@tauri-apps/plugin-dialog";
 import SftpPanel from "../src/components/SftpPanel";
 vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn()}));
 vi.mock("@tauri-apps/api/event",()=>({listen:vi.fn().mockResolvedValue(()=>{})}));
@@ -92,4 +93,48 @@ it("falls back to home if the remembered folder is no longer accessible",async()
  render(<SftpPanel sessionId="ssh" serverId="a" onClose={()=>{}}/>);
  await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/home/demo"));
  expect(localStorage.getItem("dssh.sftp.last-directory.a")).toBe("/home/demo");
+});
+
+it("downloads a folder from the context menu after one conflict choice",async()=>{
+ vi.mocked(open).mockResolvedValue("/home/me/下载");
+ vi.mocked(invoke).mockImplementation(async(command)=>{
+  if(command==="sftp_home")return "/home/demo";
+  if(command==="sftp_list")return [{name:"项目 A",path:"/home/demo/项目 A",isDir:true},{name:"b.txt",path:"/home/demo/b.txt",isDir:false}];
+  if(command==="sftp_local_conflicts")return [{name:"项目 A",isDir:true,renameTo:"项目 A (1)"}];
+  if(command==="sftp_download_tree")return {canceled:false,completedFiles:3,totalFiles:3,failureCount:0,localRoots:["/home/me/下载/项目 A (1)"]};
+  return [];
+ });
+ render(<SftpPanel sessionId="session" onClose={()=>{}}/>);
+ fireEvent.contextMenu(await screen.findByText("项目 A"));
+ fireEvent.click(screen.getByText("下载文件夹…"));
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_local_conflicts",{localDir:"/home/me/下载",entries:[{name:"项目 A",isDir:true}]}));
+ fireEvent.click(await screen.findByText("开始下载"));
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_download_tree",{sessionId:"session",remotePaths:["/home/demo/项目 A"],localDir:"/home/me/下载",transferId:"transfer",policy:"rename",concurrency:8}));
+ await screen.findByText(/已下载 3\/3 个文件到 \/home\/me\/下载\/项目 A \(1\)/);
+});
+
+it("downloads a mixed multi-selection as one transfer without a conflict prompt",async()=>{
+ vi.mocked(open).mockResolvedValue("/tmp/out");
+ vi.mocked(invoke).mockImplementation(async(command)=>{
+  if(command==="sftp_home")return "/home/demo";
+  if(command==="sftp_list")return [{name:"dir",path:"/home/demo/dir",isDir:true},{name:"a.txt",path:"/home/demo/a.txt",isDir:false},{name:"z.txt",path:"/home/demo/z.txt",isDir:false}];
+  if(command==="sftp_local_conflicts")return [];
+  if(command==="sftp_download_tree")return {canceled:false,completedFiles:2,totalFiles:2,failureCount:0,localRoots:[]};
+  return [];
+ });
+ render(<SftpPanel sessionId="session" onClose={()=>{}}/>);
+ fireEvent.click(await screen.findByText("dir"));
+ fireEvent.click(screen.getByText("z.txt"),{shiftKey:true});
+ expect(screen.getByRole("toolbar",{name:"多选操作"}).textContent).toContain("已选 3 项");
+ fireEvent.click(screen.getByText("a.txt"),{ctrlKey:true});
+ expect(screen.getByRole("toolbar",{name:"多选操作"}).textContent).toContain("已选 2 项");
+ fireEvent.click(screen.getByText("a.txt"),{ctrlKey:true});
+ expect(screen.getByRole("toolbar",{name:"多选操作"}).textContent).toContain("已选 3 项");
+ fireEvent.click(screen.getByRole("button",{name:/下载所选/}));
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_download_tree",expect.objectContaining({remotePaths:["/home/demo/dir","/home/demo/z.txt","/home/demo/a.txt"],policy:"overwrite"})));
+});
+
+it("skips nested selections already covered by a selected folder",async()=>{
+ const {topLevelSelection}=await import("../src/components/SftpPanel");
+ expect(topLevelSelection([{path:"/a",isDir:true},{path:"/a/b.txt",isDir:false},{path:"/ab",isDir:false}]).map(e=>e.path)).toEqual(["/a","/ab"]);
 });

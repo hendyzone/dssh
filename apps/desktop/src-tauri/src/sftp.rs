@@ -67,15 +67,15 @@ impl From<std::io::Error> for Error {
 /// 上传取消标志由命令共享，保证面板关闭后传输仍可被取消。
 static CANCELED_TRANSFERS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
-fn canceled_transfers() -> &'static Mutex<HashSet<String>> {
+pub(crate) fn canceled_transfers() -> &'static Mutex<HashSet<String>> {
     CANCELED_TRANSFERS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-async fn take_cancel_flag(transfer_id: &str) -> bool {
+pub(crate) async fn take_cancel_flag(transfer_id: &str) -> bool {
     canceled_transfers().lock().await.remove(transfer_id)
 }
 
-async fn clear_cancel_flag(transfer_id: &str) {
+pub(crate) async fn clear_cancel_flag(transfer_id: &str) {
     canceled_transfers().lock().await.remove(transfer_id);
 }
 
@@ -91,7 +91,7 @@ struct TransferProgress {
     error: Option<String>,
 }
 
-fn progress_event_name(session_id: &str) -> String {
+pub(crate) fn progress_event_name(session_id: &str) -> String {
     format!("sftp://{session_id}/upload-progress")
 }
 
@@ -119,7 +119,7 @@ fn emit_progress(
     let _ = app.emit(&progress_event_name(session_id), payload);
 }
 
-async fn open_sftp(state: &SshState, session_id: &str) -> Result<SftpSession, Error> {
+pub(crate) async fn open_sftp(state: &SshState, session_id: &str) -> Result<SftpSession, Error> {
     let handle = state
         .get_handle(session_id)
         .await
@@ -563,7 +563,7 @@ pub async fn sftp_rename(
     Ok(())
 }
 
-fn random_name() -> String {
+pub(crate) fn random_name() -> String {
     use rand::RngCore;
     let mut bytes = [0u8; 16];
     rand::rngs::OsRng.fill_bytes(&mut bytes);
