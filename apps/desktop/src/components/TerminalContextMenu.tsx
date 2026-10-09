@@ -11,6 +11,7 @@ export default function TerminalContextMenu({
   position,
   canPaste,
   onCopy,
+  onOpenPage,
   onCopyTmux,
   onPaste,
   onPasteImage,
@@ -20,6 +21,7 @@ export default function TerminalContextMenu({
   position: TerminalMenuPosition;
   canPaste: boolean;
   onCopy: () => void;
+  onOpenPage?: () => void;
   onCopyTmux?: () => void;
   onPaste: () => void;
   onPasteImage?: () => void;
@@ -33,6 +35,7 @@ export default function TerminalContextMenu({
       onClose={onClose}
       label="终端操作"
     >
+      {onOpenPage && <MenuItem onClick={onOpenPage}>在 dssh 新标签页打开</MenuItem>}
       <MenuItem disabled={!position.selection} onClick={onCopy}>
         复制选中文本
       </MenuItem>

@@ -25,6 +25,7 @@ import { getTheme } from "../themes";
 import type { AppSettings, SessionInfo } from "../types";
 import { useTaskIndex, type BoardSource, type IndexTask } from "../lib/taskLookup";
 import { createTaskLinkProvider } from "../lib/taskLinks";
+import { selectedPage, type PageTarget } from "../lib/webPages";
 import TerminalTaskLayer, { type TaskHover } from "./TerminalTaskLayer";
 import TerminalContextMenu, {
   type TerminalMenuPosition,
@@ -80,6 +81,7 @@ interface Props {
   onCwdChange?: (paneId: string, cwd: string) => void;
   /** 识别该项目看板上真实存在的任务编号；未设置则不识别。 */
   taskLinks?: { source: BoardSource; project: string };
+  onOpenPage?: (target: PageTarget, sessionId: string) => void;
 }
 
 // ghostty-web 终端组件，经 Electron IPC 与 Rust SSH 后台（russh）交互
@@ -93,6 +95,7 @@ export default function TerminalView({
   onStateChange,
   onCwdChange,
   taskLinks,
+  onOpenPage,
 }: Props) {
   const local = isLocalShell(session.server);
   const protocol = local ? "local" : "ssh";
@@ -295,6 +298,7 @@ export default function TerminalView({
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const [menu, setMenu] = useState<TerminalMenuPosition | null>(null);
+  const menuPage = menu ? selectedPage(menu.selection) : null;
   // Task codes: the provider reads refs so the terminal is not rebuilt when the index refreshes.
   const taskIndex = useTaskIndex(taskLinks?.source, taskLinks?.project, !!taskLinks);
   const taskIndexRef = useRef<Map<string, IndexTask> | undefined>(undefined);
@@ -926,6 +930,12 @@ export default function TerminalView({
       {menu && (
         <TerminalContextMenu
           position={menu}
+          onOpenPage={onOpenPage && menuPage &&
+            (menuPage.kind === "url" || (!local && connectionState === "connected"))
+            ? () => {
+              closeMenu();
+              onOpenPage(menuPage, backendRef.current ?? "");
+            } : undefined}
           canPaste={connectionState === "connected" && inputEnabled}
           onCopyTmux={() => {
             closeMenu();

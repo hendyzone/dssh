@@ -1,0 +1,10 @@
+.web-page-toolbar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+.web-page-toolbar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-page-hint { margin: 0; padding: 4px 12px 8px; font-size: 12px; opacity: .75; }
+.web-page > iframe { flex: 1; width: 100%; min-height: 0; border: 0; background: white; }
+.web-page > p[role] { padding: 12px; }
+.web-page-image { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; padding: 16px; }
+.web-page-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.web-page-image.actual-size { display: block; }
+.web-page-image.actual-size img { max-width: none; max-height: none; }
+.web-page .markdown-preview img { max-width: 100%; height: auto; }

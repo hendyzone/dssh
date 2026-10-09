@@ -130,6 +130,7 @@ pub fn run() {
             sftp::sftp_clipboard_upload,
             sftp::sftp_clipboard_file,
             sftp::sftp_read_text,
+            sftp::sftp_read_image,
             sftp::sftp_save_text,
             sftp::sftp_open_local,
             sftp::sftp_download,

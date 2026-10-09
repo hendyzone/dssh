@@ -57,6 +57,20 @@ beforeEach(() => {
   mocks.invoke.mockImplementation(async (command: string, args: any) => command === "ssh_connect" ? "backend" : board(command, args));
 });
 
+it("opens the selected remote HTML in a dssh tab from Shift+right-click", async () => {
+  const openPage = vi.fn();
+  const { container } = render(<TerminalView {...props} onOpenPage={openPage}/>);
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("ssh_connect", expect.anything()));
+  const term = mocks.instances[0];
+  term.getSelection.mockReturnValue("file:///home/deng/核心机制.html");
+  fireEvent.contextMenu(container.querySelector("canvas")!, { shiftKey: true });
+  fireEvent.click(screen.getByRole("menuitem", { name: "在 dssh 新标签页打开" }));
+  expect(openPage).toHaveBeenCalledWith({ kind: "html", path: "/home/deng/核心机制.html" }, "backend");
+  term.getSelection.mockReturnValue("echo hello");
+  fireEvent.contextMenu(container.querySelector("canvas")!, { shiftKey: true });
+  expect(screen.queryByRole("menuitem", { name: "在 dssh 新标签页打开" })).toBeNull();
+});
+
 it("maps codes to cell columns, including after wide characters", async () => {
   const index = buildIndex("smart-table", [{ code: "T1090", title: "t", status_key: "doing", assignee: "", updated_at: "" }]).byCode;
   const term = { buffer: { active: { getLine: (y: number) => (y === 0 ? row("任务T1090 done") : undefined) } } };

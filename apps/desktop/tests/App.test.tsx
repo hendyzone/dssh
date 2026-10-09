@@ -44,17 +44,20 @@ vi.mock("../src/components/TerminalView", () => ({
     inputEnabled = true,
     session,
     onBackendReady,
+    onOpenPage,
   }: {
     active: boolean;
     inputEnabled?: boolean;
     session: { id: string };
     onBackendReady: (id: string, backend: string) => void;
+    onOpenPage?: (target: { kind: "html"; path: string }, sessionId: string) => void;
   }) => {
     useEffect(() => {
       if (terminalMock.connected) onBackendReady(session.id, `ssh-${session.id}`);
     }, [session.id, onBackendReady]);
     return (
     <div className="terminal-view">
+      <button onClick={() => onOpenPage?.({ kind: "html", path: "/tmp/核心机制.html" }, `ssh-${session.id}`)}>预览测试 HTML</button>
       <textarea
         aria-label="Terminal input"
         data-active={active}
@@ -73,6 +76,28 @@ beforeEach(() => {
   vi.mocked(invoke).mockReset().mockResolvedValue([]);
   vi.mocked(deleteServer).mockReset().mockResolvedValue(undefined);
   vi.spyOn(window, "confirm").mockReturnValue(true);
+});
+
+it("opens a web tab, preserves the terminal and switches/closes with tab shortcuts", async () => {
+  localStorage.clear();
+  vi.mocked(invoke).mockImplementation(async command => command === "sftp_read_text" ? "<h1>核心机制</h1>" : []);
+  const view = render(<App/>);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "打开本地终端" }));
+  fireEvent.click(screen.getByRole("button", { name: "预览测试 HTML" }));
+  await screen.findByTitle("核心机制.html", { selector: "iframe" });
+  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: "左右分屏" })).toBeNull();
+  expect(view.container.querySelector("textarea")?.dataset.active).toBe("false");
+  fireEvent.keyDown(window, { key: "Tab", ctrlKey: true });
+  expect(screen.getByLabelText("Terminal input").dataset.active).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "预览测试 HTML" }));
+  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  fireEvent.keyDown(window, { key: "w", ctrlKey: true });
+  expect(screen.getAllByRole("tab")).toHaveLength(1);
+  expect(screen.getByLabelText("Terminal input").dataset.active).toBe("true");
+  expect(loadWorkspace([]).tabs).toHaveLength(1);
+  view.unmount();
 });
 
 it("opens and splits a local terminal without creating an SSH connection", async () => {

@@ -55,6 +55,8 @@ import {
   rememberConnection,
 } from "./lib/recentConnections";
 import TerminalView from "./components/TerminalView";
+import WebPageView from "./components/WebPageView";
+import type { PageTarget, WebPage } from "./lib/webPages";
 import {
   isAppShortcut,
   isComposingKey,
@@ -108,6 +110,24 @@ export default function App() {
     tabId?: string;
   } | null>(null);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [webPages, setWebPages] = useState<WebPage[]>([]);
+  // Web previews are transient: never persist page contents or stale SSH handles.
+  const displayTabs: TabInfo[] = [...tabs, ...webPages.map(page => ({
+    id: page.id, customTitle: page.title, panes: [], activePane: 0,
+  }))];
+  const openPage = (target: PageTarget, sessionId: string) => {
+    const existing = webPages.find(page => page.sessionId === sessionId &&
+      JSON.stringify(page.target) === JSON.stringify(target));
+    if (existing) { setActiveTabId(existing.id); return; }
+    const id = crypto.randomUUID();
+    const title = target.kind !== "url" ? target.path.split("/").pop()! : new URL(target.url).hostname;
+    setWebPages(previous => [...previous, { id, title, target, sessionId }]);
+    setActiveTabId(id);
+  };
+  const closePage = (id: string) => {
+    setWebPages(previous => previous.filter(page => page.id !== id));
+    if (activeTabId === id) setActiveTabId(webPages.filter(page => page.id !== id).at(-1)?.id ?? tabs.at(-1)?.id ?? null);
+  };
   /** 窗格 id → 后端 SSH session_id（连接建立后回填） */
   const [backendIds, setBackendIds] = useState<Record<string, string | null>>(
     {},
@@ -380,7 +400,7 @@ export default function App() {
       if (focusTabId && next.some((tab) => tab.id === focusTabId)) {
         setActiveTabId(focusTabId);
       } else if (activeTabId && ids.has(activeTabId)) {
-        setActiveTabId(next[next.length - 1]?.id ?? null);
+        setActiveTabId(next[next.length - 1]?.id ?? webPages.at(-1)?.id ?? null);
       }
       return next;
     });
@@ -574,15 +594,16 @@ export default function App() {
       event.preventDefault();
       event.stopPropagation();
       if (event.ctrlKey && event.key === "Tab") {
-        if (tabs.length > 1) {
-          const index = tabs.findIndex((tab) => tab.id === activeTabId);
+        if (displayTabs.length > 1) {
+          const index = displayTabs.findIndex((tab) => tab.id === activeTabId);
           const step = event.shiftKey ? -1 : 1;
-          setActiveTabId(tabs[(index + step + tabs.length) % tabs.length].id);
+          setActiveTabId(displayTabs[(index + step + displayTabs.length) % displayTabs.length].id);
         }
         return;
       }
       const key = event.key.toLowerCase();
       if (key === "w") {
+        if (webPages.some(page => page.id === activeTabId)) { closePage(activeTabId!); return; }
         if (activeTabId) {
           const tab = tabs.find((item) => item.id === activeTabId);
           if (tab) closePane(tab.id, tab.activePane);
@@ -590,7 +611,7 @@ export default function App() {
       } else if (key === "t") {
         setServerPickerOpen(true);
       } else if (/^[1-9]$/.test(event.key)) {
-        const tab = tabs[Number(event.key) - 1];
+        const tab = displayTabs[Number(event.key) - 1];
         if (tab) setActiveTabId(tab.id);
       }
     };
@@ -598,6 +619,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [
     activeTabId,
+    webPages,
     backendIds,
     contextMenu,
     editingTabId,
@@ -706,6 +728,20 @@ export default function App() {
     setGroupEditor(null);
   };
   const renderTab = (t: TabInfo) => {
+    const page = webPages.find(item => item.id === t.id);
+    if (page) return <div key={page.id} role="tab" tabIndex={0}
+      aria-selected={page.id === activeTabId} className={`tab ${page.id === activeTabId ? "active" : ""}`}
+      onClick={() => setActiveTabId(page.id)}
+      onKeyDown={event => {
+        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault(); setActiveTabId(page.id);
+        }
+      }}
+      onAuxClick={event => { if (event.button === 1) { event.preventDefault(); closePage(page.id); } }}>
+      <span title={page.title}>🌐 {page.title}</span>
+      <Button variant="ghost" size="icon-sm" aria-label={`关闭网页 ${page.title}`}
+        onClick={event => { event.stopPropagation(); closePage(page.id); }}><IconClose size={12}/></Button>
+    </div>;
     // 未重命名的标签仍以服务器名和 #n 序号显示。
     const sameServer = tabs.filter(
       (x) => x.panes[0].server.id === t.panes[0].server.id,
@@ -857,7 +893,7 @@ export default function App() {
         )}
         <div className="workspace-tab-header">
           <ConnectionTabStrip
-            tabs={tabs}
+            tabs={displayTabs}
             groups={connectionGroups}
             activeTabId={activeTabId}
             renderTab={renderTab}
@@ -876,7 +912,7 @@ export default function App() {
             onNewTab={() => setServerPickerOpen(true)}
             onMove={moveToGroup}
           />
-          {activeTabId && (
+          {activeTabId && tabs.some(tab => tab.id === activeTabId) && (
             <div
               className="workspace-tab-actions"
               role="toolbar"
@@ -903,7 +939,8 @@ export default function App() {
             </div>
           )}
         </div>
-        {tabs.length === 0 ? (
+        {webPages.map(page => <WebPageView key={page.id} page={page} active={page.id === activeTabId}/>)}
+        {tabs.length === 0 && webPages.length === 0 ? (
           <div className="welcome">
             <img src={logoUrl} alt="dssh" />
             <h2>dssh</h2>
@@ -986,6 +1023,7 @@ export default function App() {
                           onStateChange={setPaneState}
                           onCwdChange={setPaneCwd}
                           taskLinks={paneTaskLinks(p)}
+                          onOpenPage={openPage}
                         />
                       </div>
                     ))}
@@ -1034,6 +1072,7 @@ export default function App() {
                         key={activePaneBackend ?? "disconnected"}
                         sessionId={activePaneBackend ?? ""}
                         terminalCwd={paneCwds[t.panes[t.activePane]?.id ?? ""]}
+                        onOpenPage={openPage}
                         onClose={() => togglePanel(t.id, null)}
                       />
                     </PanelDock>

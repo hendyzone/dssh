@@ -14,6 +14,7 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { selectedPage, type PageTarget } from "../lib/webPages";
 import { IconClose, IconFolder, IconFile, IconChevronRight } from "./Icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
@@ -52,6 +53,7 @@ interface SftpPanelProps {
   /** 当前聚焦窗格的远端终端目录（OSC 7 上报，未知时为 undefined） */
   terminalCwd?: string;
   onClose: () => void;
+  onOpenPage?: (target: PageTarget, sessionId: string) => void;
 }
 
 interface DragDropPayload {
@@ -137,6 +139,7 @@ export default function SftpPanel({
   serverId,
   terminalCwd,
   onClose,
+  onOpenPage,
 }: SftpPanelProps) {
   const [fileMenu, setFileMenu] = useState<{
     entry: FileEntry;
@@ -614,7 +617,13 @@ export default function SftpPanel({
 
   const enter = (entry: FileEntry) => {
     if (entry.isDir) void loadDirectory(entry.path);
-    else download(entry, true);
+    else {
+      const target = selectedPage(entry.path);
+      if (onOpenPage && sessionId && target) {
+        setFileMenu(null);
+        onOpenPage(target, sessionId);
+      } else download(entry, true);
+    }
   };
 
   const toggleTree = async (entry: FileEntry) => {
@@ -1369,7 +1378,10 @@ export default function SftpPanel({
                 下载所选 {selectedEntries.length} 项…
               </MenuItem>
             )}
-            <MenuItem onClick={() => enter(fileMenu.entry)}>
+            {!fileMenu.entry.isDir && onOpenPage && sessionId && selectedPage(fileMenu.entry.path) && (
+              <MenuItem onClick={() => enter(fileMenu.entry)}>在 dssh 新标签页打开</MenuItem>
+            )}
+            <MenuItem onClick={() => fileMenu.entry.isDir ? enter(fileMenu.entry) : download(fileMenu.entry, true)}>
               {fileMenu.entry.isDir ? "进入目录" : "下载并打开"}
             </MenuItem>
             {fileMenu.entry.isDir && (

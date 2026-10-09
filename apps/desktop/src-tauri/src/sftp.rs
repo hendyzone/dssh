@@ -780,6 +780,51 @@ pub async fn sftp_read_text(
     let _ = sftp.close().await;
     result
 }
+
+fn preview_image_mime(path: &str) -> Result<&'static str, Error> {
+    match Path::new(path).extension().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
+        "png" => Ok("image/png"),
+        "jpg" | "jpeg" => Ok("image/jpeg"),
+        "gif" => Ok("image/gif"),
+        "webp" => Ok("image/webp"),
+        "bmp" => Ok("image/bmp"),
+        "svg" => Ok("image/svg+xml"),
+        "ico" => Ok("image/x-icon"),
+        "avif" => Ok("image/avif"),
+        _ => Err(Error::Io("不支持的图片格式".into())),
+    }
+}
+
+#[tauri::command]
+pub async fn sftp_read_image(
+    state: State<'_, SshState>, session_id: String, path: String,
+) -> Result<String, Error> {
+    use base64::Engine;
+    let mime = preview_image_mime(&path)?;
+    let sftp = open_sftp(&state, &session_id).await?;
+    let result = async {
+        let mut file = sftp.open(path).await?;
+        let mut bytes = Vec::new();
+        (&mut file).take(20 * 1024 * 1024 + 1).read_to_end(&mut bytes).await?;
+        file.close().await?;
+        if bytes.len() > 20 * 1024 * 1024 {
+            return Err(Error::Io("图片预览仅支持 20 MB 以内的文件".into()));
+        }
+        Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+    }.await;
+    let _ = sftp.close().await;
+    result
+}
+
+#[cfg(test)]
+#[test]
+fn preview_image_types_are_restricted() {
+    assert_eq!(preview_image_mime("/tmp/中文.PNG").unwrap(), "image/png");
+    assert_eq!(preview_image_mime("/tmp/test.jpeg").unwrap(), "image/jpeg");
+    assert_eq!(preview_image_mime("/tmp/test.svg").unwrap(), "image/svg+xml");
+    assert!(preview_image_mime("/tmp/a.html").is_err());
+    assert!(preview_image_mime("/tmp/a.png.sh").is_err());
+}
 #[tauri::command]
 pub async fn sftp_save_text(
     state: State<'_, SshState>,

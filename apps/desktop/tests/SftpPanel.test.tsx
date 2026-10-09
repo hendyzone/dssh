@@ -14,6 +14,45 @@ function setup(){ vi.mocked(invoke).mockImplementation(async(command,args:any)=>
   if(command === "sftp_save_text")return "backup";
   return [];
 }); render(<SftpPanel sessionId="session" onClose={()=>{}}/>); }
+
+it("opens supported SFTP files in preview tabs on double-click using their exact remote paths",async()=>{
+ const onOpenPage=vi.fn();
+ const files=[{name:"页面.html",kind:"html"},{name:"说明.md",kind:"markdown"},{name:"截图.png",kind:"image"}];
+ vi.mocked(invoke).mockClear();
+ vi.mocked(invoke).mockImplementation(async(command)=>command==="sftp_home"?"/home/demo":command==="sftp_list"?files.map(file=>({name:file.name,path:`/home/demo/${file.name}`,isDir:false})):[]);
+ render(<SftpPanel sessionId="source-session" onClose={()=>{}} onOpenPage={onOpenPage}/>);
+ for(const file of files){
+  fireEvent.doubleClick(await screen.findByText(file.name));
+  expect(onOpenPage).toHaveBeenCalledWith({kind:file.kind,path:`/home/demo/${file.name}`},"source-session");
+ }
+ expect(vi.mocked(invoke).mock.calls.some(([command])=>command==="sftp_download")).toBe(false);
+});
+
+it("offers a preview context action while retaining explicit download-and-open",async()=>{
+ const onOpenPage=vi.fn();
+ vi.mocked(invoke).mockClear();
+ vi.mocked(invoke).mockImplementation(async(command)=>command==="sftp_home"?"/home/demo":command==="sftp_list"?[{name:"说明.md",path:"/home/demo/说明.md",isDir:false}]:command==="sftp_download"?"C:/Downloads/说明.md":[]);
+ render(<SftpPanel sessionId="source-session" onClose={()=>{}} onOpenPage={onOpenPage}/>);
+ const file=await screen.findByText("说明.md");
+ fireEvent.contextMenu(file);
+ fireEvent.click(screen.getByRole("menuitem",{name:"在 dssh 新标签页打开"}));
+ expect(onOpenPage).toHaveBeenCalledWith({kind:"markdown",path:"/home/demo/说明.md"},"source-session");
+ expect(screen.queryByRole("menuitem",{name:"在 dssh 新标签页打开"})).toBeNull();
+ fireEvent.contextMenu(file);
+ fireEvent.click(screen.getByRole("menuitem",{name:"下载并打开"}));
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_open_local",{path:"C:/Downloads/说明.md",application:null}));
+ expect(onOpenPage).toHaveBeenCalledTimes(1);
+});
+
+it("does not offer preview for directories or unsupported files",async()=>{
+ vi.mocked(invoke).mockImplementation(async(command)=>command==="sftp_home"?"/home/demo":command==="sftp_list"?[{name:"folder.md",path:"/home/demo/folder.md",isDir:true},{name:"data.zip",path:"/home/demo/data.zip",isDir:false}]:[]);
+ render(<SftpPanel sessionId="source-session" onClose={()=>{}} onOpenPage={vi.fn()}/>);
+ for(const name of ["folder.md","data.zip"]){
+  fireEvent.contextMenu(await screen.findByText(name));
+  expect(screen.queryByRole("menuitem",{name:"在 dssh 新标签页打开"})).toBeNull();
+  fireEvent.keyDown(document,{key:"Escape"});
+ }
+});
 it("groups panes by full directory path and opens the selected directory",async()=>{
  vi.mocked(invoke).mockImplementation(async(command)=>{
   if(command === "sftp_home")return "/home/demo";
