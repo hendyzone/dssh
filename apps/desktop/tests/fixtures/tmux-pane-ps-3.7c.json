@@ -1,0 +1,20 @@
+{
+  "tmuxVersion": "tmux 3.7c",
+  "generator": "osc7501_pane_ps_test.py (exact PRODUCTION_COMMAND)",
+  "raw": "DSSH_TMUX_PS_V1\n2:$0,10:1791689602,48:\u4e2d\u6587 \u961f\u5217,9-abc |DSSH-TMUX| ' #[(not-style)],2:%0,2:@0,1:1,1:1,0:,0:,0:,0:,0:,0:\n2:$0,10:1791689602,48:\u4e2d\u6587 \u961f\u5217,9-abc |DSSH-TMUX| ' #[(not-style)],2:%1,2:@1,1:0,1:1,7:blocked,10:permission,2:42,11:claude-code,38:\u6807\u9898,7:$(false) #[fg=red] #{pane_id},207:\u4e2d\u6587 |DSSH-TMUX|,9:abc '#{pane_id}' #[fg=red] $(touch /tmp/dssh-osc7501-vwszl3u1/must-not-execute) `touch /tmp/dssh-osc7501-vwszl3u1/must-not-execute` #(touch /tmp/dssh-osc7501-vwszl3u1/must-not-execute) \\\n",
+  "expected": {
+    "session_id": "$0",
+    "session_created": "1791689602",
+    "session_name": "\u4e2d\u6587 \u961f\u5217,9-abc |DSSH-TMUX| ' #[(not-style)]",
+    "pane_id": "%1",
+    "window_id": "@1",
+    "window_active": "0",
+    "pane_active": "1",
+    "state": "blocked",
+    "kind": "permission",
+    "progress": "42",
+    "app": "claude-code",
+    "title": "\u6807\u9898,7:$(false) #[fg=red] #{pane_id}",
+    "msg": "\u4e2d\u6587 |DSSH-TMUX|,9:abc '#{pane_id}' #[fg=red] $(touch /tmp/dssh-osc7501-vwszl3u1/must-not-execute) `touch /tmp/dssh-osc7501-vwszl3u1/must-not-execute` #(touch /tmp/dssh-osc7501-vwszl3u1/must-not-execute) \\"
+  }
+}

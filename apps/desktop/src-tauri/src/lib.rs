@@ -14,6 +14,7 @@ mod sftp_tree;
 mod ssh;
 mod sync;
 mod tmux;
+mod tmux_program_status;
 mod team_ai;
 mod workspace;
 mod vscode;
@@ -103,6 +104,7 @@ pub fn run() {
             ssh::ssh_live_connections,
             ssh::ssh_start,
             tmux::tmux_snapshot,
+            tmux_program_status::tmux_program_status,
             tmux::tmux_action,
             tmux::tmux_copy_buffer,
             ssh::ssh_write,
@@ -133,6 +135,7 @@ pub fn run() {
             sftp::sftp_read_image,
             sftp::sftp_save_text,
             sftp::sftp_open_local,
+            sftp::sftp_reveal_local,
             sftp::sftp_download,
             sftp_tree::sftp_download_tree,
             sftp_tree::sftp_local_conflicts,

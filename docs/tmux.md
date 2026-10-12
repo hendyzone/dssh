@@ -22,11 +22,14 @@
 
 附加时不会向已有窗格注入 shell 初始化脚本，因此不会干扰 vim、REPL 等前台程序。tmux 附加终端的目录跟随取决于远端现有 OSC 7 配置。
 
+支持 `pane_ps_*` 的 OSC 7501 补丁版会自动采集所有 pane 的原生状态，接入任务面板和未读提醒，并校验会话创建时间、精确选择窗口与 pane。采集只读，不启动或替换 tmux；原版继续使用 Hooks。DCS passthrough 仍可进入任务面板，但来源只标为附加标签，不能推断内部 pane。补丁目前只保存根记录，采集间隔内的短暂转换可能遗漏。详见 [程序状态协议与 tmux 实测](program-status.md#tmux-的边界)。
+
 实现与验证：
 
 - 管理命令走独立 SSH exec 通道，名称进行 shell 转义，操作目标限定到所选会话。
 - 终端在监听输出/退出事件后才发送 ssh_start，避免快速附加时首屏丢失。
 - 针对 tmux 3.4，结束放大状态的窗口/会话前先还原，避免本机测试中出现的 tmux server 异常退出。
 - 已在 WSL Ubuntu 的 tmux 3.4 独立 socket 上验证创建、重命名、窗口切换、分屏、放大及销毁；隔离测试通过后清理测试服务。
+- `python3 apps/desktop/tests/osc7501_tmux_test.py` 在独立 socket 和原始 PTY 中验证 OSC 7501 透传、活动 pane 回复路由、隐藏窗口及内部退出／提示符限制，不使用用户的现有会话。
 
 参考：[tmux 手册](https://man.openbsd.org/tmux.1)。

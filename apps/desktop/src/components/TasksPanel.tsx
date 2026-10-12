@@ -12,6 +12,24 @@ import {
   type TaskStatus,
 } from "../lib/taskStatus";
 import { IconClose } from "./Icons";
+import "./TasksPanel.css";
+
+const blockedLabels = {
+  permission: "等待批准",
+  question: "等待回答",
+  auth: "等待登录",
+};
+const tmuxSessionLabel = (name: string) => name.replace(/[\u0000-\u001f\u007f-\u009f]|\p{Cf}/gu, "");
+
+function programStatusLabel(task: TaskStatus) {
+  if (task.phase === "disconnected") return taskLabels.disconnected;
+  if (task.programState === "done") {
+    return task.unread ? "已完成 · 待查看" : "已完成 · 已查看";
+  }
+  if (task.programState === "blocked" && task.kind) return blockedLabels[task.kind];
+  return taskLabels[task.phase];
+}
+
 export function useTasks() {
   const [tasks, setTasks] = useState(taskSnapshot);
   useEffect(() => subscribeTasks(() => setTasks(taskSnapshot())), []);
@@ -89,13 +107,16 @@ export default function TasksPanel({
         <p>pi 支持开始、本轮结束、错误及新版 UI 等待事件；未提供事件的确认提示标为推测。已有普通 SSH 窗格需重新连接后启动工具，tmux 无需重建会话。</p>
       </details>
       <p className="workspace-hint">
-        工具通知会直接提醒；根据终端文字判断的状态标为“推测”。安静不代表完成。
+        支持程序状态协议的工具会自动上报，也可通过 Hooks 接入。根据终端文字判断的状态标为“推测”；安静不代表完成。
       </p>
       <div className="workspace-scroll">
         {tasks.length === 0 && <p>连接服务器后开始跟踪。</p>}
         {tasks.map((task) => {
+          const program = task.protocol === "osc7501";
           const quiet =
-            task.phase === "running" && clock - task.updated > 15000;
+            !program && task.phase === "running" && clock - task.updated > 15000;
+          const showProgress = program && task.phase !== "disconnected" && task.progress !== undefined &&
+            (task.programState === "working" || task.programState === "blocked");
           return (
             <Button
               variant="outline"
@@ -108,11 +129,27 @@ export default function TasksPanel({
                 {task.name}
                 {task.unread ? " ●" : ""}
               </strong>
-              {task.provider && <small>{aiProviders[task.provider]} · {task.estimated ? "终端推测" : "工具事件"}</small>}
+              {program ? <>
+                <small className="task-program-source" title="OSC 7501 程序状态协议">
+                  {task.app || "程序"} · 程序上报
+                </small>
+                {task.protocolScope === "tmux-client" && <small title="透传报告不包含远端 tmux 窗格标识，点击返回来源标签页">
+                  tmux 透传 · 来源为此标签
+                </small>}
+                {task.protocolScope === "tmux-pane" && task.tmux && <small>
+                  tmux · {tmuxSessionLabel(task.tmux.sessionName)} · {task.tmux.paneId}
+                </small>}
+                {task.title && <span className="task-program-title">{task.title}</span>}
+                {task.recordId && <small className="task-program-id">{task.recordId}</small>}
+              </> : task.provider && <small>{aiProviders[task.provider]} · {task.estimated ? "终端推测" : "工具事件"}</small>}
               <Badge variant="secondary" className={"task-phase " + task.phase}>
-                {quiet ? "暂时无输出" : taskLabels[task.phase]}
+                {program ? programStatusLabel(task) : quiet ? "暂时无输出" : taskLabels[task.phase]}
                 {task.estimated ? " · 推测" : ""}
               </Badge>
+              {showProgress && <span className="task-program-progress">
+                <progress value={task.progress} max={100} aria-label={`${task.title || task.app || task.name}进度`} />
+                <small>{task.progress}%</small>
+              </span>}
               <small>
                 {quiet ? "没有新的终端输出，任务可能仍在运行" : task.message}
               </small>

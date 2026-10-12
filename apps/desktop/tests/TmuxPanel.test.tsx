@@ -346,7 +346,7 @@ test("shows missing tmux and fetch errors rather than an empty valid server", as
   const view = render(
     <TmuxPanel sessionId="ssh" onAttach={() => {}} onClose={() => {}} />,
   );
-  await screen.findByText(/远端未找到 tmux/);
+  await screen.findByText(/当前终端所在机器未找到 tmux/);
   mocks.invoke.mockRejectedValueOnce("SSH disconnected");
   fireEvent.click(screen.getByRole("button", { name: "刷新" }));
   await screen.findByRole("alert");

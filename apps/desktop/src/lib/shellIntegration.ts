@@ -1,7 +1,8 @@
-// Only affects the current shell. Newlines separate scalar prompt commands safely,
+// Report both prompt lifecycle (OSC 133 A) and cwd (OSC 7) in the current shell.
+// Newlines separate scalar prompt commands safely,
 // including commands that already end in a semicolon or background operator.
 export const OSC7_HOOK =
-  ' __dssh_osc7(){ printf "\\033]7;file://%s%s\\033\\\\" "${HOSTNAME:-$(hostname)}" "$PWD"; };' +
+  ' __dssh_osc7(){ printf "\\033]133;A\\007"; printf "\\033]7;file://%s%s\\033\\\\" "${HOSTNAME:-$(hostname)}" "$PWD"; };' +
   'if [ -n "${ZSH_VERSION:-}" ]; then case " ${precmd_functions[*]} " in *" __dssh_osc7 "*) ;; *) precmd_functions+=(__dssh_osc7);; esac; ' +
   'elif [ -n "${BASH_VERSION:-}" ]; then case "${PROMPT_COMMAND[*]}" in *__dssh_osc7*) ;; *) ' +
   'case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in "declare -a"*) PROMPT_COMMAND+=(__dssh_osc7);; ' +

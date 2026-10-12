@@ -25,4 +25,5 @@ it.each([
   expect(result.stderr).toBe("");
   expect(result.stdout.startsWith(original)).toBe(true);
   expect(result.stdout.match(/\x1b\]7;file:\/\//g)).toHaveLength(1);
+  expect(result.stdout.match(/\x1b\]133;A\x07/g)).toHaveLength(1);
 });

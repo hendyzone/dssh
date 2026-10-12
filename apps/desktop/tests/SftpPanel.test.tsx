@@ -75,6 +75,31 @@ it("groups panes by full directory path and opens the selected directory",async(
  await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_list",{sessionId:"session",path:"/workspace/project"}));
  expect(screen.queryByRole("region",{name:"tmux 工作目录"})).toBeNull();
 });
+
+it("offers reveal only after a successful download and reports reveal failures",async()=>{
+ let finish: (path: string)=>void = ()=>{};
+ const pending=new Promise<string>(resolve=>{finish=resolve;});
+ vi.mocked(invoke).mockClear();
+ vi.mocked(invoke).mockImplementation(async(command)=>{
+  if(command==="sftp_home")return "/home/demo";
+  if(command==="sftp_list")return [{name:"截图.png",path:"/home/demo/截图.png",isDir:false}];
+  if(command==="sftp_download")return pending;
+  if(command==="sftp_reveal_local")throw new Error("文件已移动");
+  return [];
+ });
+ render(<SftpPanel sessionId="download-session" onClose={()=>{}}/>);
+ await screen.findByText("截图.png");
+ fireEvent.click(screen.getByTitle("下载"));
+ expect(screen.queryByRole("button",{name:"打开所在目录"})).toBeNull();
+ finish("C:/Users/demo/Downloads/dssh/random/截图.png");
+ const reveal=await screen.findByRole("button",{name:"打开所在目录"});
+ expect(vi.mocked(invoke).mock.calls.some(([command])=>command==="sftp_reveal_local")).toBe(false);
+ fireEvent.click(reveal);
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_reveal_local",{path:"C:/Users/demo/Downloads/dssh/random/截图.png"}));
+ expect((await screen.findByRole("alert")).textContent).toContain("文件已移动");
+ fireEvent.click(screen.getByTitle("关闭提示"));
+ expect(screen.queryByRole("button",{name:"打开所在目录"})).toBeNull();
+});
 it("enters a resolved directory link without downloading it",async()=>{
  vi.mocked(invoke).mockClear();
  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
@@ -150,6 +175,8 @@ it("downloads a folder from the context menu after one conflict choice",async()=
  fireEvent.click(await screen.findByText("开始下载"));
  await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_download_tree",{sessionId:"session",remotePaths:["/home/demo/项目 A"],localDir:"/home/me/下载",transferId:"transfer",policy:"rename",concurrency:8}));
  await screen.findByText(/已下载 3\/3 个文件到 \/home\/me\/下载\/项目 A \(1\)/);
+ fireEvent.click(screen.getByRole("button",{name:"打开所在目录"}));
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith("sftp_reveal_local",{path:"/home/me/下载"}));
 });
 
 it("downloads a mixed multi-selection as one transfer without a conflict prompt",async()=>{

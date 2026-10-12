@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CollaborationSession } from "../lib/collaboration";
 import {
   boardSource, boardUrlError, clearBoardCache, isIdentifier, listProjects, saveLookupSettings, serverOverrideKey, tmuxOverrideKey, useLookupSettings,
@@ -11,6 +11,7 @@ import "./Collaboration.css";
 export default function TaskLookupSettings({ sessions = [], servers = [] }: { sessions?: CollaborationSession[]; servers?: ServerEntry[] }) {
   const settings = useLookupSettings();
   const [url, setUrl] = useState(settings.boardUrl);
+  useEffect(() => { setUrl(settings.boardUrl); }, [settings.boardUrl]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const choices = sessions.filter((s, i, all) => all.findIndex(o => o.pane.id === s.pane.id) === i);
@@ -28,6 +29,7 @@ export default function TaskLookupSettings({ sessions = [], servers = [] }: { se
   };
   return <div className="collaboration-settings">
     <p>只读查询 taskboard：在团队面板输入任务编号查看状态卡片，终端里出现的真实编号可悬停查看、点击打开。dssh 不修改任何任务。</p>
+    <p>已保存的看板地址、编号识别开关、锁定项目和服务器 / tmux 项目绑定会随「同步」加密备份与恢复。</p>
     <fieldset><legend>看板地址</legend>
       <label className="collaboration-field">本机可访问的看板地址<Input value={url} placeholder="http://taskboard.example:8091" onChange={e => { setUrl(e.target.value); setMessage(""); }}/></label>
       <p>留空时，已在「Agent 协作」开启任务看板的 tmux 会话改为经该 SSH 服务器访问其中填写的地址。两条路不会互相兜底，查询结果会标明走的哪一条。</p>

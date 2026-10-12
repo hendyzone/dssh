@@ -13,6 +13,7 @@ use std::{
 use tauri::AppHandle;
 
 pub const UI_KEYS: &[&str] = &[
+    "dssh.task-lookup.v1",
     "dssh.settings",
     "dssh.sftp.hidden",
     "dssh.sftp.application",
@@ -90,6 +91,23 @@ pub fn validate_ui(ui: &UiState) -> Result<(), SyncError> {
             let parsed: serde_json::Value =
                 serde_json::from_str(value).map_err(|_| error("界面配置格式无效"))?;
             match key.as_str() {
+                "dssh.task-lookup.v1" => {
+                    let url = parsed["boardUrl"].as_str().ok_or_else(|| error("看板地址格式无效"))?;
+                    if !url.trim().is_empty() && crate::taskboard::board_url(url).is_err() {
+                        return Err(error("看板地址无效"));
+                    }
+                    let project = parsed["lockedProject"].as_str().ok_or_else(|| error("锁定项目格式无效"))?;
+                    if (!project.is_empty() && !crate::taskboard::identifier(project)) || !parsed["terminalLinks"].is_boolean() {
+                        return Err(error("任务查询配置无效"));
+                    }
+                    let overrides = parsed["overrides"].as_object().ok_or_else(|| error("项目绑定格式无效"))?;
+                    for (key, value) in overrides {
+                        if !(key.starts_with("server:") || key.starts_with("tmux:"))
+                            || !value.as_str().is_some_and(crate::taskboard::identifier) {
+                            return Err(error("项目绑定无效"));
+                        }
+                    }
+                }
                 "dssh.settings" => {
                     let size = parsed["fontSize"].as_u64().unwrap_or(0);
                     if !(10..=24).contains(&size)
@@ -225,6 +243,26 @@ fn ai_endpoints(ui: &UiState) -> Result<BTreeMap<String,(String,Option<String>)>
 }
 
 fn remap_team_connections(ui: &mut UiState, ids: &BTreeMap<String, String>) -> Result<(), SyncError> {
+    if let Some(raw) = ui.get_mut("dssh.task-lookup.v1") {
+        let mut settings: serde_json::Value = serde_json::from_str(raw).map_err(|_| error("任务查询配置无效"))?;
+        let overrides = settings["overrides"].as_object().ok_or_else(|| error("项目绑定格式无效"))?;
+        let mut mapped = serde_json::Map::new();
+        for (key, value) in overrides {
+            let mut parts = key.splitn(3, ':');
+            let kind = parts.next().unwrap_or("");
+            let source = parts.next().unwrap_or("");
+            if let Some(id) = ids.get(source) {
+                let target = match (kind, parts.next()) {
+                    ("server", None) => format!("server:{id}"),
+                    ("tmux", Some(name)) => format!("tmux:{id}:{name}"),
+                    _ => continue,
+                };
+                mapped.insert(target, value.clone());
+            }
+        }
+        settings["overrides"] = serde_json::Value::Object(mapped);
+        *raw = settings.to_string();
+    }
     if let Some(raw) = ui.get_mut("dssh.collaboration.v2") {
         let profiles: BTreeMap<String, serde_json::Value> = serde_json::from_str(raw)
             .map_err(|_| error("团队绑定格式无效"))?;
@@ -335,6 +373,22 @@ pub(crate) fn sample_bundle() -> Bundle {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn task_lookup_sync_validates_and_remaps_server_bindings() {
+        let mut ui = std::collections::BTreeMap::from([("dssh.task-lookup.v1".into(), serde_json::json!({
+            "boardUrl":"http://board.test:8091/", "terminalLinks":false, "lockedProject":"demo",
+            "overrides":{"server:old":"demo","tmux:old:lead:one":"docs","server:missing":"unused"}
+        }).to_string())]);
+        super::validate_ui(&ui).unwrap();
+        super::remap_team_connections(&mut ui, &std::collections::BTreeMap::from([("old".into(),"new".into())])).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&ui["dssh.task-lookup.v1"]).unwrap();
+        assert_eq!(settings["overrides"], serde_json::json!({"server:new":"demo","tmux:new:lead:one":"docs"}));
+        assert_eq!(settings["terminalLinks"], false);
+        let mut bad = settings;
+        bad["boardUrl"] = "javascript:alert(1)".into();
+        ui.insert("dssh.task-lookup.v1".into(), bad.to_string());
+        assert!(super::validate_ui(&ui).is_err());
+    }
     use super::*;
     #[test]
     fn ai_config_and_keys_roundtrip_and_legacy_defaults() {

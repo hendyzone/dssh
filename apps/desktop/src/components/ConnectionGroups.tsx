@@ -38,6 +38,27 @@ export function ConnectionTabStrip({
 }) {
   const stripRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const onWheel = (event: WheelEvent) => {
+      // Keep native horizontal gestures and Ctrl+wheel zoom intact.
+      if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY))
+        return;
+      const maxScroll = strip.scrollWidth - strip.clientWidth;
+      if (maxScroll <= 0) return;
+      const unit =
+        event.deltaMode === 1 ? 32 : event.deltaMode === 2 ? strip.clientWidth : 1;
+      event.preventDefault();
+      strip.scrollLeft = Math.max(
+        0,
+        Math.min(maxScroll, strip.scrollLeft + event.deltaY * unit),
+      );
+    };
+    // A native non-passive listener allows cancelling vertical page scrolling.
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
+  useEffect(() => {
     stripRef.current
       ?.querySelector<HTMLElement>('.tab[aria-selected="true"]')
       ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });

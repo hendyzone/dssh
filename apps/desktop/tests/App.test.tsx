@@ -1,10 +1,12 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "../src/App";
 import { deleteServer, loadServers } from "../src/store";
 import { loadWorkspace, saveWorkspace } from "../src/lib/workspaceRestore";
 import { StrictMode, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { focusTask, ingestTaskOutput, programTaskId, removeTask, taskSnapshot, tmuxProgramTaskId } from "../src/lib/taskStatus";
+import { LOCAL_SHELL } from "../src/lib/localShell";
 
 const terminalMock = vi.hoisted(() => ({ connected: false }));
 
@@ -78,6 +80,12 @@ beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 
+afterEach(() => {
+  removeTask("osc-source-pane");
+  focusTask("");
+  vi.restoreAllMocks();
+});
+
 it("opens a web tab, preserves the terminal and switches/closes with tab shortcuts", async () => {
   localStorage.clear();
   vi.mocked(invoke).mockImplementation(async command => command === "sftp_read_text" ? "<h1>核心机制</h1>" : []);
@@ -129,6 +137,212 @@ it("routes an AI notification to the exact tmux pane with the backend request co
   } });
   expect(view.container.querySelectorAll(".tab")).toHaveLength(1);
   expect(view.container.querySelector(".tab.active")).toBeTruthy();
+});
+
+it.each(["reminder", "card"] as const)("routes a native tmux %s to the exact existing session split and only acknowledges that pane", async entry => {
+  terminalMock.connected = true;
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const servers = await loadServers();
+  const remote = { id: "$7", created: 123, name: "agent" };
+  const native = { sessionId: "$7", sessionCreated: 123, sessionName: "agent", paneId: "%9", windowId: "@2",
+    windowActive: false, paneActive: true, state: "working", app: "cargo" };
+  let panes = [native, { ...native, paneId: "%10", state: "working" }];
+  vi.mocked(invoke).mockImplementation(async command => command === "tmux_program_status" ? { supported: true, panes } : []);
+  saveWorkspace({ tabs: [
+    { id: "watching", activePane: 0, panes: [{ id: "watcher", server: servers[0] }] },
+    { id: "target", activePane: 0, panes: [{ id: "left", server: servers[0] }, { id: "right", server: servers[0], tmux: remote }] },
+  ], activeTabId: "watching", groups: [], cwds: {} });
+  const view = render(<App />);
+  await act(async () => {});
+  panes = panes.map(pane => ({ ...pane, state: "done" }));
+  await act(async () => window.dispatchEvent(new Event("dssh-tmux-ps-refresh")));
+  const id = tmuxProgramTaskId({ serverId: "server", sessionId: "$7", sessionCreated: 123, paneId: "%9" });
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(true);
+  if (entry === "reminder") {
+    fireEvent.click(screen.getByRole("button", { name: /测试服务器 · agent %9 · 已完成/ }));
+  } else {
+    fireEvent.click(screen.getByRole("button", { name: "任务状态与提醒" }));
+    fireEvent.click(screen.getByRole("button", { name: /测试服务器 · agent %9.*待查看/ }));
+  }
+  await act(async () => {});
+  expect(invoke).toHaveBeenCalledWith("tmux_action", { sessionId: "ssh-watcher", request: {
+    action: "select-pane", session: { id: "$7", created: 123 }, target: "%9",
+  } });
+  expect(view.container.querySelectorAll(".tab")).toHaveLength(2);
+  expect(loadWorkspace(servers).activeTabId).toBe("target");
+  expect(loadWorkspace(servers).tabs.find(tab => tab.id === "target")?.activePane).toBe(1);
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(false);
+  expect(taskSnapshot().find(task => task.tmux?.paneId === "%10")?.unread).toBe(true);
+  view.unmount();
+});
+
+it("preserves unread and the current tab when native pane identity validation fails", async () => {
+  terminalMock.connected = true;
+  const servers = await loadServers();
+  let phase = "working";
+  vi.mocked(invoke).mockImplementation(async command => {
+    if (command === "tmux_program_status") return { supported: true, panes: [{ sessionId: "$7", sessionCreated: 123,
+      sessionName: "old", paneId: "%9", windowId: "@2", windowActive: false, paneActive: false, state: phase }] };
+    if (command === "tmux_action") throw new Error("会话已重建");
+    return [];
+  });
+  saveWorkspace({ tabs: [{ id: "watching", activePane: 0, panes: [{ id: "watcher", server: servers[0] }] }],
+    activeTabId: "watching", groups: [], cwds: {} });
+  const view = render(<App />);
+  await act(async () => {});
+  phase = "blocked";
+  await act(async () => window.dispatchEvent(new Event("dssh-tmux-ps-refresh")));
+  const id = tmuxProgramTaskId({ serverId: "server", sessionId: "$7", sessionCreated: 123, paneId: "%9" });
+  await act(async () => window.dispatchEvent(new CustomEvent("dssh-open-task", { detail: id })));
+  expect(screen.getByRole("alert").textContent).toContain("会话已重建");
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(true);
+  expect(loadWorkspace(servers).activeTabId).toBe("watching");
+  expect(view.container.querySelectorAll(".tab")).toHaveLength(1);
+  view.unmount();
+});
+
+it.each(["ordinary SSH", "another server"] as const)("waits for a fresh pane snapshot before acknowledging a cached tmux tab entered from %s", async from => {
+  terminalMock.connected = true;
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const servers = await loadServers();
+  const remote = { id: "$7", created: 123, name: "agent" };
+  const otherServer = from === "another server";
+  const native = { sessionId: "$7", sessionCreated: 123, sessionName: "agent", paneId: "%9", windowId: "@2",
+    windowActive: true, paneActive: true, state: "working" };
+  let panes = [native];
+  let defer = false;
+  let resolveFresh!: (value: unknown) => void;
+  const sourceConnection = otherServer ? "ssh-target-pane" : "ssh-watching-pane";
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command !== "tmux_program_status") return [];
+    if ((args as { sessionId: string }).sessionId !== sourceConnection) return {
+      supported: true, panes: [{ ...native, sessionId: "$1", sessionName: "local", paneId: "%1", windowId: "@1" }],
+    };
+    if (defer) return new Promise(resolve => { resolveFresh = resolve; });
+    return { supported: true, panes };
+  });
+  saveWorkspace({ tabs: [
+    { id: "watching", customTitle: "当前标签", activePane: 0, panes: [{ id: "watching-pane",
+      server: otherServer ? LOCAL_SHELL : servers[0], ...(otherServer ? { tmux: { id: "$1", created: 123, name: "local" } } : {}) }] },
+    { id: "target", customTitle: "缓存会话", activePane: 0, panes: [{ id: "target-pane", server: servers[0], tmux: remote }] },
+  ], activeTabId: "watching", groups: [], cwds: {} });
+  const view = render(<App />);
+  await act(async () => {});
+  panes = [{ ...native, state: "done" }];
+  await act(async () => window.dispatchEvent(new Event("dssh-tmux-ps-refresh")));
+  const id = tmuxProgramTaskId({ serverId: "server", sessionId: "$7", sessionCreated: 123, paneId: "%9" });
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(true);
+  defer = true;
+  fireEvent.click(screen.getByRole("tab", { name: /缓存会话/ }));
+  await act(async () => {});
+  expect(loadWorkspace(servers).activeTabId).toBe("target");
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(true);
+  expect(resolveFresh).toBeTypeOf("function");
+  await act(async () => { resolveFresh({ supported: true, panes }); });
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(false);
+  view.unmount();
+});
+
+it("keeps a newly completed pane unread when the same fresh snapshot says it is no longer visible", async () => {
+  terminalMock.connected = true;
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const servers = await loadServers();
+  const native = { sessionId: "$7", sessionCreated: 123, sessionName: "agent", paneId: "%9", windowId: "@2",
+    windowActive: true, paneActive: true, state: "working" as string | null };
+  let panes = [native, { ...native, paneId: "%10", windowId: "@3", windowActive: false, state: null }];
+  vi.mocked(invoke).mockImplementation(async command => command === "tmux_program_status" ? { supported: true, panes } : []);
+  saveWorkspace({ tabs: [{ id: "target", activePane: 0, panes: [{ id: "target-pane", server: servers[0],
+    tmux: { id: "$7", created: 123, name: "agent" } }] }], activeTabId: "target", groups: [], cwds: {} });
+  const view = render(<App />);
+  await act(async () => {});
+  const id = tmuxProgramTaskId({ serverId: "server", sessionId: "$7", sessionCreated: 123, paneId: "%9" });
+  expect(taskSnapshot().find(task => task.id === id)?.programState).toBe("working");
+  panes = [{ ...native, windowActive: false, state: "done" }, { ...native, paneId: "%10", windowId: "@3", state: null }];
+  await act(async () => window.dispatchEvent(new Event("dssh-tmux-ps-refresh")));
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(true);
+  expect(screen.getByRole("button", { name: /测试服务器 · agent %9 · 已完成/ })).toBeTruthy();
+  await act(async () => window.dispatchEvent(new Event("dssh-tmux-ps-refresh")));
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(true);
+  view.unmount();
+});
+
+it("does not reopen or acknowledge a tab closed while native pane navigation is pending", async () => {
+  terminalMock.connected = true;
+  const servers = await loadServers();
+  const native = { sessionId: "$7", sessionCreated: 123, sessionName: "agent", paneId: "%9", windowId: "@2",
+    windowActive: false, paneActive: true, state: "working" };
+  let panes = [native];
+  let finishNavigation!: (value: unknown) => void;
+  vi.mocked(invoke).mockImplementation(async command => {
+    if (command === "tmux_program_status") return { supported: true, panes };
+    if (command === "tmux_action") return new Promise(resolve => { finishNavigation = resolve; });
+    return [];
+  });
+  saveWorkspace({ tabs: [
+    { id: "watching", customTitle: "当前标签", activePane: 0, panes: [{ id: "watcher", server: servers[0] }] },
+    { id: "target", customTitle: "待关闭标签", activePane: 0, panes: [{ id: "target-pane", server: servers[0],
+      tmux: { id: "$7", created: 123, name: "agent" } }] },
+  ], activeTabId: "watching", groups: [], cwds: {} });
+  const view = render(<App />);
+  await act(async () => {});
+  panes = [{ ...native, state: "done" }];
+  await act(async () => window.dispatchEvent(new Event("dssh-tmux-ps-refresh")));
+  const id = tmuxProgramTaskId({ serverId: "server", sessionId: "$7", sessionCreated: 123, paneId: "%9" });
+  await act(async () => window.dispatchEvent(new CustomEvent("dssh-open-task", { detail: id })));
+  expect(finishNavigation).toBeTypeOf("function");
+  fireEvent.click(within(screen.getByRole("tab", { name: /待关闭标签/ })).getByTitle("关闭标签"));
+  await act(async () => { finishNavigation(undefined); });
+  expect(loadWorkspace(servers).activeTabId).toBe("watching");
+  expect(screen.getAllByRole("tab")).toHaveLength(1);
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(true);
+  view.unmount();
+});
+
+it.each(["reminder", "card"] as const)("opens an OSC child record from its %s in the source tab and split, then marks it read", async (entry) => {
+  const servers = await loadServers();
+  const tmux = entry === "card";
+  saveWorkspace({
+    tabs: [
+      { id: "watching", customTitle: "当前标签", activePane: 0, panes: [{ id: "watching-pane", server: servers[0] }] },
+      { id: "source-tab", customTitle: "来源标签", activePane: 0, panes: [
+        { id: "other-split", server: servers[0] },
+        { id: "osc-source-pane", server: servers[0], ...(tmux ? { tmux: { id: "$7", created: 123, name: "build" } } : {}) },
+      ] },
+    ],
+    activeTabId: "watching", groups: [], cwds: {},
+  });
+  const view = render(<App />);
+  await act(async () => {});
+  focusTask("watching-pane");
+  const id = programTaskId("osc-source-pane", "deploy/eu");
+  expect(id).not.toBe("osc-source-pane");
+  act(() => {
+    ingestTaskOutput("osc-source-pane", "OSC source", "\x1b]7501;state=done:app=cargo:id=deploy/eu\x1b\\", { tmux });
+  });
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(true);
+  expect(view.container.querySelector(".tab.active")?.textContent).toContain("当前标签");
+  if (entry === "reminder") {
+    fireEvent.click(within(view.container.querySelector(".task-reminder") as HTMLElement).getByRole("button", { name: /OSC source/ }));
+  } else {
+    fireEvent.click(screen.getByRole("button", { name: "任务状态与提醒" }));
+    const panel = screen.getByRole("region", { name: "tasks 停靠面板" });
+    expect(within(panel).getByText("deploy/eu")).toBeTruthy();
+    expect(within(panel).getByText("tmux 透传 · 来源为此标签")).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: /OSC source/ }));
+  }
+  expect(view.container.querySelector(".tab.active")?.textContent).toContain("来源标签");
+  const restored = loadWorkspace(servers);
+  expect(restored.activeTabId).toBe("source-tab");
+  expect(restored.tabs.find(tab => tab.id === "source-tab")?.activePane).toBe(1);
+  const terminalInputs = view.container.querySelectorAll<HTMLTextAreaElement>("textarea[aria-label='Terminal input']");
+  expect(terminalInputs[2].dataset.active).toBe("true");
+  expect(taskSnapshot().find(task => task.id === id)?.unread).toBe(false);
+  expect(view.container.querySelector(".task-reminder")).toBeNull();
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "tmux_action")).toBe(false);
+  view.unmount();
 });
 
 it("restores the workspace after server loading even in StrictMode and persists changes across reopening", async () => {

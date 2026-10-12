@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { restoreSyncUi } from "../src/lib/syncUi";
 import { beforeEach, expect, it, vi } from "vitest";
 import { fakeInvoke } from "./fixtures/taskboard";
 
@@ -11,6 +12,15 @@ import { clearBoardCache, loadLookupSettings, saveLookupSettings } from "../src/
 const pane = { id: "p1", server: { id: "srv", name: "协同机1" }, tmux: { id: "$3", created: 1, name: "lead" } } as any;
 
 beforeEach(() => { clearBoardCache(); mocks.invoke.mockReset(); mocks.invoke.mockImplementation(fakeInvoke()); });
+
+it("immediately displays task lookup settings restored by sync", () => {
+  render(<TaskLookupSettings/>);
+  act(() => restoreSyncUi({"dssh.task-lookup.v1":JSON.stringify({
+    boardUrl:"https://restored.test", terminalLinks:false, lockedProject:"demo", overrides:{}
+  })}));
+  expect((screen.getByLabelText("本机可访问的看板地址") as HTMLInputElement).value).toBe("https://restored.test");
+  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+});
 
 it("saves and tests the board URL, toggles terminal recognition and assigns projects", async () => {
   saveLookupSettings({ lockedProject: "amail" });

@@ -71,7 +71,10 @@ export function useAiStatus(hosts: ClaudeHost[], panes?: SessionInfo[], backendI
           if (known.current.get(id) === signature && initialized.has(host.serverId) && ids.get(host.serverId)?.has(id)) continue;
           reportTask(id, `${host.name} · ${aiProviders[task.provider]}${task.tmux ? " · " + task.tmux.name + " " + task.tmux.pane : ""}`,
             task.phase, aiPhaseLabels[task.phase], false, initialized.has(host.serverId) && changed,
-            task.updated, { provider: task.provider, sourcePaneId });
+            task.updated, { provider: task.provider, sourcePaneId, ...(task.tmux ? { tmux: {
+              serverId: host.serverId, sessionId: task.tmux.id, sessionCreated: task.tmux.created,
+              sessionName: task.tmux.name, paneId: task.tmux.pane,
+            } } : {}) });
           known.current.set(id, signature);
         }
         for (const id of ids.get(host.serverId) ?? []) if (!next.has(id)) { removeTask(id); known.current.delete(id); }

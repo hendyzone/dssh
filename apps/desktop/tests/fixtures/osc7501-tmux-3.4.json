@@ -1,0 +1,18 @@
+{
+  "tmuxVersion": "tmux 3.4",
+  "generator": "apps/desktop/tests/osc7501_tmux_test.py --record-fixture",
+  "description": "Real isolated tmux PTY output after DCS passthrough; no pane identity survives.",
+  "chunks": [
+    "\u001b[?25l\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\r\n\u001b[K\u001b[?12l\u001b[?25h\u001b[H\u001b]7501;state=working:app=cargo:progress=40\u001b\\\u001b(B\u001b[m\u001b[?12l\u001b[?25h\u001b[?1006l\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[1;1H\u001b[1;40r\u001b[1;1H",
+    "\u001b]7501;state=done:app=cargo\u001b\\\u001b(B\u001b[m\u001b[?12l\u001b[?25h\u001b[?1006l\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[1;1H\u001b[1;40r\u001b[1;1H"
+  ],
+  "expectedStates": [
+    "working",
+    "done"
+  ],
+  "expectedRecord": {
+    "id": "",
+    "state": "done",
+    "app": "cargo"
+  }
+}

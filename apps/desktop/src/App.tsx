@@ -7,7 +7,8 @@ import { useClaudeStatus, claudeTaskId, type ClaudeHost } from "./lib/claudeStat
 import { useAiStatus, aiTaskId } from "./lib/aiStatus";
 import { invoke } from "@tauri-apps/api/core";
 import ChangesPanel from "./components/ChangesPanel";
-import { focusTask, taskLabels } from "./lib/taskStatus";
+import { focusTask, focusTmuxPane, taskLabels } from "./lib/taskStatus";
+import { useTmuxProgramStatus } from "./lib/tmuxProgramStatus";
 import ToolRail from "./components/ToolRail";
 import CollaborationPanel from "./components/CollaborationPanel";
 import TeamPanel from "./components/TeamPanel";
@@ -135,27 +136,83 @@ export default function App() {
   /** 每个标签页打开的侧面板 */
   const taskStates = useTasks();
   const claudeHosts = new Map<string, ClaudeHost>();
+  const tmuxHosts = new Map<string, ClaudeHost>();
   tabs.forEach(tab => tab.panes.forEach(pane => {
-    if (isLocalShell(pane.server)) return;
     const sessionId = backendIds[pane.id];
+    if (sessionId && !tmuxHosts.has(pane.server.id)) tmuxHosts.set(pane.server.id, {serverId:pane.server.id, name:pane.server.name, sessionId});
+    if (isLocalShell(pane.server)) return;
     if (sessionId && !claudeHosts.has(pane.server.id)) claudeHosts.set(pane.server.id, {serverId:pane.server.id, name:pane.server.name, sessionId});
   }));
   const aiSnapshots = useAiStatus([...claudeHosts.values()], tabs.flatMap(tab => tab.panes), backendIds);
+  const tmuxProgramSnapshots = useTmuxProgramStatus([...tmuxHosts.values()]);
   const claudeSnapshots = useClaudeStatus([...claudeHosts.values()], Object.entries(aiSnapshots).flatMap(([serverId, snapshot]) =>
     snapshot.tasks.filter(task => task.provider === "claude" && task.tmux).map(task => ({ serverId, id: task.tmux!.id, created: task.tmux!.created }))));
   const [taskNavigationError, setTaskNavigationError] = useState<string | null>(null);
+  const taskNavigation = useRef(0);
+  const navigationContext = useRef({ tabs, activeTabId, tmuxHosts, backendIds });
+  navigationContext.current = { tabs, activeTabId, tmuxHosts, backendIds };
+  useEffect(() => () => { taskNavigation.current++; }, []);
+  const lastTmuxFocusSnapshot = useRef<unknown>();
+  const activeTaskTab = tabs.find(tab => tab.id === activeTabId);
+  const activeTaskPane = activeTaskTab?.panes[activeTaskTab.activePane];
+  useEffect(() => {
+    // Changing tabs does not acknowledge a pane using an old server snapshot.
+    lastTmuxFocusSnapshot.current = activeTaskPane && tmuxProgramSnapshots[activeTaskPane.server.id];
+    focusTmuxPane(activeTaskPane?.id ?? "");
+    window.dispatchEvent(new Event("dssh-tmux-ps-refresh"));
+  }, [activeTaskPane?.id]);
+  useEffect(() => {
+    const pane = activeTaskPane;
+    const snapshot = pane && tmuxProgramSnapshots[pane.server.id];
+    if (!pane?.tmux || !snapshot?.supported || snapshot.error || document.hidden || !document.hasFocus() ||
+      snapshot === lastTmuxFocusSnapshot.current) return;
+    lastTmuxFocusSnapshot.current = snapshot;
+    const remote = snapshot.panes.find(item => item.sessionId === pane.tmux!.id && item.sessionCreated === pane.tmux!.created && item.windowActive && item.paneActive);
+    focusTmuxPane(pane.id, remote ? { serverId: pane.server.id, sessionId: remote.sessionId,
+      sessionCreated: remote.sessionCreated, sessionName: remote.sessionName, paneId: remote.paneId } : undefined);
+  }, [tmuxProgramSnapshots, activeTaskPane]);
   useEffect(() => {
     const tab = tabs.find(item => item.id === activeTabId);
     const pane = tab?.panes[tab.activePane];
     if (!pane?.tmux || document.hidden || !document.hasFocus()) return;
+    if (tmuxProgramSnapshots[pane.server.id]?.supported && !tmuxProgramSnapshots[pane.server.id]?.error) return;
     const remote = pane.tmux;
     const ai = aiSnapshots[pane.server.id]?.tasks.find(task => task.active && task.tmux?.id === remote.id && task.tmux?.created === remote.created);
     if (ai) { focusTask(aiTaskId(pane.server.id, ai.id)); return; }
     const task = claudeSnapshots[pane.server.id]?.tasks.find(item => item.tmux?.id === pane.tmux?.id);
     if (task) focusTask(claudeTaskId(pane.server.id, task.id));
-  }, [claudeSnapshots, aiSnapshots, activeTabId, tabs]);
+  }, [claudeSnapshots, aiSnapshots, tmuxProgramSnapshots, activeTabId, tabs]);
   const selectTask = (id: string) => {
+    const navigation = ++taskNavigation.current;
     setTaskNavigationError(null);
+    const native = taskStates.find(task => task.id === id && task.protocolScope === "tmux-pane");
+    if (native?.tmux) {
+      const target = native.tmux;
+      const host = tmuxHosts.get(target.serverId);
+      const server = target.serverId === LOCAL_SHELL.id ? LOCAL_SHELL : servers.find(item => item.id === target.serverId);
+      if (!host || !server) { setTaskNavigationError("tmux 会话当前不可用，请连接对应终端后重试。"); return; }
+      const remote = { id: target.sessionId, created: target.sessionCreated, name: target.sessionName };
+      const originalView = findTmuxTab(tabs, server, remote, activeTabId);
+      void invoke("tmux_action", { sessionId: host.sessionId, request: {
+        action: "select-pane", session: { id: remote.id, created: remote.created }, target: target.paneId,
+      } }).then(() => {
+        const latest = navigationContext.current;
+        if (navigation !== taskNavigation.current) return;
+        if (latest.tmuxHosts.get(host.serverId)?.sessionId !== host.sessionId ||
+          (originalView && !latest.tabs.some(tab => tab.panes.some(pane => pane.id === originalView.tab.panes[originalView.paneIndex].id)))) {
+          setTaskNavigationError("来源连接或目标终端已变化，请重试。"); return;
+        }
+        const existing = findTmuxTab(latest.tabs, server, remote, latest.activeTabId);
+        if (existing) {
+          setActiveTabId(existing.tab.id); focusPane(existing.tab.id, existing.paneIndex);
+          setConnectionGroups(groups => groups.map(group => group.id === existing.tab.groupId ? { ...group, collapsed: false } : group));
+          if (latest.backendIds[existing.tab.panes[existing.paneIndex].id]) focusTask(id);
+        } else connect(server, undefined, remote);
+        window.dispatchEvent(new Event("dssh-tmux-ps-refresh"));
+      }).catch(error => { if (navigation === taskNavigation.current) setTaskNavigationError(`无法打开 tmux 窗格：${String(error)}`); });
+      return;
+    }
+    if (id.startsWith("tmux-ps:")) { setTaskNavigationError("该 tmux 状态已失效，请刷新后重试。"); return; }
     if (id.startsWith("ai:")) {
       for (const host of claudeHosts.values()) {
         const task = aiSnapshots[host.serverId]?.tasks.find(item => aiTaskId(host.serverId, item.id) === id);
@@ -165,17 +222,24 @@ export default function App() {
         if (task.tmux) {
           // Verify the incarnation and pane membership before changing remote focus.
           const remote = task.tmux;
+          const originalView = findTmuxTab(tabs, server, remote, activeTabId);
           void invoke("tmux_action", { sessionId: host.sessionId, request: {
             action: "select-pane", session: { id: remote.id, created: remote.created }, target: remote.pane,
           } }).then(() => {
-            const existing = findTmuxTab(tabs, server, remote, activeTabId);
+            const latest = navigationContext.current;
+            if (navigation !== taskNavigation.current) return;
+            if (latest.tmuxHosts.get(host.serverId)?.sessionId !== host.sessionId ||
+              (originalView && !latest.tabs.some(tab => tab.panes.some(pane => pane.id === originalView.tab.panes[originalView.paneIndex].id)))) {
+              setTaskNavigationError("来源连接或目标终端已变化，请重试。"); return;
+            }
+            const existing = findTmuxTab(latest.tabs, server, remote, latest.activeTabId);
             if (existing) {
               setActiveTabId(existing.tab.id); focusPane(existing.tab.id, existing.paneIndex);
               setConnectionGroups(groups => groups.map(group => group.id === existing.tab.groupId ? { ...group, collapsed: false } : group));
+              if (latest.backendIds[existing.tab.panes[existing.paneIndex].id]) focusTask(id);
             }
             else connect(server, undefined, remote);
-            focusTask(id);
-          }).catch(error => setTaskNavigationError(`无法打开 AI 窗格：${String(error)}`));
+          }).catch(error => { if (navigation === taskNavigation.current) setTaskNavigationError(`无法打开 AI 窗格：${String(error)}`); });
         } else {
           const tab = tabs.find(item => item.panes.some(pane => pane.id === task.paneId && pane.server.id === host.serverId));
           if (tab) {
@@ -200,14 +264,16 @@ export default function App() {
         }
       }
     }
-    const tab = tabs.find((t) => t.panes.some((p) => p.id === id));
+    const sourcePaneId = taskStates.find(task => task.id === id)?.sourcePaneId ?? id;
+    const tab = tabs.find((t) => t.panes.some((p) => p.id === sourcePaneId));
     if (tab) {
       setActiveTabId(tab.id);
       focusPane(
         tab.id,
-        tab.panes.findIndex((p) => p.id === id),
+        tab.panes.findIndex((p) => p.id === sourcePaneId),
       );
       focusTask(id);
+      setConnectionGroups(groups => groups.map(group => group.id === tab.groupId ? { ...group, collapsed: false } : group));
     }
   };
   const selectTaskRef = useRef(selectTask);
@@ -1041,7 +1107,7 @@ export default function App() {
                       <TasksPanel
                         sessionId={activePaneBackend ?? undefined}
                         serverName={t.panes[t.activePane]?.server.name}
-                        statusError={aiSnapshots[t.panes[t.activePane]?.server.id]?.error}
+                        statusError={[aiSnapshots[t.panes[t.activePane]?.server.id]?.error, tmuxProgramSnapshots[t.panes[t.activePane]?.server.id]?.error].filter(Boolean).join("；")}
                         onClose={() => togglePanel(t.id, null)}
                         onSelect={selectTask}
                       />

@@ -43,7 +43,8 @@ export interface TaskLookupSettings {
   overrides: Record<string, string>;
 }
 export const TASK_LOOKUP_KEY = "dssh.task-lookup.v1";
-const EVENT = "dssh-task-lookup-changed";
+export const TASK_LOOKUP_EVENT = "dssh-task-lookup-changed";
+const EVENT = TASK_LOOKUP_EVENT;
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export const isIdentifier = (value: string) => identifier.test(value);
 export const defaultLookupSettings = (): TaskLookupSettings => ({ boardUrl: "", terminalLinks: true, lockedProject: "", overrides: {} });

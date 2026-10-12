@@ -2,6 +2,7 @@ import { Button } from "./ui/button";
 import {
   focusTask,
   ingestTaskOutput,
+  endTaskTerminal,
   reportTask,
   removeTask,
 } from "../lib/taskStatus";
@@ -381,7 +382,7 @@ export default function TerminalView({
     let disposed = false;
     let term: Terminal | null = null;
     let backendId: string | null = null;
-    let localWrites: Promise<unknown> = Promise.resolve();
+    let terminalWrites: Promise<unknown> = Promise.resolve();
     let lastCwd = session.restoreCwd;
     // session 变化时，先把外部状态点恢复为连接中。
     setConnectionState("connecting");
@@ -595,14 +596,14 @@ export default function TerminalView({
       });
 
       // 输入和 resize 回调始终复用这个 Terminal；连接断开时 backendId 会被清空。
-      const dataSub = t.onData((data: string) => {
+      const writeTerminal = (data: string) => {
         if (backendId) {
           const sessionId = backendId;
-          if (local) {
-            localWrites = localWrites.then(() => disposed ? undefined : invoke("local_write", { sessionId, data })).catch(() => {});
-          } else invoke("ssh_write", { sessionId, data }).catch(() => {});
+          terminalWrites = terminalWrites.then(() => disposed || backendId !== sessionId ? undefined :
+            invoke(terminalCommand("write"), { sessionId, data })).catch(() => {});
         }
-      });
+      };
+      const dataSub = t.onData(writeTerminal);
       cleanups.push(() => dataSub.dispose());
       const resizeSub = t.onResize(
         ({ cols, rows }: { cols: number; rows: number }) => {
@@ -661,6 +662,9 @@ export default function TerminalView({
           return;
         }
 
+        // A reconnect creates a new PTY, unlike a process exit on the old one.
+        // Retain old results while disconnected, but never transplant them.
+        removeTask(session.id);
         backendId = newBackendId;
         backendRef.current = newBackendId;
         onBackendReady(session.id, newBackendId);
@@ -677,6 +681,7 @@ export default function TerminalView({
               detachBackendListeners();
               onBackendReady(session.id, null);
               updateState("disconnected");
+              endTaskTerminal(session.id);
               reportTask(
                 session.id,
                 taskName,
@@ -718,7 +723,11 @@ export default function TerminalView({
             `${protocol}://${newBackendId}/data`,
             (e: { payload: string }) => {
               if (backendId !== newBackendId || disposed) return;
-              ingestTaskOutput(session.id, taskName, e.payload);
+              // Run before the VT renderer: a 7501 probe reply must precede a
+              // following device-attributes reply, including in background tabs.
+              for (const reply of ingestTaskOutput(session.id, taskName, e.payload, { tmux: !!session.tmux })) {
+                writeTerminal(reply);
+              }
               let payload = e.payload;
               // 剔除注入钩子的回显（可跨事件截断、可夹杂转义序列）
               if (echoSuppressor) {
@@ -781,6 +790,7 @@ export default function TerminalView({
             backendRef.current = null;
             onBackendReady(session.id, null);
             updateState("disconnected");
+            endTaskTerminal(session.id);
             t.write(`\x1b[31m✗ 初始化终端失败：${String(e)}\x1b[0m\r\n`);
             invoke(terminalCommand("disconnect"), { sessionId: newBackendId }).catch(
               () => {},
@@ -821,6 +831,7 @@ export default function TerminalView({
       detachBackendListeners();
       cleanups.forEach((fn) => fn());
       if (backendId) {
+        endTaskTerminal(session.id);
         onBackendReady(session.id, null);
         invoke(terminalCommand("disconnect"), { sessionId: backendId }).catch(() => {});
       }
@@ -840,6 +851,7 @@ export default function TerminalView({
         ref={containerRef}
         style={{ width: "100%", height: "100%" }}
         onKeyDownCapture={(event) => {
+          if (active && inputEnabled) focusTask(session.id);
           if (
             event.key === "Enter" &&
             !event.shiftKey &&

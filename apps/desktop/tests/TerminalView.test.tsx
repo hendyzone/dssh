@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import TerminalView from "../src/components/TerminalView";
 import { LOCAL_SHELL } from "../src/lib/localShell";
+import { PROGRAM_STATUS_REPLY } from "../src/lib/programStatus";
+import { focusTask, removeTask, taskSnapshot } from "../src/lib/taskStatus";
 
 const mocks = vi.hoisted(() => ({
   init: vi.fn(),
@@ -119,6 +121,8 @@ it("starts local shells only after listeners, routes input and cleans up without
 });
 
 beforeEach(() => {
+  for (const task of taskSnapshot()) removeTask(task.sourcePaneId ?? task.id);
+  focusTask("");
   mocks.instances.length = 0;
   mocks.init.mockResolvedValue(undefined);
   mocks.listen.mockResolvedValue(() => {});
@@ -300,11 +304,154 @@ it("continues sending protocol replies for background and dialog-covered termina
     <TerminalView {...props} active={false} inputEnabled={false} />,
   );
   mocks.invoke.mockClear();
-  mocks.instances[0].data("\x1b[1;1R");
+  await act(async () => mocks.instances[0].data("\x1b[1;1R"));
   expect(mocks.invoke).toHaveBeenCalledWith("ssh_write", {
     sessionId: "backend",
     data: "\x1b[1;1R",
   });
+});
+
+const statusOsc = (body: string) => `\x1b]7501;${body}\x1b\\`;
+const listenToTerminal = () => {
+  const callbacks = new Map<string, (event: { payload: any }) => void>();
+  mocks.listen.mockImplementation(async (event: string, callback: (event: { payload: any }) => void) => {
+    callbacks.set(event, callback);
+    return () => {};
+  });
+  return callbacks;
+};
+const finishShellInitialization = (data: (event: { payload: string }) => void) => {
+  const command = mocks.invoke.mock.calls.find(([name, args]) => name === "ssh_write" && args.data.includes("__dssh_osc7"))?.[1].data;
+  const marker = command?.match(/dssh-init-[a-f0-9-]+/)?.[0];
+  if (marker) act(() => data({ payload: `\x1b]1337;${marker}\x07` }));
+};
+
+it.each(["ssh", "local"] as const)("answers OSC 7501 before renderer DA replies in a background, dialog-covered %s terminal", async (protocol) => {
+  const callbacks = listenToTerminal();
+  const sessionId = protocol === "ssh" ? "backend" : "local-test";
+  mocks.invoke.mockImplementation(async command => command === `${protocol}_connect` ? sessionId : undefined);
+  const session = protocol === "ssh" ? props.session : { id: "local-pane", server: LOCAL_SHELL };
+  const view = render(<TerminalView {...props} session={session} active={false} inputEnabled={false} />);
+  await settle();
+  const data = callbacks.get(`${protocol}://${sessionId}/data`)!;
+  finishShellInitialization(data);
+  const terminal = mocks.instances[0];
+  terminal.write.mockImplementation((text: string) => {
+    if (text.includes("\x1b[c")) terminal.data("\x1b[?1;2c");
+  });
+  mocks.invoke.mockClear();
+  let finishProbe!: () => void;
+  mocks.invoke.mockImplementation((command, args) => {
+    if (command === `${protocol}_write` && args.data === PROGRAM_STATUS_REPLY) {
+      return new Promise<void>(resolve => { finishProbe = resolve; });
+    }
+    return Promise.resolve();
+  });
+  await act(async () => data({ payload: `${statusOsc("?")}\x1b[c` }));
+  expect(mocks.invoke.mock.calls.filter(([command]) => command.endsWith("_write"))).toEqual([
+    [`${protocol}_write`, { sessionId, data: PROGRAM_STATUS_REPLY }],
+  ]);
+  await act(async () => finishProbe());
+  expect(mocks.invoke.mock.calls.filter(([command]) => command.endsWith("_write"))).toEqual([
+    [`${protocol}_write`, { sessionId, data: PROGRAM_STATUS_REPLY }],
+    [`${protocol}_write`, { sessionId, data: "\x1b[?1;2c" }],
+  ]);
+  view.unmount();
+});
+
+it.each(["ssh", "local"] as const)("retains completed OSC 7501 results but drops active records when the %s PTY exits", async (protocol) => {
+  const callbacks = listenToTerminal();
+  const sessionId = protocol === "ssh" ? "backend" : "local-test";
+  mocks.invoke.mockImplementation(async command => command === `${protocol}_connect` ? sessionId : undefined);
+  const session = protocol === "ssh" ? props.session : { id: "local-pane", server: LOCAL_SHELL };
+  const view = render(<TerminalView {...props} session={session} active={false} />);
+  await settle();
+  const data = callbacks.get(`${protocol}://${sessionId}/data`)!;
+  act(() => data({ payload: ["working", "blocked", "done", "error"].map(state => statusOsc(`state=${state}:id=${state}:app=cargo`)).join("") }));
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501")).toHaveLength(4);
+  act(() => callbacks.get(`${protocol}://${sessionId}/exit`)!({ payload: 0 }));
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501").map(task => task.programState).sort()).toEqual(["done", "error"]);
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501").every(task => task.unread)).toBe(true);
+  expect(screen.getByRole("button", { name: /点此重连/ })).toBeTruthy();
+  view.unmount();
+});
+
+it("retains only completed OSC 7501 results when initialization fails after output listeners are registered", async () => {
+  const callbacks = listenToTerminal();
+  mocks.invoke.mockImplementation(async command => {
+    if (command === "ssh_connect") return "backend";
+    if (command === "ssh_start") {
+      const data = callbacks.get("ssh://backend/data");
+      expect(data).toBeTypeOf("function");
+      data!({ payload: `${statusOsc("state=working:id=active:app=cargo")}${statusOsc("state=done:id=finished:app=cargo")}` });
+      throw new Error("PTY startup failed");
+    }
+  });
+  const view = render(<TerminalView {...props} active={false} />);
+  await settle();
+  expect(mocks.invoke).toHaveBeenCalledWith("ssh_disconnect", { sessionId: "backend" });
+  expect(mocks.instances[0].write.mock.calls.flat().join("")).toContain("初始化终端失败");
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501")).toMatchObject([
+    { recordId: "finished", programState: "done", unread: true },
+  ]);
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: /点此重连/ })).toBeTruthy();
+  view.unmount();
+});
+
+it("clears old OSC 7501 results and partial sequences when reconnecting to a new PTY", async () => {
+  const callbacks = listenToTerminal();
+  let connections = 0;
+  mocks.invoke.mockImplementation(async command => command === "ssh_connect" ? `backend-${++connections}` : undefined);
+  const view = render(<TerminalView {...props} />);
+  await settle();
+  const oldData = callbacks.get("ssh://backend-1/data")!;
+  act(() => oldData({ payload: `${statusOsc("state=done:id=old")}\x1b]7501;state=blocked:id=fragment` }));
+  act(() => callbacks.get("ssh://backend-1/exit")!({ payload: 0 }));
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501")).toMatchObject([{ recordId: "old", programState: "done" }]);
+  fireEvent.click(screen.getByRole("button", { name: /点此重连/ }));
+  await settle();
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501")).toHaveLength(0);
+  const newData = callbacks.get("ssh://backend-2/data")!;
+  act(() => newData({ payload: "\x07" }));
+  act(() => oldData({ payload: statusOsc("state=error:id=late-old-event") }));
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501")).toHaveLength(0);
+  act(() => newData({ payload: statusOsc("state=working:id=new") }));
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501")).toMatchObject([{ recordId: "new", programState: "working" }]);
+  view.unmount();
+});
+
+it("accepts tmux passthrough reports at client scope without sending probe replies into an unknown pane", async () => {
+  const callbacks = listenToTerminal();
+  const session = { ...props.session, tmux: { id: "$2", created: 123, name: "work" } };
+  const view = render(<TerminalView {...props} session={session} active={false} />);
+  await settle();
+  mocks.invoke.mockClear();
+  // tmux has already removed its DCS wrapper from the outer PTY output.
+  await act(async () => callbacks.get("ssh://backend/data")!({ payload: `${statusOsc("?")}${statusOsc("state=blocked:kind=permission:app=terraform")}` }));
+  expect(mocks.invoke.mock.calls.filter(([command]) => command === "ssh_write")).toHaveLength(0);
+  expect(taskSnapshot().filter(task => task.protocol === "osc7501")).toMatchObject([{
+    sourcePaneId: "pane", protocolScope: "tmux-client", programState: "blocked", kind: "permission", app: "terraform", unread: true,
+  }]);
+  view.unmount();
+});
+
+it("acknowledges an OSC 7501 completion when the user returns and presses a key", async () => {
+  const callbacks = listenToTerminal();
+  const view = render(<TerminalView {...props} active={false} />);
+  await settle();
+  act(() => callbacks.get("ssh://backend/data")!({ payload: statusOsc("state=done:app=cargo") }));
+  expect(taskSnapshot().find(task => task.protocol === "osc7501")?.unread).toBe(true);
+  view.rerender(<TerminalView {...props} />);
+  await settle();
+  // A new completion while focus remains on the same pane also needs a key acknowledgement.
+  const windowFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  act(() => callbacks.get("ssh://backend/data")!({ payload: statusOsc("state=error:app=cargo") }));
+  windowFocus.mockRestore();
+  expect(taskSnapshot().find(task => task.protocol === "osc7501")?.unread).toBe(true);
+  fireEvent.keyDown(screen.getByLabelText("Terminal input"), { key: "a" });
+  expect(taskSnapshot().find(task => task.protocol === "osc7501")).toMatchObject({ programState: "error", unread: false });
+  view.unmount();
 });
 
 it("does not restart an SSH session when only focus changes", async () => {

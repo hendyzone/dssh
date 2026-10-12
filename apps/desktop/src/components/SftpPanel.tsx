@@ -231,10 +231,12 @@ export default function SftpPanel({
     resolve: (policy: ConflictPolicy | null) => void;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNoticeState] = useState<{ message: string; localPath?: string } | null>(null);
+  const setNotice = (message: string | null, localPath?: string) =>
+    setNoticeState(message === null ? null : { message, localPath });
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   useEffect(() => {
-    if (!notice) return;
+    if (!notice || notice.localPath) return;
     const timer = setTimeout(() => setNotice(null), 5000);
     return () => clearTimeout(timer);
   }, [notice]);
@@ -496,14 +498,14 @@ export default function SftpPanel({
           remotePath: entry.path,
           transferId,
         });
-        if (openAfter)
+        setNotice(`已下载到 ${localPath}`, localPath);
+        if (openAfter) {
           await invoke("sftp_open_local", {
             path: localPath,
             application: application || null,
           });
-        setNotice(
-          `已下载到 ${localPath}${openAfter ? "，已交给本地应用打开（修改不会自动回传）" : ""}`,
-        );
+          setNotice(`已下载到 ${localPath}，已交给本地应用打开（修改不会自动回传）`, localPath);
+        }
       } catch (reason) {
         setError(String(reason));
       }
@@ -558,6 +560,7 @@ export default function SftpPanel({
         setNotice(
           `已下载 ${summary.completedFiles}/${summary.totalFiles} 个文件到 ${summary.localRoots.join("、") || localDir}` +
             (summary.failureCount ? `，${summary.failureCount} 个失败（见传输列表）` : ""),
+          localDir,
         );
     } catch (reason) {
       setError(String(reason));
@@ -1027,7 +1030,14 @@ export default function SftpPanel({
       )}
       {notice && (
         <Alert role="status" className="sftp-feedback">
-          <span>{notice}</span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <span>{notice.message}</span>
+            {notice.localPath && <Button variant="outline" size="sm" style={{ display: "flex", marginTop: 6 }}
+              onClick={() => {
+                void invoke("sftp_reveal_local", { path: notice.localPath })
+                  .catch(reason => setError(`无法打开所在目录：${String(reason)}`));
+              }}><IconFolder size={14}/>打开所在目录</Button>}
+          </div>
           <Button
             variant="ghost"
             size="icon-sm"

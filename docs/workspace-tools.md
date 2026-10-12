@@ -5,7 +5,8 @@
 ## 任务状态和提醒
 - 自动跟踪已打开终端的输出、断开和工具通知。任务卡片可跳回对应标签与窗格。
 - 终端文字中的确认、完成和错误提示属于推测，界面明确标注。15 秒无输出只显示安静状态，不判定任务完成。
-- 支持 OSC 9、OSC 777 notify 通知。还支持适配器事件 OSC 777;dssh;running/waiting/done/error;消息，以 BEL 或 ST 结束。当前未自动改写 Codex、Claude、pi 的配置；没有通知的程序使用活动及文本推测。
+- 支持 [OSC 7501 v0.4 程序状态](program-status.md)，显示层级记录、等待类型和进度，并接入未读提醒；普通 SSH／本地终端支持探测回复。`pane_ps_*` 补丁版 tmux 自动采集各窗格根状态并精确跳转，原版保留 Hooks 和单向透传兼容。
+- 保留 OSC 9、OSC 777 notify 通知和适配器事件 OSC 777;dssh;running/waiting/done/error;消息，以 BEL 或 ST 结束。Claude、Codex、pi 可通过面板手动[接入 Hooks](ai-status.md)；程序上报优先于文字推测，OSC 9;4 不作为普通通知处理。
 - 后台重要状态显示应用内提醒。任务面板点击“开启桌面提醒”后使用系统通知；Windows 推荐安装包，系统免打扰可能抑制横幅。通知不包含终端完整内容。
 
 ## 代码修改

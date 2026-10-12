@@ -1,6 +1,8 @@
 import { defaultSettings } from "../store";
+import { TASK_LOOKUP_KEY, TASK_LOOKUP_EVENT, defaultLookupSettings, clearBoardCache } from "./taskLookup";
 
 const DEFAULTS: Record<string, string> = {
+  [TASK_LOOKUP_KEY]: JSON.stringify(defaultLookupSettings()),
   "dssh.settings": "",
   "dssh.sftp.hidden": "true",
   "dssh.sftp.application": "",
@@ -54,6 +56,10 @@ export function restoreSyncUi(values: Record<string, string>): void {
   window.dispatchEvent(new Event("dssh-panel-position"));
   window.dispatchEvent(new Event("dssh-collaboration-changed"));
   window.dispatchEvent(new Event("dssh-team-ai-config"));
+  if (Object.prototype.hasOwnProperty.call(values, TASK_LOOKUP_KEY)) {
+    clearBoardCache();
+    window.dispatchEvent(new Event(TASK_LOOKUP_EVENT));
+  }
 }
 export interface SyncRestoreResult {
   message: string;

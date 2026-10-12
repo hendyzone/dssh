@@ -38,7 +38,7 @@ it("ignores closed direct panes and binds live tmux activity to the correct clie
   const view = renderHook(() => useAiStatus([host], [{ id: "attached", server: { id: "host" } as any, tmux }]));
   await waitFor(() => expect(view.result.current.host.tasks).toHaveLength(1));
   expect(reportTask).toHaveBeenCalledWith(expect.any(String), expect.any(String), "working", "处理中", false, false, 100,
-    { provider: "codex", sourcePaneId: "attached" });
+    { provider: "codex", sourcePaneId: "attached", tmux: { serverId: "host", sessionId: "$2", sessionCreated: 123, sessionName: "work", paneId: "%5" } });
 });
 
 it("rejects malformed or unknown remote identities", () => {

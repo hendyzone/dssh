@@ -1,5 +1,28 @@
 import { expect, it, vi } from "vitest";
 import { collectSyncUi, restoreSyncUi } from "../src/lib/syncUi";
+import { defaultLookupSettings, loadLookupSettings, TASK_LOOKUP_KEY, TASK_LOOKUP_EVENT } from "../src/lib/taskLookup";
+
+it("round-trips every task lookup preference and notifies mounted consumers", () => {
+  const settings = { boardUrl:"http://board.test:8091/", terminalLinks:false, lockedProject:"demo",
+    overrides:{"server:srv":"demo","tmux:srv:lead:one":"docs"} };
+  localStorage.setItem(TASK_LOOKUP_KEY, JSON.stringify(settings));
+  const backup = collectSyncUi();
+  localStorage.removeItem(TASK_LOOKUP_KEY);
+  const listener = vi.fn();
+  window.addEventListener(TASK_LOOKUP_EVENT, listener);
+  restoreSyncUi(backup);
+  expect(loadLookupSettings()).toEqual(settings);
+  expect(listener).toHaveBeenCalledOnce();
+  window.removeEventListener(TASK_LOOKUP_EVENT, listener);
+});
+
+it("exports valid task defaults and preserves local settings when older backups omit them", () => {
+  expect(JSON.parse(collectSyncUi()[TASK_LOOKUP_KEY])).toEqual(defaultLookupSettings());
+  const settings = {...defaultLookupSettings(),boardUrl:"https://board.test"};
+  localStorage.setItem(TASK_LOOKUP_KEY,JSON.stringify(settings));
+  restoreSyncUi({"dssh.sidebar.width":"320"});
+  expect(loadLookupSettings()).toEqual(settings);
+});
 
 it("syncs model provider profiles and stops collectors on restore without local-storage secrets", () => {
   const config=JSON.stringify({endpoint:"https://api.deepseek.com/chat/completions",model:"example"});

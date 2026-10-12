@@ -185,6 +185,82 @@ impl Utf8Decoder {
             }
         }
     }
+
+    fn finish(&mut self) -> String {
+        String::from_utf8_lossy(&std::mem::take(&mut self.pending)).into_owned()
+    }
+}
+
+trait TerminalOutputSource {
+    fn next_message(&mut self) -> impl std::future::Future<Output = Option<russh::ChannelMsg>> + Send;
+}
+
+impl TerminalOutputSource for russh::ChannelReadHalf {
+    async fn next_message(&mut self) -> Option<russh::ChannelMsg> {
+        self.wait().await
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum TerminalOutputEvent {
+    Data(String),
+    Exit(i64),
+}
+
+// A broken peer may leave an EOF channel open while its SSH keepalives still
+// succeed. Bound the idle wait only after an exit signal or EOF, never while an
+// ordinary terminal is quiet. Incoming tail data gets a fresh drain interval.
+const TERMINAL_DRAIN_IDLE_TIMEOUT: Duration = Duration::from_secs(5);
+
+async fn read_terminal_output(
+    source: &mut impl TerminalOutputSource,
+    mut emit: impl FnMut(TerminalOutputEvent),
+    drain_idle_timeout: Duration,
+) {
+    let mut decoder = Utf8Decoder::default();
+    let mut exit_code = -1;
+    let mut draining = false;
+    loop {
+        let message = if draining {
+            match tokio::time::timeout(drain_idle_timeout, source.next_message()).await {
+                Ok(message) => message,
+                Err(_) => {
+                    tracing::warn!("SSH terminal did not close after EOF/exit; finishing drained output");
+                    break;
+                }
+            }
+        } else {
+            source.next_message().await
+        };
+        match message {
+            Some(russh::ChannelMsg::Data { data })
+            | Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
+                let text = decoder.push(&data);
+                if !text.is_empty() {
+                    emit(TerminalOutputEvent::Data(text));
+                }
+            }
+            Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
+                // ExitStatus can precede the final Data, including OSC 7501
+                // done/error. Publishing exit here would detach the frontend.
+                exit_code = exit_status as i64;
+                draining = true;
+            }
+            Some(russh::ChannelMsg::Eof | russh::ChannelMsg::ExitSignal { .. }) => {
+                // EOF ends data, not channel requests: exit-status may follow.
+                draining = true;
+            }
+            // russh 0.54 removes the channel sender on CHANNEL_CLOSE, so wait()
+            // normally yields None after queued messages have been consumed.
+            Some(russh::ChannelMsg::Close) | None => break,
+            _ => {}
+        }
+    }
+    let tail = decoder.finish();
+    if !tail.is_empty() {
+        emit(TerminalOutputEvent::Data(tail));
+    }
+    emit(TerminalOutputEvent::Exit(exit_code));
 }
 
 /// 建立 SSH 会话，返回 session_id；输出通过事件推送
@@ -301,34 +377,12 @@ async fn open_terminal(app: AppHandle, state: State<'_, SshState>, params: Conne
         let app = app.clone();
         let sid = session_id.clone();
         tokio::spawn(async move {
-            let mut decoder = Utf8Decoder::default();
             let data_event = format!("ssh://{sid}/data");
             let exit_event = format!("ssh://{sid}/exit");
-            // ExitStatus 后仍可能收到 EOF/Close；只通知一次，避免前端把一次
-            // 正常退出误判成两次断线。没有退出码时统一用 -1 表示连接断开。
-            let mut exit_emitted = false;
-            loop {
-                match read_half.wait().await {
-                    Some(russh::ChannelMsg::Data { data })
-                    | Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                        let text = decoder.push(&data);
-                        if !text.is_empty() {
-                            let _ = app.emit(&data_event, text);
-                        }
-                    }
-                    Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
-                        let _ = app.emit(&exit_event, exit_status as i64);
-                        exit_emitted = true;
-                    }
-                    Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => break,
-                    _ => {}
-                }
-            }
-            // EOF/Close/None 覆盖对端主动关闭、网络中断及 keepalive 失败后的
-            // russh 通道结束路径；没有 ExitStatus 时也必须通知前端重连。
-            if !exit_emitted {
-                let _ = app.emit(&exit_event, -1i64);
-            }
+            read_terminal_output(&mut read_half, |event| match event {
+                TerminalOutputEvent::Data(text) => { let _ = app.emit(&data_event, text); }
+                TerminalOutputEvent::Exit(code) => { let _ = app.emit(&exit_event, code); }
+            }, TERMINAL_DRAIN_IDLE_TIMEOUT).await;
             tracing::info!("ssh session {sid} read loop ended");
         });
     }
@@ -433,4 +487,77 @@ fn uuid_v4() -> String {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     format!("{:x}-{:x}", nanos, std::process::id())
+}
+
+#[cfg(test)]
+mod terminal_output_tests {
+    use super::*;
+    use russh::ChannelMsg;
+    use tokio::sync::mpsc;
+
+    impl TerminalOutputSource for mpsc::Receiver<ChannelMsg> {
+        async fn next_message(&mut self) -> Option<ChannelMsg> {
+            self.recv().await
+        }
+    }
+
+    #[tokio::test]
+    async fn final_program_report_is_emitted_before_exit_even_after_exit_status() {
+        let (sender, mut source) = mpsc::channel(8);
+        let (events, mut received) = mpsc::unbounded_channel();
+        let reader = tokio::spawn(async move {
+            read_terminal_output(&mut source, |event| { events.send(event).unwrap(); }, Duration::from_secs(1)).await;
+        });
+        sender.send(ChannelMsg::ExitStatus { exit_status: 0 }).await.unwrap();
+        sender.send(ChannelMsg::Data { data: b"\x1b]7501;state=do".as_slice().into() }).await.unwrap();
+        sender.send(ChannelMsg::ExtendedData { ext: 1, data: b"ne:app=cargo\x1b\\".as_slice().into() }).await.unwrap();
+        sender.send(ChannelMsg::Eof).await.unwrap();
+        assert_eq!(received.recv().await, Some(TerminalOutputEvent::Data("\x1b]7501;state=do".into())));
+        assert_eq!(received.recv().await, Some(TerminalOutputEvent::Data("ne:app=cargo\x1b\\".into())));
+        assert!(matches!(received.try_recv(), Err(mpsc::error::TryRecvError::Empty)));
+        sender.send(ChannelMsg::Close).await.unwrap();
+        assert_eq!(received.recv().await, Some(TerminalOutputEvent::Exit(0)));
+        reader.await.unwrap();
+        assert_eq!(received.recv().await, None, "exit must be delivered exactly once");
+    }
+
+    #[tokio::test]
+    async fn eof_does_not_discard_a_following_exit_status() {
+        let (sender, mut source) = mpsc::channel(8);
+        sender.send(ChannelMsg::Data { data: b"final output".as_slice().into() }).await.unwrap();
+        sender.send(ChannelMsg::Eof).await.unwrap();
+        sender.send(ChannelMsg::ExitStatus { exit_status: 7 }).await.unwrap();
+        drop(sender); // russh's CHANNEL_CLOSE path drops the sender.
+        let mut events = Vec::new();
+        read_terminal_output(&mut source, |event| events.push(event), Duration::from_secs(1)).await;
+        assert_eq!(events, vec![TerminalOutputEvent::Data("final output".into()), TerminalOutputEvent::Exit(7)]);
+    }
+
+    #[tokio::test]
+    async fn abrupt_channel_loss_flushes_utf8_tail_before_one_unknown_exit() {
+        let (sender, mut source) = mpsc::channel(8);
+        sender.send(ChannelMsg::Data { data: b"tail \xe4\xb8".as_slice().into() }).await.unwrap();
+        drop(sender);
+        let mut events = Vec::new();
+        read_terminal_output(&mut source, |event| events.push(event), Duration::from_secs(1)).await;
+        assert_eq!(events, vec![
+            TerminalOutputEvent::Data("tail ".into()),
+            TerminalOutputEvent::Data("\u{fffd}".into()),
+            TerminalOutputEvent::Exit(-1),
+        ]);
+    }
+
+    #[tokio::test]
+    async fn eof_or_exit_status_without_channel_close_has_a_bounded_wait() {
+        for (message, expected_code) in [(ChannelMsg::Eof, -1), (ChannelMsg::ExitStatus { exit_status: 3 }, 3)] {
+            let (sender, mut source) = mpsc::channel(8);
+            sender.send(message).await.unwrap();
+            let mut events = Vec::new();
+            tokio::time::timeout(Duration::from_secs(1), read_terminal_output(
+                &mut source, |event| events.push(event), Duration::from_millis(10),
+            )).await.expect("an EOF/exit channel must not wait forever for Close");
+            assert_eq!(events, vec![TerminalOutputEvent::Exit(expected_code)]);
+            drop(sender);
+        }
+    }
 }

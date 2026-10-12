@@ -909,6 +909,45 @@ pub async fn sftp_open_local(path: String, application: Option<String>) -> Resul
     Ok(())
 }
 
+/// Reveal a downloaded file, or open the chosen destination for a tree download.
+/// Never execute the file itself, and pass paths as arguments without a shell.
+#[tauri::command]
+pub async fn sftp_reveal_local(path: String) -> Result<(), Error> {
+    let path = std::fs::canonicalize(path)?;
+    if !path.is_file() && !path.is_dir() {
+        return Err(Error::Io("下载位置不是文件或目录".into()));
+    }
+    #[cfg(windows)]
+    let mut command = {
+        use std::os::windows::process::CommandExt;
+        // Explorer does not reliably accept canonicalize's extended-length prefix.
+        let value = path.to_string_lossy();
+        let display = if let Some(unc) = value.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{unc}")
+        } else { value.strip_prefix(r"\\?\").unwrap_or(&value).to_string() };
+        let mut command = std::process::Command::new("explorer.exe");
+        command.arg(if path.is_file() { format!("/select,{display}") } else { display });
+        command.creation_flags(0x08000000);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("open");
+        if path.is_file() { command.arg("-R"); }
+        command.arg(&path);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(if path.is_dir() { path.as_path() } else { path.parent().ok_or_else(|| Error::Io("无法确定所在目录".into()))? });
+        command
+    };
+    let mut child = command.spawn()?;
+    std::thread::spawn(move || { let _ = child.wait(); });
+    Ok(())
+}
+
 // CREATE is required for new screenshots; existing text must be truncated to
 // prevent stale trailing bytes when the saved content becomes shorter.
 async fn write_remote_file(
