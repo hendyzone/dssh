@@ -16,10 +16,9 @@ import { confirm } from "@tauri-apps/plugin-dialog";
 import type { TmuxSession, TmuxSnapshot } from "../lib/tmux";
 import "./TmuxPanel.css";
 
-const WORKER_GROUP = "Workers";
-// Match worker tokens, not arbitrary project names containing "work".
-const sessionGroup = (session: TmuxSession) => session.group ||
-  (/(?:^|[-_])(?:cw\d+[a-z]*|worker\d*[a-z]*)(?=$|[-_])/i.test(session.name) ? WORKER_GROUP : "");
+import { WORKER_GROUP, classifyTmuxSession, compareTmuxGroups, workerSubgroupKey } from "../lib/tmuxGroups";
+
+const sessionGroup = (session: TmuxSession) => classifyTmuxSession(session.name, session.group).group;
 
 export default function TmuxPanel({
   sessionId,
@@ -59,9 +58,22 @@ export default function TmuxPanel({
   for (const sessions of groups.values()) {
     sessions.sort((a, b) => (a.order ?? Number(a.id.slice(1))) - (b.order ?? Number(b.id.slice(1))) || Number(a.id.slice(1)) - Number(b.id.slice(1)));
   }
-  const groupNames = [...groups.keys()].sort((a, b) =>
-    !a ? 1 : !b ? -1 : a.localeCompare(b),
-  );
+  const groupNames = [...groups.keys()].sort(compareTmuxGroups);
+  // Workers are split into project sub-folders, each sorted by session name.
+  const workerSubgroups = new Map<string, TmuxSession[]>();
+  for (const session of groups.get(WORKER_GROUP) ?? []) {
+    const { subgroup } = classifyTmuxSession(session.name, session.group);
+    if (!workerSubgroups.has(subgroup)) workerSubgroups.set(subgroup, []);
+    workerSubgroups.get(subgroup)!.push(session);
+  }
+  for (const sessions of workerSubgroups.values()) sessions.sort((a, b) => a.name.localeCompare(b.name));
+  const workerProjects = [...workerSubgroups.keys()].sort((a, b) => !a ? 1 : !b ? -1 : a.localeCompare(b));
+  const toggleCollapsed = (key: string) => setCollapsedGroups((previous) => {
+    const next = new Set(previous);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -185,6 +197,103 @@ export default function TmuxPanel({
   const windows = [...new Set(panes.map((p) => p.windowId))].map((id) =>
     panes.find((p) => p.windowId === id)!,
   );
+  const renderCard = (s: TmuxSession) => {
+    const { group: ownGroup, display } = classifyTmuxSession(s.name, s.group);
+    // Workers sub-folders are sorted by name, so swapping positions there has no visible effect.
+    const swappable = ownGroup !== WORKER_GROUP;
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className={`tmux-session-card${s.id === selectedId ? " selected" : ""}${draggingId === s.id ? " dragging" : ""}${swapId === s.id ? " swap-target" : ""}`}
+        data-tmux-session={s.id}
+        key={s.id}
+        title={`${s.name}\n${!swappable ? "双击进入会话，拖到文件夹更改分组" : "双击进入会话，拖到同组会话交换位置，拖到文件夹更改分组"}`}
+        onDragStart={(event) => event.preventDefault()}
+        onPointerDown={(event) => {
+          if (busy || event.button !== 0) return;
+          suppressDragClick.current = false;
+          drag.current = { connectionId: sessionId, session: s, x: event.clientX, y: event.clientY, active: false };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const current = drag.current;
+          if (!current || current.connectionId !== sessionId || busy) return;
+          if (!current.active && Math.hypot(event.clientX - current.x, event.clientY - current.y) < 6) return;
+          current.active = true;
+          suppressDragClick.current = true;
+          setDraggingId(current.session.id);
+          setContextMenu(null);
+          const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-group]");
+          setDropGroup(target && event.currentTarget.closest(".tmux-panel")?.contains(target) ? target.dataset.tmuxGroup ?? null : null);
+          const card = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-session]");
+          setSwapId(swappable && target && event.currentTarget.closest(".tmux-panel")?.contains(target) && target.dataset.tmuxGroup === sessionGroup(current.session) && card?.dataset.tmuxSession !== current.session.id ? card?.dataset.tmuxSession ?? null : null);
+        }}
+        onPointerUp={(event) => {
+          const current = drag.current;
+          drag.current = null;
+          setDraggingId(null);
+          setDropGroup(null);
+          setSwapId(null);
+          if (!current?.active || current.connectionId !== sessionId || busy) return;
+          const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-group]");
+          const group = target?.dataset.tmuxGroup;
+          const subject = snapshot?.sessions.find((item) => item.id === current.session.id && item.created === current.session.created);
+          const card = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-session]");
+          const other = snapshot?.sessions.find((item) => item.id === card?.dataset.tmuxSession);
+          if (swappable && subject && other && other.id !== subject.id && target && event.currentTarget.closest(".tmux-panel")?.contains(target) && (other.group || "") === (subject.group || "")) {
+            void run("swap-session", other.id, String(other.created), subject);
+            return;
+          }
+          if (subject && target && event.currentTarget.closest(".tmux-panel")?.contains(target) && group !== undefined && group !== sessionGroup(subject)) {
+            void run("set-group", undefined, group, subject);
+          }
+        }}
+        onLostPointerCapture={() => {
+          setSwapId(null);
+          drag.current = null;
+          setDraggingId(null);
+          setDropGroup(null);
+        }}
+        onPointerCancel={() => {
+          setSwapId(null);
+          drag.current = null;
+          setDraggingId(null);
+          setDropGroup(null);
+        }}
+        onDoubleClick={() => {
+          if (!busy && !suppressDragClick.current) onAttach(s);
+        }}
+        disabled={busy}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (busy) return;
+          setSelectedId(s.id);
+          setEdit(null);
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            connectionId: sessionId,
+            session: s,
+          });
+        }}
+        onClick={() => {
+          if (suppressDragClick.current) return;
+          setContextMenu(null);
+          setSelectedId(s.id);
+          setEdit(null);
+        }}
+      >
+        <strong>{s.alias || display}</strong>
+        {s.alias && <small>原名：{s.name}</small>}
+        <small>
+          {s.windows} 个窗口 · {s.attached} 个客户端
+          {s.id === attachedId ? " · 当前附加" : ""}
+        </small>
+      </Button>
+    );
+  };
   return (
     <aside className="tmux-panel" aria-label="tmux 管理">
       <header
@@ -317,12 +426,7 @@ export default function TmuxPanel({
                   size="sm"
                   className="tmux-group-toggle"
                   aria-expanded={!collapsedGroups.has(group)}
-                  onClick={() => setCollapsedGroups((previous) => {
-                    const next = new Set(previous);
-                    if (next.has(group)) next.delete(group);
-                    else next.add(group);
-                    return next;
-                  })}
+                  onClick={() => toggleCollapsed(group)}
                 >
                   <ChevronRight className="tmux-group-chevron" size={14} aria-hidden="true" />
                   <Folder className="tmux-group-icon" size={16} aria-hidden="true" />
@@ -331,98 +435,29 @@ export default function TmuxPanel({
                 </Button>
                 {!collapsedGroups.has(group) && (
                   <div className="tmux-group-sessions">
-                {!collapsedGroups.has(group) && groups.get(group)!.map((s) => (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`tmux-session-card${s.id === selectedId ? " selected" : ""}${draggingId === s.id ? " dragging" : ""}${swapId === s.id ? " swap-target" : ""}`}
-                    data-tmux-session={s.id}
-                    key={s.id}
-                    title="双击进入会话，拖到同组会话交换位置，拖到文件夹更改分组"
-                    onDragStart={(event) => event.preventDefault()}
-                    onPointerDown={(event) => {
-                      if (busy || event.button !== 0) return;
-                      suppressDragClick.current = false;
-                      drag.current = { connectionId: sessionId, session: s, x: event.clientX, y: event.clientY, active: false };
-                      event.currentTarget.setPointerCapture(event.pointerId);
-                    }}
-                    onPointerMove={(event) => {
-                      const current = drag.current;
-                      if (!current || current.connectionId !== sessionId || busy) return;
-                      if (!current.active && Math.hypot(event.clientX - current.x, event.clientY - current.y) < 6) return;
-                      current.active = true;
-                      suppressDragClick.current = true;
-                      setDraggingId(current.session.id);
-                      setContextMenu(null);
-                      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-group]");
-                      setDropGroup(target && event.currentTarget.closest(".tmux-panel")?.contains(target) ? target.dataset.tmuxGroup ?? null : null);
-                      const card = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-session]");
-                      setSwapId(target && event.currentTarget.closest(".tmux-panel")?.contains(target) && target.dataset.tmuxGroup === sessionGroup(current.session) && card?.dataset.tmuxSession !== current.session.id ? card?.dataset.tmuxSession ?? null : null);
-                    }}
-                    onPointerUp={(event) => {
-                      const current = drag.current;
-                      drag.current = null;
-                      setDraggingId(null);
-                      setDropGroup(null);
-                      setSwapId(null);
-                      if (!current?.active || current.connectionId !== sessionId || busy) return;
-                      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-group]");
-                      const group = target?.dataset.tmuxGroup;
-                      const subject = snapshot.sessions.find((item) => item.id === current.session.id && item.created === current.session.created);
-                      const card = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-tmux-session]");
-                      const other = snapshot.sessions.find((item) => item.id === card?.dataset.tmuxSession);
-                      if (subject && other && other.id !== subject.id && target && event.currentTarget.closest(".tmux-panel")?.contains(target) && (other.group || "") === (subject.group || "")) {
-                        void run("swap-session", other.id, String(other.created), subject);
-                        return;
-                      }
-                      if (subject && target && event.currentTarget.closest(".tmux-panel")?.contains(target) && group !== undefined && group !== sessionGroup(subject)) {
-                        void run("set-group", undefined, group, subject);
-                      }
-                    }}
-                    onLostPointerCapture={() => {
-                      setSwapId(null);
-                      drag.current = null;
-                      setDraggingId(null);
-                      setDropGroup(null);
-                    }}
-                    onPointerCancel={() => {
-                      setSwapId(null);
-                      drag.current = null;
-                      setDraggingId(null);
-                      setDropGroup(null);
-                    }}
-                    onDoubleClick={() => {
-                      if (!busy && !suppressDragClick.current) onAttach(s);
-                    }}
-                    disabled={busy}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      if (busy) return;
-                      setSelectedId(s.id);
-                      setEdit(null);
-                      setContextMenu({
-                        x: event.clientX,
-                        y: event.clientY,
-                        connectionId: sessionId,
-                        session: s,
-                      });
-                    }}
-                    onClick={() => {
-                      if (suppressDragClick.current) return;
-                      setContextMenu(null);
-                      setSelectedId(s.id);
-                      setEdit(null);
-                    }}
-                  >
-                    <strong>{s.alias || s.name}</strong>
-                    {s.alias && <small>原名：{s.name}</small>}
-                    <small>
-                      {s.windows} 个窗口 · {s.attached} 个客户端
-                      {s.id === attachedId ? " · 当前附加" : ""}
-                    </small>
-                  </Button>
-                ))}
+                    {group === WORKER_GROUP ? workerProjects.map((project) => {
+                      const sessions = workerSubgroups.get(project)!;
+                      if (!project) return sessions.map(renderCard);
+                      const key = workerSubgroupKey(project);
+                      return (
+                        <section className="tmux-subgroup" data-tmux-subgroup={project} key={key}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="tmux-group-toggle tmux-subgroup-toggle"
+                            aria-expanded={!collapsedGroups.has(key)}
+                            onClick={() => toggleCollapsed(key)}
+                          >
+                            <ChevronRight className="tmux-group-chevron" size={14} aria-hidden="true" />
+                            <strong>{project}</strong>
+                            <span className="tmux-group-count">{sessions.length}</span>
+                          </Button>
+                          {!collapsedGroups.has(key) && (
+                            <div className="tmux-group-sessions tmux-subgroup-sessions">{sessions.map(renderCard)}</div>
+                          )}
+                        </section>
+                      );
+                    }) : groups.get(group)!.map(renderCard)}
                     {!groups.get(group)!.length && <p className="tmux-group-empty">拖动会话到此处</p>}
                   </div>
                 )}
