@@ -366,10 +366,113 @@ test("automatically folds worker sessions without changing explicit groups or Le
   const group=await screen.findByRole("button",{name:"Workers 2"});
   expect(group.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("smart-table-cw1c-pi")).toBeNull();
-  expect(screen.getByText("smart-table-lead")).toBeTruthy();
+  // Lead cards are labelled by project slug; the full name stays in the tooltip.
+  expect(screen.getByText("smart-table").closest("button")!.getAttribute("title")).toContain("smart-table-lead");
   expect(screen.getByText("project-worker-2")).toBeTruthy();
   fireEvent.click(group);
   fireEvent.doubleClick(screen.getByText("smart-table-cw1c-pi"));
   expect(onAttach).toHaveBeenCalledWith(expect.objectContaining({id:"$0",created:123}));
   expect(mocks.invoke.mock.calls.some(([command])=>command==="tmux_action")).toBe(false);
+});
+
+test("splits Workers into project sub-folders and lists Leads in their own folder first", async () => {
+  const names = [
+    "worker-datrix-cw1-codex", "worker-smart-table-devc-pi", "worker-datrix-cw3b-cursor", "smart-table-lead",
+    "worker-smart-table-camera-claude", "worker-datrix-cw1b-pi", "datrix-lead", "worker-smart-table-cw1c-pi",
+    "dnotes-lead", "nanoclaw-lead", "notes",
+  ];
+  let current = { ...snapshot, sessions: [
+    ...names.map((name, index) => ({ ...snapshot.sessions[0], id: `$${index}`, name, created: 100 + index })),
+    { ...snapshot.sessions[0], id: "$20", name: "worker-dnote-cw2-pi", created: 200, group: "手动分组" },
+    { ...snapshot.sessions[0], id: "$21", name: "worker-dnote-cw1-pi", created: 201, alias: "笔记助手" },
+  ] };
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === "tmux_snapshot") return current;
+    if (command === "tmux_action") current = { ...current, sessions: current.sessions.map((s) =>
+      s.id === args.request.session.id ? { ...s, group: args.request.name } : s,
+    ) };
+  });
+  const onAttach = vi.fn();
+  render(<TmuxPanel sessionId="ssh" onAttach={onAttach} onClose={() => {}} />);
+  const leads = await screen.findByRole("button", { name: "Leads 4" });
+  const workers = screen.getByRole("button", { name: "Workers 7" });
+  expect(leads.getAttribute("aria-expanded")).toBe("true");
+  expect(workers.getAttribute("aria-expanded")).toBe("false");
+  expect([...document.querySelectorAll("[data-tmux-group]")].map((el) => (el as HTMLElement).dataset.tmuxGroup))
+    .toEqual(["手动分组", "Leads", "Workers", ""]);
+  const leadFolder = document.querySelector('[data-tmux-group="Leads"]')!;
+  expect([...leadFolder.querySelectorAll(".tmux-session-card strong")].map((el) => el.textContent))
+    .toEqual(["smart-table", "datrix", "dnotes", "nanoclaw"]);
+  expect(screen.getByText("dnotes").closest("button")!.getAttribute("title")).toContain("dnotes-lead");
+  expect(screen.getByText("worker-dnote-cw2-pi")).toBeTruthy();
+  expect(screen.queryByText("cw1-codex")).toBeNull();
+
+  fireEvent.click(workers);
+  const subgroupNames = [...document.querySelectorAll<HTMLElement>("[data-tmux-subgroup]")].map((el) => el.dataset.tmuxSubgroup);
+  expect(subgroupNames).toEqual(["datrix", "dnote", "smart-table"]);
+  expect(screen.getByRole("button", { name: "datrix 3" }).getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("button", { name: "smart-table 3" })).toBeTruthy();
+  const smartTable = document.querySelector('[data-tmux-subgroup="smart-table"]')!;
+  expect([...smartTable.querySelectorAll(".tmux-session-card strong")].map((el) => el.textContent))
+    .toEqual(["camera-claude", "cw1c-pi", "devc-pi"]);
+  const card = screen.getByText("cw1-codex").closest("button")!;
+  expect(card.getAttribute("title")).toContain("worker-datrix-cw1-codex");
+  expect(screen.getByText("笔记助手")).toBeTruthy();
+  expect(screen.getByText("原名：worker-dnote-cw1-pi")).toBeTruthy();
+  fireEvent.doubleClick(card);
+  expect(onAttach).toHaveBeenCalledWith(expect.objectContaining({ id: "$0", name: "worker-datrix-cw1-codex" }));
+
+  // Sub-folder collapse is remembered while the Workers folder is closed and reopened.
+  fireEvent.click(screen.getByRole("button", { name: "datrix 3" }));
+  expect(screen.queryByText("cw1-codex")).toBeNull();
+  fireEvent.click(workers);
+  fireEvent.click(workers);
+  expect(screen.getByRole("button", { name: "datrix 3" }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByText("cw1c-pi")).toBeTruthy();
+
+  // Dragging a worker onto the Leads folder still issues set-group.
+  const original = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => leads });
+  try {
+    const source = screen.getByText("cw1c-pi").closest("button")!;
+    source.setPointerCapture = vi.fn();
+    fireEvent(source, new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 10, clientY: 10 }));
+    fireEvent(source, new MouseEvent("pointermove", { bubbles: true, clientX: 50, clientY: 50 }));
+    fireEvent(source, new MouseEvent("pointerup", { bubbles: true, clientX: 50, clientY: 50 }));
+    await screen.findByRole("button", { name: "Leads 5" });
+    expect(mocks.invoke).toHaveBeenCalledWith("tmux_action", {
+      sessionId: "ssh",
+      request: { action: "set-group", target: null, name: "Leads", session: { id: "$7", created: 107 } },
+    });
+    expect(screen.getByRole("button", { name: "smart-table 2" })).toBeTruthy();
+    expect(screen.getByText("worker-smart-table-cw1c-pi")).toBeTruthy();
+  } finally {
+    if (original) Object.defineProperty(document, "elementFromPoint", original);
+    else Reflect.deleteProperty(document, "elementFromPoint");
+  }
+});
+
+test("worker cards inside a project sub-folder do not offer position swaps", async () => {
+  mocks.invoke.mockImplementation(async (command) => command === "tmux_snapshot" ? { ...snapshot, sessions: [
+    { ...snapshot.sessions[0], name: "worker-datrix-cw1-codex" },
+    { ...snapshot.sessions[0], id: "$1", name: "worker-datrix-cw1b-pi", created: 456 },
+  ] } : undefined);
+  render(<TmuxPanel sessionId="ssh" onAttach={() => {}} onClose={() => {}} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Workers 2" }));
+  const source = screen.getByText("cw1-codex").closest("button")!;
+  const target = screen.getByText("cw1b-pi").closest("button")!;
+  source.setPointerCapture = vi.fn();
+  const original = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => target });
+  try {
+    fireEvent(source, new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 10, clientY: 10 }));
+    fireEvent(source, new MouseEvent("pointermove", { bubbles: true, clientX: 50, clientY: 50 }));
+    expect(target.classList.contains("swap-target")).toBe(false);
+    fireEvent(source, new MouseEvent("pointerup", { bubbles: true, clientX: 50, clientY: 50 }));
+    await act(async () => {});
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "tmux_action")).toBe(false);
+  } finally {
+    if (original) Object.defineProperty(document, "elementFromPoint", original);
+    else Reflect.deleteProperty(document, "elementFromPoint");
+  }
 });
