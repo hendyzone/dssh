@@ -6,11 +6,9 @@ import {excerptDigest,loadTeamAi,redactTerminal,protocolOf,configName} from "../
 import type {TeamNavigation} from "./TeamMembers";
 import {Button} from "./ui/button";
 import type {ServerEntry} from "../types";
-import {NO_SOURCE,formatAge,type BoardSource} from "../lib/taskLookup";
-import {ago,briefKey,rankMembers,useAgentSessions,type LiveStatus} from "../lib/agentSessions";
-
-const liveGroups=[{key:"attention",label:"需要处理"},{key:"running",label:"运行中"},{key:"idle",label:"空闲"},{key:"other",label:"离开 / 未采集"}] as const;
-const groupOf=(s:LiveStatus)=>s.needsHuman?"attention":s.tone==="run"?"running":s.tone==="idle"?"idle":"other";
+import type {BoardSource} from "../lib/taskLookup";
+import {STATUS_GROUPS,ago,briefKey,isLeadMember,liveSnapshot,rankMembers,summarizeTeam,useAgentSessions,type LiveSessions} from "../lib/agentSessions";
+import TeamLiveSummary from "./TeamLiveSummary";
 
 type LiveConnection={sessionId:string;serverId?:string;host:string;port:number;username:string;tmux?:{id:string;created:number};tmuxWorkdir?:string};
 
@@ -19,13 +17,13 @@ type State=keyof typeof states;
 class LeaseBusyError extends Error {}
 type Clip={member:TeamMember;text:string;digest:string;source:string};
 const sourceOf=(m:TeamMember)=>JSON.stringify([m.host,m.port,m.username,m.workdir,m.tmux.id,m.tmux.created]);
-export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,onUpdated,board}:{sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource}){
-  const members=rosterMembers.filter(m=>!(/^lead\b/i.test(m.role.trim())||(
-    m.tmux.id===profile.tmuxId&&m.tmux.created===profile.tmuxCreated&&
-    m.workdir===profile.workdir&&m.username===navigation.server.username
-  )));
-  const live=useAgentSessions(board,members);
-  const ranked=rankMembers(members,live.snapshot);
+/** `live`: the panel's shared collector data (so both team pages show one snapshot); polled here when omitted. */
+export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,onUpdated,board,live:shared}:{sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource;live?:LiveSessions}){
+  const members=rosterMembers.filter(m=>!isLeadMember(m,{...profile,username:navigation.server.username}));
+  const own=useAgentSessions(shared?undefined:board,members);
+  const live=shared??own;
+  const snapshot=liveSnapshot(live);
+  const ranked=rankMembers(members,snapshot);
   const [config,setConfig]=useState(loadTeamAi);
   const [selection,setSelection]=useState<string[]|null>(null);
   const selected=selection?.filter(id=>members.some(m=>memberKey(m)===id))??members.slice(0,10).map(memberKey);
@@ -198,19 +196,17 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       </div>}
     </details>
     {(busy||notice)&&<small role="status">{busy?"正在更新…":notice}</small>}
-    {!board?<p className="team-live-note">未配置看板，无法显示实时状态：{NO_SOURCE}</p>
-      :live.offline?<p role="status" className="team-live-offline" title={live.error}>看板离线{live.fetchedAt?` · 显示 ${formatAge(new Date(live.fetchedAt).toISOString())}前的数据`:""}，每分钟自动重试</p>
-      :!live.snapshot?<p role="status" className="team-live-note">正在读取看板会话…</p>:null}
-    {liveGroups.map(group=>{
-      const rows=ranked.filter(r=>groupOf(r.status)===group.key);
+    <TeamLiveSummary board={board} live={live} summary={summarizeTeam(ranked,snapshot)}/>
+    {STATUS_GROUPS.map(group=>{
+      const rows=ranked.filter(r=>r.status.group===group.key);
       if(!rows.length)return null;
-      return <div key={group.key} className={`team-live-group team-live-group-${group.key}`}><div className="team-activity-heading"><strong>{group.label}</strong><span>{rows.length}</span></div>{rows.map(({member:m,session,status})=>{
+      return <div key={group.key} className={`team-live-group team-live-group-${group.key}`}><div className="team-activity-heading" title={group.title}><strong>{group.label}</strong><span>{rows.length}</span></div>{rows.map(({member:m,session,status})=>{
         const valid=m.aiSource===sourceOf(m)&&m.aiSummary;
         const expired=valid&&!(Date.now()-Date.parse(m.aiUpdatedAt??"")<300000);
         const {server}=connection(m);
         const brief=session?.taskCode?live.briefs[briefKey(session.project,session.taskCode)]:undefined;
-        const now=live.snapshot?.now??Math.floor(Date.now()/1000);
-        return <details className={`team-ai-row team-live-row${status.needsHuman?" team-live-alert":""}`} key={memberKey(m)} data-state={session?.state??"none"}><summary><strong className="team-ai-identity" title={`${m.role} · ${m.tmux.name}`}>
+        const now=snapshot?.now??Math.floor(Date.now()/1000);
+        return <details className={`team-ai-row team-live-row${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={memberKey(m)} data-state={session?.state??"none"} data-group={status.group}><summary><strong className="team-ai-identity" title={`${m.role} · ${m.tmux.name}`}>
           {m.role}<small>{m.tmux.name}</small>
         </strong>
         <span className="team-live-status"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}</span>
@@ -219,6 +215,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
           {session.commitTime>0&&<span className="team-live-commit" title={`${session.commitHash} · ${session.branch}`}>提交 {ago(session.commitTime,now)}前 · {session.commitSubject}</span>}
           <span className="team-live-meta">{session.dirty>0&&<span className="team-live-dirty">未提交 {session.dirty} 个文件</span>}{session.model&&<span>{session.model}</span>}{session.host&&<span>{session.host}</span>}</span>
         </span>}
+        {!session&&m.currentTask?.trim()&&<span className="team-live-facts"><span className="team-live-task is-roster" title={m.currentTask}><b>Lead 备注</b><span>{m.currentTask.trim().split(/\r?\n/)[0]}</span></span></span>}
         {(valid||issues[memberKey(m)])&&<span className="team-ai-summary">{issues[memberKey(m)]?"AI 总结采集失败":`AI：${expired?"摘要已过期 · ":""}${m.aiSummary}`}</span>}
         <div className="team-ai-row-actions"><Button size="sm" variant="ghost" disabled={!server||busy} aria-label={`打开 · ${m.role} · ${m.tmux.name}`} onClick={e=>{e.preventDefault();e.stopPropagation();if(server)void perform(()=>navigation.onOpen(m,server));}}>打开</Button>
         <Button className="team-ai-single" size="sm" variant="ghost" aria-label={`总结 · ${m.role}`} title={`使用 ${configName(config)} 发送并总结此成员的终端输出`} disabled={busy||!config.endpoint||!config.model} onClick={e=>{e.preventDefault();e.stopPropagation();summarizeMember(m);}}>{singleBusy===memberKey(m)?"总结中…":"总结"}</Button></div></summary>

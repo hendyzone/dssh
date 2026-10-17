@@ -132,3 +132,20 @@
 .team-live-row>summary .team-live-task span,.team-live-row>summary .team-live-commit{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .team-live-row>summary .team-live-task span{flex:1 1 auto;min-width:0}
 .team-live-row>summary .team-ai-summary{white-space:normal;color:var(--ui-muted)}
+/* T10: 等 Lead (yellow), 待验收, panel summary, Lead 备注 age */
+.team-live-badge.is-lead{color:#d19a66;font-weight:600}
+.team-live-badge.is-review{color:var(--ui-accent)}
+.team-live-row.team-live-wait-lead,.team-members .team-card.team-live-wait-lead{border-left:3px solid #d19a66;padding-left:7px;background:color-mix(in srgb,#d19a66 8%,transparent)}
+.team-members .team-card.team-live-alert{border-left:3px solid var(--ui-danger,#e06c75);padding-left:7px;background:color-mix(in srgb,var(--ui-danger,#e06c75) 7%,transparent)}
+.team-live-group-waitLead>.team-activity-heading{color:#d19a66}
+.team-live-group-attention>.team-activity-heading{color:var(--ui-danger,#e06c75)}
+.team-live-summary{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;font-size:11px;color:var(--ui-muted)}
+.team-live-summary b{font-variant-numeric:tabular-nums;color:var(--ui-fg)}
+.team-live-summary .is-bad,.team-live-summary .is-bad b{color:var(--ui-danger,#e06c75)}
+.team-live-summary .is-lead,.team-live-summary .is-lead b{color:#d19a66}
+.team-live-duration{font-size:10px;font-variant-numeric:tabular-nums}
+.collaboration-panel .team-live-current{display:flex;gap:6px;align-items:baseline;margin:0;font-size:11px;min-width:0}
+.team-live-current>strong{font-weight:500;color:var(--ui-muted);font-size:10px;flex-shrink:0}
+.team-live-task.is-roster b{font-weight:500;color:var(--ui-muted)}
+.team-note-age{font-size:10px;color:var(--ui-muted)}
+.team-note-age.is-stale{color:#d19a66}
