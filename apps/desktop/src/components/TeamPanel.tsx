@@ -78,7 +78,7 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
           }}>退出团队</Button>
         </div>
         {error && <p role="alert" className="collaboration-error">{error}</p>}
-        <TeamMembers sessionId={sessionId} profile={active} navigation={navigation}/>
+        <TeamMembers sessionId={sessionId} profile={active} navigation={navigation} board={taskLookup?.source}/>
       </> : recovering?<p role="status">正在核验当前工作区的已有团队…</p>:choices.length?<div><p>当前工作区存在多个团队，请选择：</p>{choices.map(next=><Button key={next.project} onClick={()=>{try{saveCollaboration(pane.server.id,next);setCreated(next);}catch(e){setError(String(e));}}}>{next.project}</Button>)}</div>:<><Button size="sm" variant="ghost" onClick={()=>setRecoveryRevision(v=>v+1)}>重新识别当前工作区</Button><TeamMembership sessionId={sessionId} pane={pane} navigation={navigation} onPromoted={next=>{setCreated(next);setUnbound(false);setError("");}}><div className="team-setup">
         {unbound && <p role="status">已退出团队。请切换到正确的 Lead 窗口后设置团队。</p>}
         <Users size={32}/><h3>从这里打开团队成员的终端</h3>

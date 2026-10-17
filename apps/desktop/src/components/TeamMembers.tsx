@@ -4,6 +4,7 @@ import { collaborationRequest, resolveWorktree, type CollaborationProfile, type 
 import { loadTeamMappings, matchingServers, memberKey, memberMappingKey, memberNoteFields, parseMember, TEAM_MAPPING_KEY, type MemberNoteField, type TeamMember } from "../lib/teamMembers";
 import { teamLeadPrompt } from "../lib/teamLeadPrompt";
 import type { ServerEntry } from "../types";
+import type { BoardSource } from "../lib/taskLookup";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import TeamMemberNotes from "./TeamMemberNotes";
@@ -17,8 +18,10 @@ export interface TeamNavigation {
   onOpen: (member: TeamMember, server: ServerEntry) => Promise<void>;
 }
 
-export default function TeamMembers({ sessionId, profile, navigation }: {
+export default function TeamMembers({ sessionId, profile, navigation, board }: {
   sessionId: string; profile: CollaborationProfile; navigation: TeamNavigation;
+  /** Read-only taskboard (the same source as the task lookup above) for live member status. */
+  board?: BoardSource;
 }) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [view,setView]=useState<"activity"|"members">("activity");
@@ -83,7 +86,7 @@ export default function TeamMembers({ sessionId, profile, navigation }: {
     {error && <p role="alert" className="collaboration-error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     <div hidden={view!=="activity"}>
-      <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} onUpdated={()=>request("members")}/>
+      <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} board={board} onUpdated={()=>request("members")}/>
     </div>
     <div hidden={view!=="members"} className="team-roster-view">
     <div className="team-lead-guide">

@@ -6,6 +6,11 @@ import {excerptDigest,loadTeamAi,redactTerminal,protocolOf,configName} from "../
 import type {TeamNavigation} from "./TeamMembers";
 import {Button} from "./ui/button";
 import type {ServerEntry} from "../types";
+import {NO_SOURCE,formatAge,type BoardSource} from "../lib/taskLookup";
+import {ago,briefKey,rankMembers,useAgentSessions,type LiveStatus} from "../lib/agentSessions";
+
+const liveGroups=[{key:"attention",label:"需要处理"},{key:"running",label:"运行中"},{key:"idle",label:"空闲"},{key:"other",label:"离开 / 未采集"}] as const;
+const groupOf=(s:LiveStatus)=>s.needsHuman?"attention":s.tone==="run"?"running":s.tone==="idle"?"idle":"other";
 
 type LiveConnection={sessionId:string;serverId?:string;host:string;port:number;username:string;tmux?:{id:string;created:number};tmuxWorkdir?:string};
 
@@ -14,11 +19,13 @@ type State=keyof typeof states;
 class LeaseBusyError extends Error {}
 type Clip={member:TeamMember;text:string;digest:string;source:string};
 const sourceOf=(m:TeamMember)=>JSON.stringify([m.host,m.port,m.username,m.workdir,m.tmux.id,m.tmux.created]);
-export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,onUpdated}:{sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>}){
+export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,onUpdated,board}:{sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource}){
   const members=rosterMembers.filter(m=>!(/^lead\b/i.test(m.role.trim())||(
     m.tmux.id===profile.tmuxId&&m.tmux.created===profile.tmuxCreated&&
     m.workdir===profile.workdir&&m.username===navigation.server.username
   )));
+  const live=useAgentSessions(board,members);
+  const ranked=rankMembers(members,live.snapshot);
   const [config,setConfig]=useState(loadTeamAi);
   const [selection,setSelection]=useState<string[]|null>(null);
   const selected=selection?.filter(id=>members.some(m=>memberKey(m)===id))??members.slice(0,10).map(memberKey);
@@ -166,13 +173,12 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     if(changed&&auto&&Object.keys(issues).length)tick.current();
   },[connectionKey,auto]);
   return <section className="team-dynamics" aria-label="团队动态">
-    <div className="team-toolbar"><strong>团队动态 <small>{auto?"每分钟自动更新":"AI 摘要"}</small></strong>
+    <div className="team-toolbar"><strong>团队动态 <small>看板实时 · 每分钟刷新{auto?" · AI 自动总结中":""}</small></strong>
       <div className="team-summary-actions">
       <Button size="sm" variant="outline" disabled={busy||!members.length||!config.endpoint||!config.model} title={`使用 ${configName(config)} 发送并总结全部 ${members.length} 位 Worker 的终端输出`} onClick={summarizeAll}>{batchProgress||"总结全部"}</Button>
       {auto?<Button size="sm" variant="ghost" onClick={()=>{revision.current++;setAuto(false);setNotice("已暂停");}}>暂停</Button>:<Button size="sm" disabled={busy||!selected.length||!config.endpoint||!config.model} onClick={()=>consent===scope?startAuto():setConfirmAuto(true)}>开启自动总结</Button>}
       </div>
     </div>
-    {(!config.endpoint||!config.model)&&<p>先到「设置 → 云端摘要」添加模型配置。</p>}
     {confirmAuto&&<div className="team-ai-confirm">
       <p>向 <strong>{configName(config)}</strong> 发送 {selected.length} 位成员的终端输出，每分钟更新；关闭团队面板后停止。</p>
       <small>{config.endpoint} · {config.model}</small>
@@ -192,19 +198,32 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       </div>}
     </details>
     {(busy||notice)&&<small role="status">{busy?"正在更新…":notice}</small>}
-    {(Object.keys(states) as State[]).map(state=>{
-      const group=members.filter(m=>{const valid=m.aiSource===sourceOf(m)&&m.aiSummary&&!issues[memberKey(m)]&&Date.now()-Date.parse(m.aiUpdatedAt??"")<300000;return (valid&&m.aiStatus&&m.aiStatus in states?m.aiStatus:"unknown")===state;});
-      if(!group.length)return null;
-      return <div key={state} className={`team-activity-${state}`}><div className="team-activity-heading"><strong>{states[state]}</strong><span>{group.length}</span></div>{group.map(m=>{
+    {!board?<p className="team-live-note">未配置看板，无法显示实时状态：{NO_SOURCE}</p>
+      :live.offline?<p role="status" className="team-live-offline" title={live.error}>看板离线{live.fetchedAt?` · 显示 ${formatAge(new Date(live.fetchedAt).toISOString())}前的数据`:""}，每分钟自动重试</p>
+      :!live.snapshot?<p role="status" className="team-live-note">正在读取看板会话…</p>:null}
+    {liveGroups.map(group=>{
+      const rows=ranked.filter(r=>groupOf(r.status)===group.key);
+      if(!rows.length)return null;
+      return <div key={group.key} className={`team-live-group team-live-group-${group.key}`}><div className="team-activity-heading"><strong>{group.label}</strong><span>{rows.length}</span></div>{rows.map(({member:m,session,status})=>{
         const valid=m.aiSource===sourceOf(m)&&m.aiSummary;
         const expired=valid&&!(Date.now()-Date.parse(m.aiUpdatedAt??"")<300000);
         const {server}=connection(m);
-        return <details className="team-ai-row" key={memberKey(m)}><summary><strong className="team-ai-identity" title={`${m.role} · ${m.tmux.name}`}>
+        const brief=session?.taskCode?live.briefs[briefKey(session.project,session.taskCode)]:undefined;
+        const now=live.snapshot?.now??Math.floor(Date.now()/1000);
+        return <details className={`team-ai-row team-live-row${status.needsHuman?" team-live-alert":""}`} key={memberKey(m)} data-state={session?.state??"none"}><summary><strong className="team-ai-identity" title={`${m.role} · ${m.tmux.name}`}>
           {m.role}<small>{m.tmux.name}</small>
-        </strong><span className="team-ai-summary">{issues[memberKey(m)]?"采集失败，待确认":valid?`${expired?"摘要已过期 · ":""}${m.aiSummary}`:"尚未总结"}</span>
+        </strong>
+        <span className="team-live-status"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}</span>
+        {session&&<span className="team-live-facts">
+          {session.taskCode?<span className="team-live-task"><b>{session.taskCode}</b>{session.taskStatus&&<em>{live.statusNames[briefKey(session.project,session.taskStatus)]??session.taskStatus}</em>}{(brief?.brief||brief?.title)&&<span>{brief.brief||brief.title}</span>}</span>:<span className="team-live-task is-empty">无当前卡</span>}
+          {session.commitTime>0&&<span className="team-live-commit" title={`${session.commitHash} · ${session.branch}`}>提交 {ago(session.commitTime,now)}前 · {session.commitSubject}</span>}
+          <span className="team-live-meta">{session.dirty>0&&<span className="team-live-dirty">未提交 {session.dirty} 个文件</span>}{session.model&&<span>{session.model}</span>}{session.host&&<span>{session.host}</span>}</span>
+        </span>}
+        {(valid||issues[memberKey(m)])&&<span className="team-ai-summary">{issues[memberKey(m)]?"AI 总结采集失败":`AI：${expired?"摘要已过期 · ":""}${m.aiSummary}`}</span>}
         <div className="team-ai-row-actions"><Button size="sm" variant="ghost" disabled={!server||busy} aria-label={`打开 · ${m.role} · ${m.tmux.name}`} onClick={e=>{e.preventDefault();e.stopPropagation();if(server)void perform(()=>navigation.onOpen(m,server));}}>打开</Button>
         <Button className="team-ai-single" size="sm" variant="ghost" aria-label={`总结 · ${m.role}`} title={`使用 ${configName(config)} 发送并总结此成员的终端输出`} disabled={busy||!config.endpoint||!config.model} onClick={e=>{e.preventDefault();e.stopPropagation();summarizeMember(m);}}>{singleBusy===memberKey(m)?"总结中…":"总结"}</Button></div></summary>
-          <p>AI 推测，非实时状态。更新时间：{valid&&m.aiUpdatedAt?new Date(m.aiUpdatedAt).toLocaleString():"暂无"}</p>
+          {session&&<p className="team-live-detail">分支 {session.branch||"—"} · {session.commitHash||"—"}{session.lastLine&&<><br/>最后一行：{session.lastLine}</>}</p>}
+          <p>AI 总结为推测，按需手动触发。更新时间：{valid&&m.aiUpdatedAt?new Date(m.aiUpdatedAt).toLocaleString():"暂无"}</p>
           {issues[memberKey(m)]&&<p role="alert" style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{issues[memberKey(m)]}</p>}
           {valid&&m.aiEvidence&&<details><summary>上次成功采集的片段</summary><pre>{m.aiEvidence}</pre></details>}
           <Button size="sm" disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(m,server))}>打开终端</Button>
