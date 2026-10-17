@@ -9,7 +9,8 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import TeamMemberNotes from "./TeamMemberNotes";
 import TeamDynamics from "./TeamDynamics";
-import { memberActivity, memberActivityLabels, type MemberActivity } from "../lib/teamMembers";
+import { STATUS_GROUPS, briefKey, isLeadMember, liveSnapshot, rankMembers, summarizeTeam, useAgentSessions } from "../lib/agentSessions";
+import TeamLiveSummary from "./TeamLiveSummary";
 
 export interface TeamNavigation {
   server: ServerEntry;
@@ -39,6 +40,11 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
 
   const [noteDraft, setNoteDraft] = useState<Partial<Record<MemberNoteField,string>>>({});
   const leadPrompt = teamLeadPrompt(profile,navigation.server);
+  // One collector poll for both pages, so 「动态」 and 「成员」 always show the same snapshot.
+  const live = useAgentSessions(board, members);
+  const snapshot = liveSnapshot(live);
+  const isLead = (m:TeamMember) => isLeadMember(m,{...profile,username:navigation.server.username});
+  const ranked = rankMembers(members, snapshot, isLead);
   const pending = useRef(false);
   const generation = useRef(0);
   const choices = (navigation.sessions ?? []).filter(s=>s.pane.tmux && s.backendId);
@@ -86,7 +92,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
     {error && <p role="alert" className="collaboration-error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     <div hidden={view!=="activity"}>
-      <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} board={board} onUpdated={()=>request("members")}/>
+      <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} board={board} live={live} onUpdated={()=>request("members")}/>
     </div>
     <div hidden={view!=="members"} className="team-roster-view">
     <div className="team-lead-guide">
@@ -118,19 +124,22 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
       })}>{editing?"更新终端":"加入团队"}</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>setAdding(false)}>取消</Button></div>
       <p>服务器和工作目录会自动读取，不需要配置邮箱。</p>
     </div>}
-    {(["working","idle","unknown"] as MemberActivity[]).map(activity=>{
-      const group=members.filter(member=>memberActivity(member)===activity);
+    {!!members.length && <TeamLiveSummary board={board} live={live} summary={summarizeTeam(ranked.filter(r=>!isLead(r.member)),snapshot)}/>}
+    {STATUS_GROUPS.map(({key:groupKey,label:groupLabel,title:groupTitle})=>{
+      const group=ranked.filter(r=>r.status.group===groupKey);
       if(!group.length)return null;
-      return <section className={`team-activity-group team-activity-${activity}`} key={activity} aria-label={`${memberActivityLabels[activity]}成员`}>
-        <div className="team-activity-heading" title="按 Lead 的当前任务备注分类，不代表实时在线状态"><strong>{memberActivityLabels[activity]}</strong><span>{group.length}</span></div>
-        {group.map(member=>{
+      return <section className={`team-activity-group team-live-group-${groupKey}`} key={groupKey} aria-label={`${groupLabel}成员`}>
+        <div className="team-activity-heading" title={groupTitle}><strong>{groupLabel}</strong><span>{group.length}</span></div>
+        {group.map(({member,session,status})=>{
       const matches=matchingServers(member,navigation.servers);
       const selectedServer=mapping[memberMappingKey(member)]??(matches.length===1?matches[0].id:"");
       const server=navigation.servers.find(s=>s.id===selectedServer);
-      return <article key={memberKey(member)} className="team-card">
-        <div className="team-card-main"><span className="team-avatar"><Terminal size={15}/></span><div className="team-card-title"><strong title={member.role}>{member.role}</strong><p title={`${server?.name??member.host} · ${member.tmux.name}`}><span className={`team-activity-badge team-activity-${activity}`}>{memberActivityLabels[activity]}</span> {server?.name??member.host}{member.tmux.name!==member.role ? ` · ${member.tmux.name}` : ""}</p></div></div>
+      const brief=session?.taskCode?live.briefs[briefKey(session.project,session.taskCode)]:undefined;
+      return <article key={memberKey(member)} className={`team-card${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} data-group={status.group}>
+        <div className="team-card-main"><span className="team-avatar"><Terminal size={15}/></span><div className="team-card-title"><strong title={member.role}>{member.role}</strong><p title={`${server?.name??member.host} · ${member.tmux.name}`}><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small className="team-live-duration"> {status.duration}</small>} {server?.name??member.host}{member.tmux.name!==member.role ? ` · ${member.tmux.name}` : ""}</p></div></div>
+        {session&&<p className="team-card-extra team-live-current"><strong>当前</strong>{session.taskCode?<span className="team-live-task"><b>{session.taskCode}</b>{session.taskStatus&&<em>{live.statusNames[briefKey(session.project,session.taskStatus)]??session.taskStatus}</em>}{(brief?.brief||brief?.title)&&<span>{brief.brief||brief.title}</span>}</span>:<span className="team-live-task is-empty">无当前卡</span>}</p>}
         <div className="team-card-actions"><Button className="team-open" size="sm" disabled={disabled||!server} aria-label={`打开终端 · ${member.role}`} onClick={()=>server&&void run(()=>navigation.onOpen(member,server))}>打开</Button><Button size="sm" variant="ghost" aria-expanded={managedMember===memberKey(member)} onClick={()=>setManagedMember(old=>old===memberKey(member)?undefined:memberKey(member))}>管理</Button></div>
-        <TeamMemberNotes member={member}/>
+        <TeamMemberNotes member={member} nowMs={snapshot?snapshot.now*1000:undefined}/>
         {noteMember===memberKey(member) && <div className="team-card-extra team-member-notes">
           {noteMember===memberKey(member) ? <div className="team-notes-editor">
             {(Object.entries(memberNoteFields).filter(([key])=>key!=="quota") as [MemberNoteField,string][]).map(([key,label])=><label className="collaboration-field" key={key}>{label}<textarea maxLength={2000} disabled={busy} value={noteDraft[key]??""} onChange={e=>setNoteDraft(old=>({...old,[key]:e.target.value}))}/></label>)}

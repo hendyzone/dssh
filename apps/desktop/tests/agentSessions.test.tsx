@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 
 import TeamDynamics from "../src/components/TeamDynamics";
-import { briefTargets, liveStatus, matchSession, normalizeHost, parseAgentSessions, rankMembers } from "../src/lib/agentSessions";
+import TeamMembers from "../src/components/TeamMembers";
+import { briefTargets, isLeadMember, liveSnapshot, liveStatus, matchSession, normalizeHost, noteFreshness, parseAgentSessions, rankMembers, rosterStatus, summarizeTeam } from "../src/lib/agentSessions";
 import { emptyProfile } from "../src/lib/collaboration";
 import { boardSource, clearBoardCache, defaultLookupSettings } from "../src/lib/taskLookup";
 import type { TeamMember } from "../src/lib/teamMembers";
@@ -63,7 +64,7 @@ describe("liveStatus", () => {
     [{ state: "gone", task_code: "T1", task_status: "doing" }, "会话已离开，卡仍在进行中", "bad", true],
     [{ state: "gone", task_code: "T1", task_status: "done" }, "会话已离开", "gone", false],
     [{ state: "running" }, "运行中", "run", false],
-    [{ state: "idle" }, "空闲", "idle", false],
+    [{ state: "idle" }, "空闲·可派活", "idle", false],
     [{ state: "stuck", stale: true }, "采集中断", "offline", false],
     [{ state: "running", host_ok: false, host_error: "timeout" }, "机器不可达", "offline", false],
   ])("%o → %s", (extra, label, tone, needsHuman) => {
@@ -92,10 +93,91 @@ describe("rankMembers (state ordering)", () => {
     const order = rankMembers(names.map(n => member(n)), snap).map(r => r.member.role);
     expect(order).toEqual(["stuck-old", "stuck-new", "pending", "waiting", "gone-doing", "running", "idle-a", "idle-b", "stale", "gone-done", "absent"]);
   });
-  it("without a snapshot keeps roster order and marks nobody as needing a person", () => {
-    const ranked = rankMembers([member("worker-demo-b"), member("worker-demo-a")], undefined);
-    expect(ranked.map(r => r.member.role)).toEqual(["b", "a"]);
-    expect(ranked.every(r => !r.status.needsHuman && !r.session && r.status.label === "实时状态未知")).toBe(true);
+  it("without a snapshot falls back to the Lead's hand-written state: working, idle, unknown, roster order within", () => {
+    const ranked = rankMembers([
+      member("worker-demo-b"), member("worker-demo-a", { currentTask: "空闲·等待派工" }),
+      member("worker-demo-c", { currentTask: "工作中·T1 等合入" }), member("worker-demo-d", { currentTask: "T2 进行中" }),
+    ], undefined);
+    expect(ranked.map(r => [r.member.role, r.status.label, r.status.group])).toEqual([
+      ["c", "工作中（手写）", "rosterWorking"], ["d", "工作中（手写）", "rosterWorking"], ["a", "空闲（手写）", "rosterIdle"], ["b", "待确认（手写）", "rosterUnknown"],
+    ]);
+    expect(ranked.every(r => !r.status.needsHuman && !r.session)).toBe(true);
+  });
+});
+
+describe("idle split (空闲·可派活 / 等 Lead / 已交付·待验收)", () => {
+  it.each([
+    [{}, "空闲·可派活", "available", "idle"],
+    [{ task_code: "T1", task_status: "done" }, "空闲·可派活", "available", "idle"],
+    [{ task_code: "T1", task_status: "deferred" }, "空闲·可派活", "available", "idle"],
+    [{ task_code: "T1", task_status: "doing" }, "等 Lead", "waitLead", "lead"],
+    [{ task_code: "T1", task_status: "blocked" }, "等 Lead", "waitLead", "lead"],
+    [{ task_code: "T1", task_status: "review" }, "已交付·待验收", "review", "review"],
+    // A status without a card code is not a card.
+    [{ task_code: "", task_status: "doing" }, "空闲·可派活", "available", "idle"],
+  ])("idle + %o → %s", (extra, label, group, tone) => {
+    const status = liveStatus(session("worker-x", { state: "idle", ...extra }), NOW);
+    expect(status).toMatchObject({ label, group, tone, needsHuman: false, duration: "1 小时" });
+  });
+  it("only splits idle: a running worker with a doing card is still 运行中", () => {
+    expect(liveStatus(session("worker-x", { state: "running", task_code: "T1", task_status: "doing" }), NOW)).toMatchObject({ label: "运行中", group: "running" });
+  });
+  it("never shows the Lead as waiting for itself or as available", () => {
+    const lead = liveStatus(session("lead", { state: "idle", task_code: "T1", task_status: "doing" }), NOW, 180, true);
+    expect(lead).toMatchObject({ label: "空闲", group: "lead" });
+    expect(liveStatus(session("lead", { state: "stuck" }), NOW, 180, true)).toMatchObject({ group: "lead", needsHuman: true });
+  });
+  it("sorts 等 Lead after 需要处理 and before 待验收 / 运行中 / 可派活, longest wait first", () => {
+    const names = ["free", "run", "lead-short", "review", "stuck", "lead-long"].map(n => `worker-demo-${n}`);
+    const snap = parseAgentSessions(payload([
+      row("worker-demo-free"),
+      row("worker-demo-run", { state: "running" }),
+      row("worker-demo-lead-short", { task_code: "T1", task_status: "doing", state_since: NOW - 3 * 3600 }),
+      row("worker-demo-review", { task_code: "T2", task_status: "review" }),
+      row("worker-demo-stuck", { state: "stuck" }),
+      row("worker-demo-lead-long", { task_code: "T3", task_status: "blocked", state_since: NOW - 10 * 3600 }),
+    ]));
+    const ranked = rankMembers(names.map(n => member(n)), snap);
+    expect(ranked.map(r => r.member.role)).toEqual(["stuck", "lead-long", "lead-short", "review", "run", "free"]);
+    expect(summarizeTeam(ranked, snap)).toEqual({ live: true, attention: 1, waitLead: 2, longestWaitLead: "10 小时", review: 1, available: 1 });
+  });
+  it("summary without live data says so and counts nothing as waiting", () => {
+    const ranked = rankMembers([member("worker-demo-a", { currentTask: "工作中·T1" })], undefined);
+    expect(summarizeTeam(ranked, undefined)).toEqual({ live: false, attention: 0, waitLead: 0, longestWaitLead: "", review: 0, available: 0 });
+  });
+});
+
+describe("Lead 备注 freshness and offline fallback", () => {
+  const at = (hoursAgo: number) => new Date(NOW * 1000 - hoursAgo * 3600_000).toISOString();
+  it.each([
+    [at(2), "2 小时前", false],
+    [at(23.9), "23 小时前", false],
+    [at(25), "25 小时前", true],
+    [at(24 * 5), "5 天前", true],
+    [undefined, "更新时间未知", true],
+    ["not a date", "更新时间未知", true],
+  ])("updatedAt %s → %s (stale=%s)", (updatedAt, age, stale) => {
+    expect(noteFreshness(updatedAt, NOW * 1000)).toEqual({ age, stale });
+  });
+  it("uses live data only while the board answers", () => {
+    const snapshot = parseAgentSessions(payload([]));
+    expect(liveSnapshot({ snapshot, offline: false })).toBe(snapshot);
+    expect(liveSnapshot({ snapshot, offline: true })).toBeUndefined();
+    expect(liveSnapshot({ offline: false })).toBeUndefined();
+    expect(liveSnapshot(undefined)).toBeUndefined();
+  });
+  it("roster fallback follows the hand-written 「当前在做」 and marks it as hand-written", () => {
+    expect(rosterStatus({ currentTask: "工作中·T0502等合入\n门禁已过" })).toMatchObject({ label: "工作中（手写）", group: "rosterWorking", needsHuman: false });
+    expect(rosterStatus({ currentTask: "空闲·等待派工" })).toMatchObject({ label: "空闲（手写）", group: "rosterIdle" });
+    expect(rosterStatus({})).toMatchObject({ label: "待确认（手写）", group: "rosterUnknown" });
+    expect(rosterStatus({ currentTask: "工作中" }, true)).toMatchObject({ group: "lead" });
+  });
+  it("recognises the Lead by role or by being the panel's own session", () => {
+    const self = { tmuxId: "$9", tmuxCreated: 9, workdir: "/lead", username: "dev" };
+    expect(isLeadMember(member("x", { role: "Lead" }), self)).toBe(true);
+    expect(isLeadMember(member("x", { role: "lead（主控）" }), self)).toBe(true);
+    expect(isLeadMember(member("x", { role: "协调", tmux: { id: "$9", created: 9, name: "x" }, workdir: "/lead" }), self)).toBe(true);
+    expect(isLeadMember(member("x", { role: "Leader-ish worker" }), self)).toBe(false);
   });
 });
 
@@ -191,14 +273,14 @@ it("renders live status, card brief, last commit, dirty files and model without 
   expect(within(first).getByText("15 分钟")).toBeTruthy();
   expect(within(first).getByText("待验收")).toBeTruthy();
   expect(within(first).getByText("只有标题的卡")).toBeTruthy();
-  expect(within(screen.getByText("需要处理").closest(".team-live-group") as HTMLElement).getAllByRole("group")).toHaveLength(1);
+  expect(within(document.querySelector(".team-live-group-attention") as HTMLElement).getAllByRole("group")).toHaveLength(1);
   expect(within(second).getByText("运行中")).toBeTruthy();
   expect(within(second).getByText("T0504")).toBeTruthy();
   expect(within(second).getByText("进行中")).toBeTruthy();
   expect(within(second).getByText("未提交 35 个文件")).toBeTruthy();
   expect(within(second).getByText("Gemini 4")).toBeTruthy();
   expect(within(second).getByText("提交 2 小时前 · chore(s4): apply review")).toBeTruthy();
-  expect(within(third).getByText("空闲")).toBeTruthy();
+  expect(within(third).getByText("空闲·可派活")).toBeTruthy();
   expect(within(third).getByText("无当前卡")).toBeTruthy();
   // AI summary stays on demand.
   expect(screen.getByRole("button", { name: "总结 · cw1-pi" })).toBeTruthy();
@@ -213,7 +295,8 @@ it("shows 「看板离线」 instead of an error when the board is unreachable, 
   render(<TeamDynamics sessionId="ssh" profile={profile} navigation={navigation} members={roster} board={board} onUpdated={vi.fn()}/>);
   expect(await screen.findByText(/看板离线/)).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.getAllByText("实时状态未知")).toHaveLength(3);
+  // Falls back to the hand-written state instead of a blank 「unknown」.
+  expect(screen.getAllByText("待确认（手写）")).toHaveLength(3);
   // Roster still shows, unranked, so 「打开」 and 「总结」 keep working.
   expect(rows().map(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent)).toEqual(["cw1-codex", "cw3-agy", "cw1-pi"]);
   state.offline = false;
@@ -243,4 +326,90 @@ it("says the board is not configured when no source is available", () => {
   render(<TeamDynamics sessionId="ssh" profile={profile} navigation={navigation} members={roster} onUpdated={vi.fn()}/>);
   expect(screen.getByText(/未配置看板，无法显示实时状态/)).toBeTruthy();
   expect(mocks.invoke).not.toHaveBeenCalled();
+});
+
+// ---------- both pages read the same status ----------
+const WEEK_OLD = new Date((NOW - 2 * 86400) * 1000).toISOString();
+const team = [
+  member("worker-demo-run"),
+  member("worker-demo-wait", { currentTask: "工作中·T7 等合入", updatedAt: WEEK_OLD }),
+  member("worker-demo-review"),
+  member("worker-demo-free", { currentTask: "工作中·T5", updatedAt: new Date((NOW - 3600) * 1000).toISOString() }),
+  member("worker-demo-stuck"),
+  member("demo-lead", { role: "Lead", currentTask: "工作中·协调" }),
+];
+const teamSessions = () => payload([
+  row("worker-demo-run", { state: "running", task_code: "T0504", task_status: "doing" }),
+  row("worker-demo-wait", { task_code: "T7", task_status: "doing", state_since: NOW - 5 * 3600 }),
+  row("worker-demo-review", { task_code: "T0503", task_status: "review", state_since: NOW - 2 * 3600 }),
+  row("worker-demo-free", { task_code: "T5", task_status: "done" }),
+  row("worker-demo-stuck", { state: "stuck", state_detail: "429" }),
+  row("demo-lead"),
+]);
+function fakeTeam(command: string, args: { path?: string; request?: { operation: string } }) {
+  if (command === "collaboration_request") return Promise.resolve(JSON.stringify(team));
+  return fakeBoard(command, args as { path: string });
+}
+const statusByMember = (scope: ParentNode, rowSelector: string, nameOf: (row: Element) => string) =>
+  Object.fromEntries([...scope.querySelectorAll(rowSelector)].map(r => [nameOf(r), [r.getAttribute("data-group"), r.querySelector(".team-live-badge")?.textContent]]));
+const views = () => ({
+  dynamics: statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!),
+  roster: statusByMember(document, ".team-roster-view article.team-card", r => r.querySelector(".team-card-title strong")!.textContent!),
+});
+const rosterNavigation = { server, servers: [server], onOpen: vi.fn() };
+const rosterProfile = { ...profile, membersEnabled: true };
+
+it("「动态」 and 「成员」 show the same live status, groups and summary; 「当前」 is live and the hand-written note is 「Lead 备注」 with its age", async () => {
+  state.sessions = teamSessions();
+  mocks.invoke.mockImplementation(fakeTeam);
+  render(<TeamMembers sessionId="ssh" profile={rosterProfile} navigation={rosterNavigation} board={board}/>);
+  await waitFor(() => expect(document.querySelectorAll(".team-roster-view .team-live-badge")).toHaveLength(6));
+  await screen.findAllByText("告警带设备标识时主动去查");
+  const { dynamics, roster } = views();
+  const expected = {
+    stuck: ["attention", "卡住：429"], wait: ["waitLead", "等 Lead"], review: ["review", "已交付·待验收"],
+    run: ["running", "运行中"], free: ["available", "空闲·可派活"],
+  };
+  expect(dynamics).toEqual(expected);
+  // The roster also lists the Lead (never 「等 Lead」/「可派活」); everyone else reads exactly as on 「动态」.
+  expect(roster).toEqual({ ...expected, Lead: ["lead", "空闲"] });
+  // Same order on both pages.
+  const order = (sel: string, name: string) => [...document.querySelectorAll(sel)].map(r => r.querySelector(name)!.textContent);
+  expect(order(".team-dynamics .team-live-row", ".team-ai-identity")).toEqual(["stuckworker-demo-stuck", "waitworker-demo-wait", "reviewworker-demo-review", "runworker-demo-run", "freeworker-demo-free"]);
+  expect(order(".team-roster-view article.team-card", ".team-card-title strong")).toEqual(["Lead", "stuck", "wait", "review", "run", "free"]);
+  // One summary text on both pages; the Lead is not counted.
+  const summaries = [...document.querySelectorAll(".team-live-summary")].map(e => e.textContent);
+  expect(summaries).toEqual(["需要处理 1等 Lead 1（最长 5 小时）待验收 1可派活 1", "需要处理 1等 Lead 1（最长 5 小时）待验收 1可派活 1"]);
+  // 等 Lead is highlighted yellow on both pages.
+  expect(document.querySelectorAll(".team-live-wait-lead")).toHaveLength(2);
+  // 「当前」 on the roster comes from the collector, not the stale hand-written note.
+  const card = (name: string) => [...document.querySelectorAll(".team-roster-view article.team-card")].find(r => r.querySelector(".team-card-title strong")!.textContent === name) as HTMLElement;
+  expect(within(card("run")).getByText("T0504")).toBeTruthy();
+  expect(within(card("run")).getByText("告警带设备标识时主动去查")).toBeTruthy();
+  expect(within(card("wait")).getByText("T7")).toBeTruthy();
+  expect(within(card("wait")).getByText("Lead 备注")).toBeTruthy();
+  expect(within(card("wait")).getByText(/2 天前 · 可能过期/)).toBeTruthy();
+  expect(within(card("free")).getByText("1 小时前").classList.contains("is-stale")).toBe(false);
+  expect(within(card("free")).queryByText(/可能过期/)).toBeNull();
+  expect(document.querySelector(".team-roster-view")?.textContent).not.toMatch(/工作中（/);
+  // One collector poll serves both pages.
+  expect(state.paths.filter(p => p.endsWith("/agent-sessions"))).toHaveLength(1);
+});
+
+it("both pages fall back to the hand-written state and say 「看板离线」 when the board is unreachable", async () => {
+  state.offline = true;
+  mocks.invoke.mockImplementation(fakeTeam);
+  render(<TeamMembers sessionId="ssh" profile={rosterProfile} navigation={rosterNavigation} board={board}/>);
+  await waitFor(() => expect(document.querySelectorAll(".team-live-offline")).toHaveLength(2));
+  expect(screen.queryByRole("alert")).toBeNull();
+  const { dynamics, roster } = views();
+  const expected = {
+    run: ["rosterUnknown", "待确认（手写）"], wait: ["rosterWorking", "工作中（手写）"], review: ["rosterUnknown", "待确认（手写）"],
+    free: ["rosterWorking", "工作中（手写）"], stuck: ["rosterUnknown", "待确认（手写）"],
+  };
+  expect(dynamics).toEqual(expected);
+  expect(roster).toEqual({ ...expected, Lead: ["lead", "工作中（手写）"] });
+  expect(document.querySelectorAll(".team-live-summary")).toHaveLength(0);
+  // Dynamics shows the hand-written note in place of the live card.
+  expect(document.querySelector(".team-dynamics .team-live-task.is-roster")?.textContent).toBe("Lead 备注工作中·T7 等合入");
 });

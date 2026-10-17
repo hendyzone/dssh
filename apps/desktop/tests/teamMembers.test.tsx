@@ -256,7 +256,7 @@ it.each(["same","different-root","recreated","missing-roster"])("recovers an alt
   expect(vi.mocked(invoke).mock.calls.every(([c,a]:any)=>c==="collaboration_worktree"||a.request?.operation==="members")).toBe(true);
 });
 
-it("groups current work ahead of idle members without inferring unknown status",async()=>{
+it("without a board, groups by the Lead's hand-written note (working, idle, unknown) and labels it as such",async()=>{
   vi.mocked(invoke).mockResolvedValue(JSON.stringify([
     {...member,role:"空闲成员",currentTask:"空闲116h，无在飞卡"},
     {...member,email:"busy@example.test",role:"工作成员",currentTask:"T762等待验收"},
@@ -264,11 +264,12 @@ it("groups current work ahead of idle members without inferring unknown status",
   ]));
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
   fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
-  const working=await screen.findByRole("region",{name:"工作中成员"});
+  const working=await screen.findByRole("region",{name:"工作中（Lead 手写）成员"});
   expect(working.textContent).toContain("工作成员");
-  expect(screen.getByRole("region",{name:"空闲成员"}).textContent).toContain("空闲成员");
-  expect(screen.getByRole("region",{name:"待确认成员"}).textContent).toContain("未知成员");
-  expect(screen.getAllByRole("region").map(el=>el.getAttribute("aria-label"))).toEqual(["团队成员","工作中成员","空闲成员","待确认成员"]);
+  expect(screen.getByRole("region",{name:"空闲（Lead 手写）成员"}).textContent).toContain("空闲成员");
+  expect(screen.getByRole("region",{name:"待确认（Lead 手写）成员"}).textContent).toContain("未知成员");
+  expect(screen.getAllByRole("region").map(el=>el.getAttribute("aria-label"))).toEqual(["团队成员","工作中（Lead 手写）成员","空闲（Lead 手写）成员","待确认（Lead 手写）成员"]);
+  expect(screen.getAllByText(/未配置看板，无法显示实时状态/)).toHaveLength(2);
 });
 
 it.each([true,false])("promotes a member only after checking the migrated roster (present=%s)",async migrated=>{
