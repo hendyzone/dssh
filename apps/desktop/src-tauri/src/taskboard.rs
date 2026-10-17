@@ -26,6 +26,9 @@ pub(crate) fn identifier(value: &str) -> bool {
 /// Accept only the read-only endpoints this feature needs.
 pub(crate) fn board_path(path: &str) -> Result<(), String> {
     let invalid = || "不支持的看板查询路径".to_string();
+    if path == "/api/v1/agent-sessions" {
+        return Ok(());
+    }
     let rest = path.strip_prefix("/api/v1/projects").ok_or_else(invalid)?;
     if rest.is_empty() {
         return Ok(());
@@ -218,6 +221,7 @@ mod tests {
             "/api/v1/projects/smart-table/tasks",
             "/api/v1/projects/nanoclaw/tasks/DD-RETRY-403-GAP",
             "/api/v1/projects/amail/tasks/AM-42/dependencies",
+            "/api/v1/agent-sessions",
         ] {
             assert!(board_path(ok).is_ok(), "{ok}");
         }
@@ -231,6 +235,9 @@ mod tests {
             "/state.json",
             "/api/v1/projects/x/board",
             "/api/v1/projects/x/tasks/a b",
+            "/api/v1/agent-sessions/x",
+            "/api/v1/agent-sessions?project=x",
+            "/api/v1/projects/x/agent-sessions",
         ] {
             assert!(board_path(bad).is_err(), "{bad}");
         }

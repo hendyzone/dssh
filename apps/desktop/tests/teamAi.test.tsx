@@ -105,8 +105,10 @@ it("summarizes unopened workers through their saved server without opening termi
 it("labels old AI summaries as expired instead of implying current status",()=>{
   const old={...member,aiSummary:"实现合账模块",aiStatus:"working",aiUpdatedAt:new Date(Date.now()-600000).toISOString(),aiSource:JSON.stringify([member.host,member.port,member.username,member.workdir,member.tmux.id,member.tmux.created])};
   render(<TeamDynamics sessionId="lead-ssh" profile={profile} members={[old]} navigation={{server,servers:[server],onOpen:vi.fn()}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
-  expect(screen.getByText("摘要已过期 · 实现合账模块")).toBeTruthy();
-  expect(screen.getByText("待确认")).toBeTruthy();
+  expect(screen.getByText("AI：摘要已过期 · 实现合账模块")).toBeTruthy();
+  // Grouping follows live board data, never the AI guess; without a board the member is 「未采集」.
+  expect(screen.queryByText("工作中")).toBeNull();
+  expect(screen.getByText("实时状态未知")).toBeTruthy();
 });
 
 it.each([false,true])("releases its lease after a model request settles (failure=%s)",async(fail)=>{

@@ -142,7 +142,7 @@ export function inferProject(settings: TaskLookupSettings, pane: SessionInfo | u
 const TTL = 5 * 60 * 1000;
 const cache = new Map<string, { at: number; value: Promise<unknown> }>();
 export function clearBoardCache() { cache.clear(); }
-function cached<T>(key: string, load: () => Promise<T>, force = false, ttl = TTL): Promise<T> {
+export function cached<T>(key: string, load: () => Promise<T>, force = false, ttl = TTL): Promise<T> {
   const hit = cache.get(key);
   if (hit && !force && Date.now() - hit.at < ttl) return hit.value as Promise<T>;
   const value = load();
@@ -150,7 +150,7 @@ function cached<T>(key: string, load: () => Promise<T>, force = false, ttl = TTL
   value.catch(() => { if (cache.get(key)?.value === value) cache.delete(key); });
   return value;
 }
-async function get<T>(source: BoardSource, path: string, index = false): Promise<T | null> {
+export async function get<T>(source: BoardSource, path: string, index = false): Promise<T | null> {
   let response: { status: number; body: string };
   try { response = await invoke("taskboard_get", { route: source.route, path, index }); }
   catch (e) { throw new BoardError("unreachable", String(e).startsWith("看板") ? String(e) : `看板不可达：${String(e)}`); }

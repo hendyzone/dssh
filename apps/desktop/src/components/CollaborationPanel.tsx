@@ -79,7 +79,7 @@ export default function CollaborationPanel({sessionId,profile,onClose,teamNaviga
     <div className="collaboration-content">
       <p>{profile.tmuxName || profile.tmuxId} · {profile.workdir}</p>
       {taskLookup && <details className="task-lookup-details"><summary>查任务（编号 → 状态卡片）</summary><TaskLookup source={taskLookup.source} inferred={taskLookup.inferred}/></details>}
-      {teamNavigation && <TeamMembers sessionId={sessionId} profile={profile} navigation={teamNavigation}/>}
+      {teamNavigation && <TeamMembers sessionId={sessionId} profile={profile} navigation={teamNavigation} board={taskLookup?.source}/>}
       <details><summary>发送接入手册给 Agent</summary><AgentGuide profile={profile}/></details>
       {!sessionId&&<p role="status">终端已断开，请先打开对应终端。</p>}
       {error&&<p role="alert" className="collaboration-error">{error}</p>}
