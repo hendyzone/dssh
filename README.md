@@ -1,125 +1,142 @@
 <p align="center">
-  <img src="assets/logo-256.png" alt="dssh 标志" width="88" />
+  <img src="assets/logo-256.png" alt="dssh logo" width="88" />
 </p>
 
 <h1 align="center">dssh</h1>
 
-<p align="center">把远程终端、文件和开发任务放在同一个工作区。</p>
-<p align="center"><strong>v1.2.16</strong> · Tauri SSH 客户端 · Windows / macOS</p>
+<p align="center">Remote terminals, files and dev tasks in one workspace.</p>
+<p align="center"><strong>v1.2.16</strong> · Tauri SSH client · Windows / macOS / Linux</p>
+<p align="center"><strong>English</strong> | <a href="README.zh-CN.md">简体中文</a></p>
 
-dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中运行长任务、编辑远程文件、查看代码差异，也能给远程 Codex、Claude 等工具粘贴截图路径。
+dssh is built for everyday remote development and server administration: connect to servers, keep long jobs running in tmux, edit remote files, review code diffs, and paste screenshot paths into remote tools such as Codex and Claude. For projects run by a team of coding agents, it also shows member status, task cards and model quota in the same window.
 
-![dssh 工作区：左侧管理服务器，中间使用终端，右侧浏览远程文件](docs/images/workspace.png)
+The app UI is in Chinese. This README describes features in English and gives the on-screen label in brackets where it helps you find it, e.g. Settings → Sync (「设置 → 同步」).
 
-*当前应用前端的界面截图，使用虚构服务器、示例文件和模拟终端输出；不包含真实连接信息。下方截图同样使用演示数据。*
+![dssh workspace: servers on the left, terminal in the middle, remote files on the right](docs/images/workspace.png)
 
-## ✨ 功能一览
+*Screenshot of the current frontend using fictional servers, sample files and simulated terminal output; it contains no real connection details. The other screenshots below use demo data as well.*
 
-| 想做什么 | dssh 提供什么 |
+## ✨ Features at a glance
+
+| You want to | dssh gives you |
 | --- | --- |
-| 管理多台服务器 | 文件夹分组、搜索、最近连接、拖拽排序、克隆与批量导入 |
-| 同时处理多个会话 | 多标签页、左右 / 上下双窗格分屏、连接状态与断线重连 |
-| 让远程任务持续运行 | tmux 会话、窗口和窗格管理，重新连接后继续附加 |
-| 处理远程文件 | SFTP 文件树、上传下载（含整个文件夹 / 多选递归下载）、在线文本编辑与 Markdown 预览 |
-| 配合终端 AI 工具工作 | 截图上传并插入路径、终端内图片显示、任务状态与提醒 |
-| 看懂 agent 说的任务编号 | 团队面板锁定项目后输编号直接查看任务卡片；终端里的真实编号悬停看状态、点击看详情（只读 taskboard） |
-| 查看项目改动 | 按未暂存、已暂存和新文件分组，查看 Git 差异 |
-| 访问远程服务 | 本地转发、远程转发、动态 SOCKS5 代理 |
-| 了解服务器状态 | CPU、内存、负载、网络、磁盘与进程监控 |
-| 在多台电脑间切换 | 通过 GitHub 加密备份和恢复连接、凭据、私钥及界面设置 |
+| Manage many servers | Folders, search, recent connections, drag-and-drop ordering, cloning and bulk import |
+| Work in several sessions at once | Tabs, side-by-side / stacked split panes, connection status and reconnect, local terminals |
+| Keep remote jobs running | tmux session, window and pane management; Lead / Worker sessions auto-grouped by project; reattach after reconnecting |
+| Work with remote files | SFTP file tree, upload and download (including whole folders / recursive multi-select), in-app text editing, HTML / Markdown / image preview in tabs |
+| Use terminal AI tools comfortably | Screenshot upload with path insertion, inline terminal images, task status and alerts (Hooks or OSC 7501 program status, with tmux pane tracking) |
+| Keep an eye on an agent team | The team panel shows each member's live state, current card and last commit, and separates "waiting on Lead", "delivered, awaiting review" and "idle, ready for work" |
+| Decode task codes agents mention | Type a code in the team panel to see the task card; real codes in the terminal show status on hover and details on click (read-only taskboard) |
+| Know your model quota | The Model quota panel lists remaining quota per channel on each server |
+| Review project changes | Git diffs grouped into unstaged, staged and new files |
+| Reach remote services | Local forwarding, remote forwarding and dynamic SOCKS5 proxy |
+| Watch server health | CPU, memory, load, network, disk and process monitoring |
+| Move between computers | Encrypted GitHub backup and restore of connections, credentials, private keys, task lookup and UI settings |
 
-## 🖥️ 连接与终端
+## 🖥️ Connections and terminals
 
-- **整理连接**：支持多级文件夹、搜索、最近使用、拖动连接排序与移动分组；可以克隆现有配置，也可以预览后批量导入连接文本。
-- **密码与私钥登录**：保存的密码和私钥口令交给系统凭据库管理，私钥可通过文件选择器指定。
-- **多会话并行**：同一服务器可打开多个标签；支持标签重命名、复制会话和批量关闭。单个标签可左右或上下分成两个窗格。
-- **断线后继续操作**：显示连接状态，断线后保留终端滚动内容，按 `R` 或点击按钮原地重连。
-- **重启恢复工作现场**：自动恢复标签、分屏、焦点和连接分组；普通 SSH 窗格尝试回到上次目录，由 dssh 打开的 tmux 窗格重新附加原会话。关闭的标签不会再恢复，普通 shell 进程与滚动历史不保存。
-- **中文与外观**：支持中文输入，内置 Nord、Tokyo Night、Catppuccin 等深浅色主题；字体、字号和主题即时生效，工具面板可左右停靠并调整宽度。
+- **Organize connections**: nested folders, search, recently used, drag to reorder or move between folders; clone an existing entry, or preview and bulk-import connection text.
+- **Password and key login**: saved passwords and key passphrases go to the system credential store; pick private keys with a file chooser.
+- **Parallel sessions**: open several tabs per server; rename, duplicate and bulk-close tabs. Any tab can be split into two panes, side by side or stacked.
+- **Carry on after a disconnect**: connection status is always visible, scrollback survives a drop, and `R` or a button reconnects in place.
+- **Restore your workspace after a restart**: tabs, splits, focus and connection folders come back; plain SSH panes try to return to their last directory, and tmux panes opened by dssh reattach to their original session. Closed tabs stay closed; plain shell processes and scrollback are not saved.
+- **Local terminals**: "Open local terminal" (「打开本地终端」) on the welcome page, or tab bar `+` → "Local terminal" (「本地终端」), opens a shell on this machine (your default login shell on Linux/macOS, PowerShell on Windows), with tabs, splits and copy/paste.
+- **Chinese input and themes**: CJK input works; built-in light and dark themes include Nord, Tokyo Night and Catppuccin. Font, size and theme apply instantly, and tool panels can dock left or right with adjustable width. On Linux the window uses a compact title bar that follows the theme.
 
-## 📁 文件就在终端旁边
+## 📁 Files right next to the terminal
 
-在同一个窗口里浏览目录、改配置、读文档，或把项目交给本地编辑器。
+Browse directories, edit config, read docs, or hand a project to a local editor, all in the same window.
 
-- **浏览与定位**：文件树、隐藏文件开关、路径输入、目录筛选；可跟随终端目录，也可选择 tmux 窗格的工作目录。
-- **传输与管理**：拖拽上传、下载、新建目录、重命名和删除；上传队列显示进度与速度，支持取消。
-- **定位下载文件**：下载完成提示自动提供「打开所在目录」，单文件在 Windows 资源管理器 / macOS Finder 中定位，文件夹或多选下载打开保存目录；提示保留至关闭或被后续操作替换。
-- **下载整个文件夹**：目录右键「下载文件夹…」或 Ctrl/⌘、Shift 多选后「下载所选」，选择本地目录后递归下载并保留结构；整批作为一个传输项显示文件数、字节、速度和当前文件，可取消（已完成的文件保留），本地同名时一次性选择合并（覆盖 / 跳过）或另存为“名称 (1)”。
-- **在线编辑**：编辑不超过 1 MB 的 UTF-8 文本，保存前检查远端冲突并建立备份；Markdown 可切换渲染预览与源码编辑。
-- **本地打开**：右键「下载并打开」可下载文件并用本地应用打开；也可通过 VS Code Remote - SSH 打开当前远程目录。
-- **网页标签页**：在终端选中远程 HTML 的绝对路径或 `file:///…html`，Shift+右键选择「在 dssh 新标签页打开」。通过当前 SSH 读取并在隔离页面中显示，可刷新、切换与关闭，不会关闭原终端。支持 1 MB 以内的 UTF-8 单文件 HTML，同目录图片、CSS 等资源暂不加载；网页标签不随重启恢复。选中 HTTP(S) 地址也可内嵌打开，禁止内嵌的网站可改用系统浏览器。
-- **Markdown 与图片标签页**：同一菜单也支持 `.md/.markdown/.mdown` 和 PNG、JPEG、GIF、WebP、BMP、SVG、ICO、AVIF。Markdown 支持表格、代码块以及远程相对路径图片；图片可适应窗口或显示原始尺寸。文档限 1 MB UTF-8，单张图片限 20 MB，具体图片格式取决于系统 WebView 解码支持。
-- **从 SFTP 预览**：双击 HTML、Markdown 或图片，或右键选择「在 dssh 新标签页打开」。需要本地应用时仍可选择「下载并打开」；其他文件保持原有双击下载打开行为。
+- **Browse and locate**: file tree, hidden-file toggle, path input and directory filter; follow the terminal's directory or pick a tmux pane's working directory.
+- **Transfer and manage**: drag-and-drop upload, download, new folder, rename and delete; the upload queue shows progress and speed and can be cancelled.
+- **Find what you downloaded**: the completion notice offers "Show in folder" (「打开所在目录」). A single file is revealed in Windows Explorer / macOS Finder; folder or multi-select downloads open the target directory. The notice stays until you close it or a later action replaces it.
+- **Download whole folders**: right-click a directory → "Download folder…" (「下载文件夹…」), or multi-select with Ctrl/⌘ or Shift → "Download selected" (「下载所选」). Pick a local directory and the tree is downloaded recursively with its structure kept. The batch shows as one transfer with file count, bytes, speed and current file, and can be cancelled (finished files are kept). On name clashes you choose once: merge (overwrite / skip) or save as "name (1)".
+- **Edit in place**: edit UTF-8 text files up to 1 MB; saving checks for remote conflicts and makes a backup first. Markdown toggles between rendered preview and source.
+- **Open locally**: right-click → "Download and open" (「下载并打开」) opens the file in a local app; you can also open the current remote directory with VS Code Remote - SSH.
+- **Web page tabs**: select an absolute path to a remote HTML file, or a `file:///…html` URL, in the terminal, then Shift+right-click → "Open in a new dssh tab" (「在 dssh 新标签页打开」). The file is read over the current SSH connection and shown in an isolated page that you can reload, switch to and close without touching the terminal. Single-file UTF-8 HTML up to 1 MB is supported; images, CSS and other files next to it are not loaded yet, and web tabs are not restored after a restart. Selected HTTP(S) URLs can be embedded too; for sites that refuse embedding, use the system browser.
+- **Markdown and image tabs**: the same menu handles `.md/.markdown/.mdown` and PNG, JPEG, GIF, WebP, BMP, SVG, ICO and AVIF. Markdown renders tables, code blocks and images referenced by remote relative paths; images fit the window or show at original size. Documents are limited to 1 MB of UTF-8 and images to 20 MB each; supported image formats depend on the system WebView.
+- **Preview from SFTP**: double-click an HTML, Markdown or image file, or right-click → "Open in a new dssh tab". "Download and open" is still there when you want a local app; other files keep the usual double-click download-and-open behaviour.
 
-支持拖入文件夹递归上传，保留子目录和空目录；下载到本地应用后所做的修改不会自动回传。详见[文件工作区](docs/file-workspace.md)与 [VS Code 远程打开](docs/vscode-remote.md)。
+Dropping a folder uploads it recursively, keeping subdirectories and empty directories. Changes made in a local app after downloading are not uploaded back automatically. See [File workspace](docs/file-workspace.md) and [VS Code remote open](docs/vscode-remote.md) (Chinese).
 
-## 🔁 用 tmux 留住工作现场
+## 🔁 Keep your work alive with tmux
 
-![tmux 管理面板：查看会话、窗口、运行中的程序及工作目录](docs/images/tmux.png)
+![tmux panel: sessions, windows, running programs and working directories](docs/images/tmux.png)
 
-- 自动发现远端会话，新建、重命名，或在新标签中附加已有会话。
-- 管理窗口和窗格，切换焦点、左右 / 上下分屏、放大还原、进入复制模式。
-- 关闭附加标签只分离本客户端，远端任务继续运行；网络断开后最多自动尝试重连三次。
-- 可为所选会话启用鼠标，为指定窗格启用图片透传。
+- Discovers remote sessions automatically; create and rename sessions, or attach to one in a new tab.
+- Manage windows and panes: switch focus, split side by side / stacked, zoom and restore, enter copy mode.
+- **Grouped by project**: manual groups (stored in the session's `@dssh_group` option) come first. Other sessions are sorted by name: `<project>-lead` or `lead-<project>` goes into **Leads** (expanded by default, shown as the project name), and worker sessions such as `worker-<project>-<machine>-<tool>` go into **Workers**, split into one collapsible sub-folder per project with a count (collapsed by default). Cards show the short name with the full name on hover. Order: manual groups → Leads → Workers → ungrouped.
+- Closing an attached tab only detaches this client, so remote jobs keep running; after a network drop dssh retries up to three times.
+- Enable mouse mode for the selected session, or image passthrough for a specific pane.
 
-远端需安装 tmux，目前管理默认 socket。图片透传需要 tmux 3.3+ 及远端应用配合。详见 [tmux 使用说明](docs/tmux.md)。
+tmux must be installed on the server; dssh manages the default socket. Image passthrough needs tmux 3.3+ and support from the remote program. See [tmux guide](docs/tmux.md) (Chinese).
 
-## 🖼️ 更方便地使用终端 AI 工具
+## 🖼️ Terminal AI tools, made easier
 
-**截图 → 粘贴到终端 → 上传到远程 → 插入图片路径 → 补充问题并发送。**
+**Screenshot → paste into the terminal → uploaded to the server → image path inserted → add your question and send.**
 
-复制截图后，在目标终端粘贴，dssh 会上传 PNG 并插入远程绝对路径，不会自动回车。支持 20 MB 以内的 PNG；是否能读取图片由远端工具和模型决定。
+Copy a screenshot and paste it into the target terminal: dssh uploads the PNG and inserts its absolute remote path without pressing Enter. PNGs up to 20 MB are supported; whether the image can be read is up to the remote tool and model.
 
-支持 Kitty graphics 协议的程序还可以在终端内直接显示图片，双击即可打开预览窗。
+Programs that speak the Kitty graphics protocol can show images right in the terminal; double-click one to open a preview window.
 
-配合右侧工具面板，可以同时关注任务进度和代码变化：
+With the tool panels on the right you can follow task progress and code changes side by side:
 
-- **任务状态与提醒**：查看终端活动、断开状态和工具通知，点击任务卡片跳回对应窗格；可开启桌面提醒。根据终端文字推测的完成、错误或等待状态会明确标注。
-- **统一 AI 状态**：在任务面板按服务器接入 Claude、Codex、pi 的事件，统一显示处理中、等待确认、本轮结束和退出。支持移除接入，并保留已有 Hooks。[接入说明](docs/ai-status.md)
-- **代码修改**：选择远程 Git 项目，查看未暂存、已暂存及新文件，点击查看差异。此面板只读，包含该工作区的所有改动。
+- **Task status and alerts** (「任务状态与提醒」): see terminal activity, disconnects and tool notifications; click a task card to jump back to its pane; desktop notifications are optional. Done, error or waiting states inferred from terminal text are clearly marked as inferred.
+- **Unified AI status**: connect Claude, Codex and pi events per server in the task panel to see working, waiting for confirmation, turn finished and exited in one place. Integrations can be removed, and existing Hooks are preserved. [Setup](docs/ai-status.md) (Chinese)
+- **OSC 7501 program status**: programs that implement the [Program Status Protocol](docs/program-status.md) report their state straight to the terminal (idle, working, needs attention, done, error, optionally with progress), no Hooks needed. With a tmux build carrying the `pane_ps_*` patch, dssh reads every pane read-only (hidden windows included), and clicking a card or alert jumps to the exact window and pane. Stock tmux can forward reports one-way via DCS passthrough; those are attributed to the attached tab only.
+- **Code changes** (「代码修改」): pick a remote Git project and view unstaged, staged and new files; click a file to see its diff. The panel is read-only and covers all changes in that worktree.
 
-详见[工作区工具](docs/workspace-tools.md)。
+See [Workspace tools](docs/workspace-tools.md) and [Program status and tmux](docs/program-status.md) (Chinese).
 
-## 🌐 转发、监控与同步
+## 👥 Agent teams, tasks and quota
 
-可选的 **Agent 协作** 可在「设置 → Agent 协作」按 tmux 会话 + worktree 配置并开启，查看 taskboard 的共享任务与交接，
-通过 amail 查询、预览发送或回复消息。默认关闭，凭据留在远端。详见 [Agent 协作接入](docs/agent-collaboration.md)。
+Optional **Agent collaboration** (「Agent 协作」) is configured per tmux session + worktree under Settings → Agent collaboration (「设置 → Agent 协作」). It shows shared tasks and handoffs from a taskboard server you configure, and lets you search, preview, send and reply to messages through amail. It is off by default and credentials stay on the server. See [Agent collaboration](docs/agent-collaboration.md) (Chinese).
 
-**任务编号查询**：agent 只说「T1090」「AM-42」时，在「团队」面板顶部输入编号即可看到标题、状态列、负责人、摘要、验收结论、阻塞原因和前置依赖；
-锁定项目后只需输编号（`1090` 自动补成 `T1090`），未锁定可输「项目 编号」或只输编号跨项目精确查找。
-终端里出现的、确实存在于该项目看板上的编号会被识别：悬停显示简要卡片，点击打开完整卡片。在「设置 → 任务查询」填写看板地址。
-详见 [任务编号查询](docs/agent-collaboration.md#任务编号查询)。
+**Team panel** (「团队」): open it from a tmux pane. The Lead registers member terminals and can open any member's tmux session across servers in one click ([details](docs/agent-collaboration.md#从-lead-跳转到成员终端)).
+Once a board address is configured, the "Activity" (「动态」) and "Members" (「成员」) pages share one live status: every minute dssh reads the board's read-only session collector (`GET /api/v1/agent-sessions`) from your taskboard server and shows, for each member, state and how long it has lasted, current card code / status / brief, last commit, uncommitted file count, model and host.
 
-给 Claude Code、Codex CLI、pi 的创建 worktree、开箱、认领及交接流程见 [Agent 操作手册](docs/agent-playbook.md)。
-程序内「设置 → Agent 协作」支持离线查看、一键复制给 Agent，以及保存完整 Markdown 手册。
+- Members are grouped by state: **Needs attention** (「需要处理」: stuck, a confirmation prompt, unsent input, or a session that is gone while its card is still in progress) is listed first and highlighted; **Waiting on Lead** (「等 Lead」: the worker is idle but its card is still in progress or blocked, longest wait first); **Delivered, awaiting review** (「已交付·待验收」: the card is in review); running; **Idle, ready for work** (「空闲·可派活」: no card in progress, blocked or in review). The Lead's own session has its own group.
+- A summary line at the top: needs attention N · waiting on Lead N (longest X) · in review N · ready for work N.
+- The Lead's hand-written "currently doing" note appears as "Lead note" (「Lead 备注」) with its age, flagged "may be stale" (「可能过期」) after 24 hours. If no board is configured or it is offline, both pages fall back to the hand-written state, labelled "(hand-written)" (「（手写）」) and "board offline" (「看板离线」), and retry every minute.
+- An on-demand AI summary of team activity is still available.
 
-| 功能 | 使用方式 |
+**Task code lookup**: when an agent just says "T1090" or "AM-42", type the code at the top of the team panel to see its title, column, owner, brief, review verdict, blocker and prerequisites.
+With a project locked, the number alone is enough (`1090` becomes `T1090`); otherwise type "project code", or just the code for an exact cross-project match.
+Codes in the terminal that really exist on that project's board are recognised: hover for a short card, click for the full one; "Open in board" (「在看板中打开」) opens that task's detail in the web board. Set the board address under Settings → Task lookup (「设置 → 任务查询」).
+See [Task code lookup](docs/agent-collaboration.md#任务编号查询) (Chinese).
+
+**Model quota panel** (「模型额度」): from the right-hand tool rail, dssh runs the amail client's `~/.amail/client/scripts/quota.sh --json` on each connected SSH server (a fixed, read-only command with a 75-second limit) and converts every channel to **percent remaining**: yellow at ≤ 25%, red at ≤ 10%, and failures show a scrubbed reason. Accounts are masked, and an account seen on several servers is marked "shared with X" (「与 X 共用」). With several servers you can pick one or view them side by side; refresh manually, or let it refresh every 5 minutes while the panel is open and the window is visible.
+The server needs the amail client and python3; servers without `quota.sh` show a "not installed" hint. Local terminals are not supported.
+
+For the worktree, onboarding, claiming and handoff workflow for Claude Code, Codex CLI and pi, see the [Agent playbook](docs/agent-playbook.md) (Chinese).
+Settings → Agent collaboration lets you read it offline, copy it to an agent in one click, or save the full Markdown playbook.
+
+## 🌐 Forwarding, monitoring and sync
+
+| Feature | How to use it |
 | --- | --- |
-| **端口转发** | 创建本地 / 远程转发或动态 SOCKS5 代理；规则随服务器保存，支持编辑、启停及连接后自动启动。 |
-| **服务器监控** | 底部摘要查看 CPU、内存、磁盘和网络速率；展开面板查看趋势、负载、网卡、磁盘读写及进程。 |
-| **加密同步** | 在「设置 → 同步」填写 GitHub 仓库、访问令牌和同步密码，上传完整备份，在另一台电脑恢复。 |
+| **Port forwarding** | Create local / remote forwards or a dynamic SOCKS5 proxy; rules are saved per server and can be edited, toggled and started automatically on connect. |
+| **Server monitoring** | The bottom bar shows CPU, memory, disk and network rates; expand it for trends, load, network interfaces, disk I/O and processes. |
+| **Encrypted sync** | Under Settings → Sync (「设置 → 同步」), enter a GitHub repository, access token and sync password; upload a full backup and restore it on another computer. |
 
-同步包含连接、分组、保存的密码、引用的私钥及口令、转发规则、主题和布局，使用 Argon2 派生密钥与 AES-256-GCM 在本机加密后上传。**恢复会替换本机连接列表**；正在运行的 SSH / tmux 进程不属于备份。详见[完整加密同步](docs/full-sync.md)。
+Sync covers connections, folders, saved passwords, referenced private keys and passphrases, forwarding rules, task lookup settings (board address, locked project, project bindings), themes and layout. Everything is encrypted locally with an Argon2-derived key and AES-256-GCM before upload. **Restoring replaces this computer's connection list**; running SSH / tmux processes are not part of the backup. See [Full encrypted sync](docs/full-sync.md) (Chinese).
 
-## 🚀 开始使用
+## 🚀 Getting started
 
-Linux 窗口采用跟随应用主题的紧凑标题栏，可拖动、双击最大化或还原。
-欢迎页的「打开本地终端」或标签栏 `+` →「本地终端」可打开本机 shell：Linux/macOS 使用用户默认登录 shell，Windows 使用 PowerShell。
-本地终端支持多标签、分屏、文本复制粘贴和窗口尺寸同步；关闭窗格会结束 shell，重新打开应用会创建新 shell。
-本地终端不显示 SFTP、SSH 监控和转发工具，暂不支持截图粘贴。
+1. Install and launch dssh, click `+` on the left to add a server, and fill in the address, user name and authentication.
+2. Double-click the server to connect; open more tabs or split panes when you need more room.
+3. Use the tool rail beside the terminal to open the files, tmux, team, tasks, code changes, port forwarding, monitoring or model quota panels.
 
-1. 安装并启动 dssh，点击左侧 `+` 添加服务器，填写地址、用户名及认证信息。
-2. 双击服务器建立连接；需要多个工作窗口时，新建标签或使用分屏。
-3. 从终端旁的工具栏打开文件、tmux、任务、代码修改、端口转发或监控面板。
+Local terminals do not offer SFTP, SSH monitoring, forwarding or model quota, and do not support screenshot paste yet. Closing a pane ends its shell; reopening the app starts a new one.
 
-安装包与构建记录可查看仓库的 [Releases](https://github.com/hendyzone/dssh/releases) 和 [Actions](https://github.com/hendyzone/dssh/actions)。构建流程包含 Windows、macOS 和 Linux；具体可下载平台以对应构建产物为准。
+Installers and build logs are on the repository's [Releases](https://github.com/hendyzone/dssh/releases) and [Actions](https://github.com/hendyzone/dssh/actions) pages. The build covers Windows, macOS and Linux; check the build artifacts for the platforms actually available.
 
 <details>
-<summary>从源码运行与构建</summary>
+<summary>Run and build from source</summary>
 
-主应用位于 `apps/desktop`，采用 Tauri 2、React、ghostty-web 和 russh。
+The app lives in `apps/desktop` and is built with Tauri 2, React, ghostty-web and russh.
 
-准备 Node.js 22、Rust stable 和对应平台的 Tauri 2 系统构建依赖。Windows 还需 C++ 构建工具、WebView2 与 NASM；Linux 依赖列表见[构建工作流](.github/workflows/build-windows.yml)。
+You need Node.js 22, stable Rust and the Tauri 2 system dependencies for your platform. Windows also needs the C++ build tools, WebView2 and NASM; for the Linux package list see the [build workflow](.github/workflows/build-windows.yml).
 
 ```bash
 cd apps/desktop
@@ -127,32 +144,38 @@ npm ci
 npm run tauri dev
 ```
 
-构建安装包：
+Build installers:
 
 ```bash
 npm run tauri build
 ```
 
-安装包输出到 `apps/desktop/src-tauri/target/release/bundle/`。
+Installers are written to `apps/desktop/src-tauri/target/release/bundle/`.
 
 </details>
 
 <details>
-<summary>更多文档与项目结构</summary>
+<summary>More docs and project layout</summary>
 
-- [批量导入 SSH 连接](docs/ssh-import.md)
-- [文件工作区与截图粘贴](docs/file-workspace.md)
-- [任务、代码修改与 Markdown](docs/workspace-tools.md)
-- [tmux 会话管理](docs/tmux.md)
-- [VS Code 远程打开](docs/vscode-remote.md)
-- [完整加密同步](docs/full-sync.md)
-- [架构设计](docs/architecture.md)
+The documents below are written in Chinese.
 
-| 路径 | 内容 |
+- [Bulk-import SSH connections](docs/ssh-import.md)
+- [File workspace and screenshot paste](docs/file-workspace.md)
+- [Tasks, code changes and Markdown](docs/workspace-tools.md)
+- [AI status Hooks](docs/ai-status.md)
+- [OSC 7501 program status and tmux](docs/program-status.md)
+- [tmux session management](docs/tmux.md)
+- [Agent collaboration: taskboard and amail](docs/agent-collaboration.md)
+- [Agent playbook](docs/agent-playbook.md)
+- [VS Code remote open](docs/vscode-remote.md)
+- [Full encrypted sync](docs/full-sync.md)
+- [Architecture](docs/architecture.md)
+
+| Path | Contents |
 | --- | --- |
-| `apps/desktop` | 桌面应用 |
-| `vendor/ghostty-web` | 支持 Kitty graphics 的终端组件 |
-| `docs` | 功能说明与设计文档 |
-| `prototypes/kitty-image` | 早期终端图片协议验证原型 |
+| `apps/desktop` | Desktop app |
+| `vendor/ghostty-web` | Terminal component with Kitty graphics support |
+| `docs` | Feature guides and design docs (Chinese) |
+| `prototypes/kitty-image` | Early prototype validating the terminal image protocol |
 
 </details>
