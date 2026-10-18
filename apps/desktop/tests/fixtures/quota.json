@@ -1,0 +1,17 @@
+{
+ "meta": {"host": "example-host", "proxy": "set", "at": "2026-10-18 04:34:07 +0000"},
+ "channels": {
+  "tokenline": {"ok": true, "plan": "按量(new-api)", "account_error": "'data'", "key_name": "coding", "key_used_usd": 1234.5, "key_expires": "永不"},
+  "kimi": {"ok": true, "plan": "Kimi Code 订阅", "week_used_pct": 80.0, "week_reset": "10-22 03:38", "win_300m_used_pct": null, "win_300m_reset": "10-18 05:38", "booster_month_used_cny": 0.0},
+  "deepseek": {"ok": true, "plan": "按量预付", "available": true, "balance": "100.00 CNY", "granted": "50.00", "topped_up": "50.00"},
+  "claude": {"ok": true, "plan": "max / example_tier", "five_hour_pct": 7.0, "five_hour_reset": "10-18 09:19", "seven_day_pct": 93.0, "seven_day_reset": "10-22 18:59", "weekly_Fable_pct": 0, "extra_usage": "off"},
+  "codex": {"ok": true, "plan": "pro", "limit_reached": false, "7d_used_pct": 0, "7d_reset": "10-25 04:29", "credits": "100.5000"},
+  "pi-codex": {"ok": false, "error": "pi 的 openai-codex 令牌已过期(user@example.com, Bearer abcdefghijklmnopqrstuv, /home/alice/.pi/agent/auth.json)"},
+  "cursor": {"ok": true, "plan": "super", "cycle_end": "11-01 00:00", "total_pct": 0, "auto_pct": 0, "api_pct": 30, "included_used/limit": "0/1000", "on_demand": "off"},
+  "agy": {"ok": true, "account": "ab…@example.com", "lowest_left_pct": 0, "note": "额度跟账号走", "pools": [
+   {"pool": "Gemini Models", "pool_id": "gemini", "limit": "week", "left_pct": 80, "reset": "10-24 03:12", "reset_utc": "2026-10-24T03:12:25Z"},
+   {"pool": "Gemini Models", "pool_id": "gemini", "limit": "5h", "left_pct": 100, "reset": "10-18 09:34", "reset_utc": "2026-10-18T09:34:06Z"},
+   {"pool": "Claude and GPT models", "pool_id": "claude_gpt", "limit": "week", "left_pct": 0, "reset": "10-21 06:03", "reset_utc": "2026-10-21T06:03:54Z"}
+  ]}
+ }
+}

@@ -1,0 +1,30 @@
+.quota-panel .quota-header-actions{display:flex;gap:2px}
+.quota-panel select{background:var(--ui-panel);color:var(--ui-fg);border:1px solid var(--ui-border);border-radius:6px;min-height:28px;padding:0 6px;flex:1}
+.quota-spin{animation:quota-spin 1s linear infinite}
+@keyframes quota-spin{to{transform:rotate(360deg)}}
+.quota-server+.quota-server{margin-top:14px}
+.quota-server h4{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:4px 4px 8px;font-size:12px}
+.quota-server h4 small{color:var(--ui-muted);font-weight:normal}
+.quota-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.quota-channel{--quota-warn:#d29922;display:flex;flex-direction:column;gap:5px;padding:10px 12px;border:1px solid var(--ui-border);border-left-width:3px;border-radius:8px;background:var(--ui-panel)}
+.quota-channel.quota-danger,.quota-channel.quota-fail{border-left-color:var(--ui-danger)}
+.quota-channel.quota-warn{border-left-color:var(--quota-warn)}
+.quota-channel.quota-ok{border-left-color:var(--ui-accent)}
+.quota-channel-head{display:flex;align-items:baseline;gap:8px;min-width:0}
+.quota-channel-head small{color:var(--ui-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.quota-channel-head strong{flex-shrink:0}
+.quota-status{margin-left:auto;flex-shrink:0;font-variant-numeric:tabular-nums;font-weight:600}
+.quota-danger .quota-status,.quota-fail .quota-status,.quota-error{color:var(--ui-danger)}
+.quota-warn .quota-status{color:var(--quota-warn)}
+.quota-panel p.quota-error{margin:0;overflow-wrap:anywhere}
+.quota-window{display:grid;grid-template-columns:9.5em minmax(0,1fr) 40px;align-items:center;column-gap:8px}
+.quota-window-label{color:var(--ui-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quota-bar{position:relative;height:6px;border-radius:3px;background:color-mix(in srgb,var(--ui-fg) 12%,transparent);overflow:hidden}
+.quota-fill{position:absolute;inset:0 auto 0 0;border-radius:3px}
+.quota-fill-ok{background:var(--ui-accent)}
+.quota-fill-warn{background:var(--quota-warn)}
+.quota-fill-danger{background:var(--ui-danger)}
+.quota-window-value{text-align:right;font-variant-numeric:tabular-nums}
+.quota-reset{grid-column:2 / 4;color:var(--ui-muted);font-size:11px}
+.quota-secondary,.quota-summary,.quota-notes{color:var(--ui-muted);overflow-wrap:anywhere}
+.quota-missing{color:var(--ui-muted)}
