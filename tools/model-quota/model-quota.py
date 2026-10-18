@@ -23,7 +23,6 @@
 #   claude     api.anthropic.com/api/oauth/usage, ~/.claude/.credentials.json     (unofficial endpoint)
 #   codex      chatgpt.com/backend-api/wham/usage, ~/.codex/auth.json             (unofficial endpoint);
 #              falls back to the last rate_limits in local session logs (STALE when past reset)
-#   pi-codex   same endpoint with pi's own openai-codex login in ~/.pi/agent/auth.json
 #   cursor     cursor.com/api/usage-summary, ~/.config/cursor/auth.json           (unofficial endpoint)
 #   agy        Antigravity CLI: runs `agy -p /usage` (no model call). Reports REMAINING percent
 #              (left_pct); every other channel reports USED percent. Machines with the same
@@ -358,21 +357,6 @@ def ch_codex():
         return fb
 
 
-def ch_pi_codex():
-    p = jload("~/.pi/agent/auth.json").get("openai-codex")
-    if not p:
-        raise QuotaError("no_credentials", "pi 未登录 openai-codex")
-    try:
-        same = p.get("accountId") == jload("~/.codex/auth.json")["tokens"]["account_id"]
-    except Exception:
-        same = None
-    if p.get("expires", 0) / 1000 < time.time():
-        raise QuotaError("token_expired", f"pi 的 openai-codex 令牌已过期(pi 用时会自刷新; 与 codex 同账号={same})")
-    out = _wham(p["access"], p["accountId"])
-    out["same_account_as_codex"] = same
-    return out
-
-
 AGY_POOL_ID = {"Gemini Models": "gemini", "Claude and GPT models": "claude_gpt"}
 AGY_LIMIT_ID = {"Five Hour Limit Remaining": "5h", "Weekly Limit Remaining": "week"}
 
@@ -455,8 +439,7 @@ def ch_cursor():
 
 
 CHANNELS = [("tokenline", ch_tokenline), ("kimi", ch_kimi), ("deepseek", ch_deepseek),
-            ("claude", ch_claude), ("codex", ch_codex), ("pi-codex", ch_pi_codex), ("cursor", ch_cursor),
-            ("agy", ch_agy)]
+            ("claude", ch_claude), ("codex", ch_codex), ("cursor", ch_cursor), ("agy", ch_agy)]
 
 NET_HINT = re.compile(r"403|unreachable|timed out|urlopen error|Connection (refused|reset)|Name or service", re.I)
 

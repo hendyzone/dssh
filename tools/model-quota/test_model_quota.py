@@ -102,9 +102,8 @@ class ChannelTests(Base):
         self.assertEqual(r["claude"], {"ok": False, "error": "本机无凭据: .credentials.json", "code": "no_credentials"})
         self.assertEqual(r["deepseek"]["code"], "no_credentials")
         self.write(".pi/agent/auth.json", {})
-        r = self.mq.collect([("deepseek", self.mq.ch_deepseek), ("pi-codex", self.mq.ch_pi_codex)])
+        r = self.mq.collect([("deepseek", self.mq.ch_deepseek)])
         self.assertEqual(r["deepseek"]["code"], "missing_field")
-        self.assertEqual(r["pi-codex"]["code"], "no_credentials")
 
     def test_tokenline_unconfigured_is_skipped_without_requests(self):
         self.pi_auth()
@@ -175,13 +174,6 @@ class ChannelTests(Base):
         self.assertEqual(r["primary_used_pct"], 9)
         self.assertTrue(r["STALE"])
         self.assertNotIn("abcdefghijklmnop", r["live_error"])
-
-    def test_pi_codex_expired_reports_same_account(self):
-        self.pi_auth(**{"openai-codex": {"access": "a", "accountId": "acc", "expires": 1000}})
-        self.write(".codex/auth.json", {"tokens": {"access_token": "a", "account_id": "acc"}})
-        r = self.mq.collect([("pi-codex", self.mq.ch_pi_codex)])["pi-codex"]
-        self.assertEqual(r["code"], "token_expired")
-        self.assertIn("同账号=True", r["error"])
 
     def test_cursor(self):
         self.write(".config/cursor/auth.json", {"accessToken": jwt({"sub": "auth0|user_1"})})

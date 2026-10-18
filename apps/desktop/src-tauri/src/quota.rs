@@ -178,7 +178,7 @@ mod tests {
         let QuotaResult::Ok { body } = parse_output(&stdout) else { panic!("{stdout}") };
         let json: serde_json::Value = serde_json::from_str(&body).unwrap();
         let channels = json["channels"].as_object().unwrap();
-        for name in ["tokenline", "kimi", "deepseek", "claude", "codex", "pi-codex", "cursor", "agy"] {
+        for name in ["tokenline", "kimi", "deepseek", "claude", "codex", "cursor", "agy"] {
             assert_eq!(channels[name]["ok"], false, "{name}");
         }
         assert_eq!(channels["claude"]["code"], "no_credentials");

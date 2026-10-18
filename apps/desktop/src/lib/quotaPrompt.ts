@@ -39,7 +39,6 @@ export interface QuotaIssue {
 const LOGIN: Record<string, string> = {
   claude: "运行 claude 并按提示登录（/login）",
   codex: "运行 codex login",
-  "pi-codex": "在 pi 里 /login 选择 openai-codex",
   cursor: "运行 cursor-agent login",
   agy: "安装并登录 Antigravity CLI（agy）",
   kimi: "在 pi 里配置 kimi-coding 的 API key（写入 ~/.pi/agent/auth.json）",
@@ -49,7 +48,6 @@ const LOGIN: Record<string, string> = {
 
 const REFRESH: Record<string, string> = {
   claude: "启动一次 claude（交互界面打开后即可退出），它会自己刷新令牌",
-  "pi-codex": "启动一次 pi，它会自己刷新 openai-codex 令牌",
   codex: "启动一次 codex，它会自己刷新令牌；仍失败就 codex login 重新登录",
   cursor: "运行 cursor-agent login 重新登录",
 };

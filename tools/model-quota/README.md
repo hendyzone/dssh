@@ -27,7 +27,6 @@ logged in. It only reads them inside its own process; nothing is passed on a com
 | `deepseek` | `api.deepseek.com/user/balance` | `deepseek.key` in `~/.pi/agent/auth.json` | official |
 | `claude` | `api.anthropic.com/api/oauth/usage` | `~/.claude/.credentials.json` (Claude Code login) | unofficial |
 | `codex` | `chatgpt.com/backend-api/wham/usage` | `~/.codex/auth.json` (Codex CLI login); falls back to `~/.codex/sessions` logs | unofficial |
-| `pi-codex` | same as `codex` | `openai-codex` in `~/.pi/agent/auth.json` | unofficial |
 | `cursor` | `cursor.com/api/usage-summary` | `~/.config/cursor/auth.json` (cursor-agent login) | unofficial |
 | `agy` | runs `agy -p /usage` (Antigravity CLI, no model call) | agy's own login | CLI output |
 

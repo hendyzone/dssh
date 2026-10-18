@@ -42,7 +42,7 @@ describe("quotaIssues", () => {
       agy: fail("not_installed", "本机未装 agy"),
       codex: fail("timeout", "超时"),
       kimi: fail("http_401", "HTTP 401: invalid"),
-      "pi-codex": fail("error", "odd failure for bob@example.com"),
+      x: fail("error", "odd failure for bob@example.com"),
     }) });
     expect(issues.map((i) => i.kind)).toEqual([
       "proxy", "not_configured", "token_expired", "unauthorized", "no_credentials", "not_installed", "other",
@@ -74,11 +74,11 @@ describe("quotaPrompt", () => {
 
   it("lists this server's problems with fixes and ends with a self-check", () => {
     const text = quotaPrompt({ state: "ok", report: report("none", {
-      claude: fail("network", "unreachable"), "pi-codex": fail("token_expired", "已过期"),
+      codex: fail("network", "unreachable"), claude: fail("token_expired", "access token 已过期"),
     }) });
     expect(text).toContain("1. 问题：未设代理");
-    expect(text).toContain("2. 问题：登录令牌已过期（pi-codex）");
-    expect(text).toContain("启动一次 pi");
+    expect(text).toContain("2. 问题：登录令牌已过期（claude）");
+    expect(text).toContain("启动一次 claude");
     expect(text).toMatch(/--json[\s\S]*确认各通道 ok 为 true/);
     expect(text).toContain("不要打印、复制或回显任何令牌");
   });
@@ -86,7 +86,7 @@ describe("quotaPrompt", () => {
   it("never carries credentials or accounts from the report", () => {
     const text = quotaPrompt({ state: "ok", report: parseQuotaReport(fixture) });
     expect(text).not.toMatch(/@example\.com|abcdefghijklmnop|alice|sk-/);
-    expect(text).toContain("pi-codex");
+    expect(text).toContain("登录令牌已过期（claude）");
   });
 
   it("tells a server without python3 to install it", () => {

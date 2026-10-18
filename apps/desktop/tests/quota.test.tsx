@@ -65,12 +65,15 @@ describe("parseQuotaReport", () => {
     expect(report.host).toBe("example-host");
     expect(report.proxy).toBe("set");
     expect(report.channels.map((c) => c.name)).toEqual([
-      "tokenline", "kimi", "deepseek", "claude", "codex", "pi-codex", "cursor", "agy",
+      "tokenline", "kimi", "deepseek", "claude", "codex", "cursor", "agy",
     ]);
   });
 
   it("converts used% channels to remaining", () => {
-    const claude = channel(report, "claude");
+    const claude = parseChannel("claude", {
+      ok: true, plan: "max / example_tier", five_hour_pct: 7.0, five_hour_reset: "10-18 09:19",
+      seven_day_pct: 93.0, seven_day_reset: "10-22 18:59", weekly_Fable_pct: 0, extra_usage: "off",
+    });
     expect(claude.windows.filter((w) => w.primary).map((w) => [w.label, w.leftPct, w.reset])).toEqual([
       ["5 小时", 93, "10-18 09:19"],
       ["每周", 7, "10-22 18:59"],
@@ -108,9 +111,9 @@ describe("parseQuotaReport", () => {
   });
 
   it("keeps FAIL reasons but scrubs accounts, tokens and home paths", () => {
-    const fail = channel(report, "pi-codex");
-    expect(fail).toMatchObject({ ok: false, level: "fail", windows: [] });
-    expect(fail.error).toContain("令牌已过期");
+    const fail = channel(report, "claude");
+    expect(fail).toMatchObject({ ok: false, code: "token_expired", level: "fail", windows: [] });
+    expect(fail.error).toContain("access token 已过期");
     expect(fail.error).not.toContain("user@");
     expect(fail.error).toContain("u…@example.com");
     expect(fail.error).not.toContain("abcdefghijklmnop");
@@ -135,14 +138,13 @@ describe("parseChannel edge cases", () => {
       { id: "pool0:0", label: "pool0", leftPct: null, reset: undefined, primary: true },
     ]);
   });
-  it("flags hard limits, stale fallbacks and shared codex accounts", () => {
+  it("flags hard limits and stale fallbacks", () => {
     expect(parseChannel("codex", { ok: true, limit_reached: true, "5h_used_pct": 40 })).toMatchObject({
       leftPct: 0, level: "danger", notes: ["已触顶"],
     });
     const stale = parseChannel("codex", { ok: true, source: "本地会话日志", STALE: true, primary_used_pct: 50, primary_reset: "10-18 01:00" });
     expect(stale.windows[0]).toMatchObject({ label: "主窗口", leftPct: 50 });
     expect(stale.notes[0]).toContain("过重置点");
-    expect(parseChannel("pi-codex", { ok: true, same_account_as_codex: true }).notes).toContain("与 codex 同账号");
     expect(parseChannel("deepseek", { ok: true, available: false }).level).toBe("danger");
   });
 });

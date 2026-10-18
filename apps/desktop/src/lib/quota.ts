@@ -201,7 +201,6 @@ export function parseChannel(name: string, raw: unknown): QuotaChannel {
   const notes: string[] = [];
   if (raw.STALE === true) notes.push("数据已过重置点，仅供参考");
   if (raw.source !== undefined) notes.push(`来源：${text(raw.source)}（实时接口未取到）`);
-  if (raw.same_account_as_codex === true) notes.push("与 codex 同账号");
   if (raw.extra_usage === "on") notes.push("超额用量已开");
   if (raw.on_demand === "on") notes.push("按需付费已开");
   if (raw.account_error !== undefined) notes.push("账户余额未取到");
