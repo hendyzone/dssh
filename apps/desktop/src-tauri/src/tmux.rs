@@ -98,6 +98,10 @@ pub(crate) async fn execute(handle: &SharedHandle, command: &str) -> Result<Stri
     execute_with_timeout(handle, command, Duration::from_secs(12)).await
 }
 pub(crate) async fn execute_with_timeout(handle: &SharedHandle, command: &str, timeout: Duration) -> Result<String, String> {
+    execute_with_input(handle, command, None, timeout).await
+}
+/// Like [`execute_with_timeout`], but feeds `input` to the remote command's stdin, then EOF.
+pub(crate) async fn execute_with_input(handle: &SharedHandle, command: &str, input: Option<&[u8]>, timeout: Duration) -> Result<String, String> {
     let mut channel = tokio::time::timeout(Duration::from_secs(10), handle.channel_open_session())
         .await
         .map_err(|_| "SSH 通道超时")?
@@ -107,6 +111,12 @@ pub(crate) async fn execute_with_timeout(handle: &SharedHandle, command: &str, t
             .exec(true, command)
             .await
             .map_err(|e| e.to_string())?;
+        if let Some(input) = input {
+            // The command may exit before reading everything (e.g. a missing interpreter);
+            // its own output then explains why, so write errors are not fatal here.
+            let _ = channel.data(input).await;
+            let _ = channel.eof().await;
+        }
         let mut output = Vec::new();
         let mut errors = Vec::new();
         let mut status = None;
@@ -140,6 +150,12 @@ pub(crate) async fn execute_session(ssh: &SshState, local: &LocalState, id: &str
     if id.starts_with("local-") { return crate::local_shell::execute(local, id, command, timeout).await; }
     let handle = ssh.get_handle(id).await.ok_or("终端连接已断开")?;
     execute_with_timeout(&handle, command, timeout).await
+}
+/// Run a command on an SSH session with `input` on its stdin. Local shells are not supported.
+pub(crate) async fn execute_session_with_input(ssh: &SshState, id: &str, command: &str, input: &[u8], timeout: Duration) -> Result<String, String> {
+    if id.starts_with("local-") { return Err("本地终端不支持".into()); }
+    let handle = ssh.get_handle(id).await.ok_or("终端连接已断开")?;
+    execute_with_input(&handle, command, Some(input), timeout).await
 }
 fn parse_snapshot(text: &str) -> Result<Snapshot, String> {
     if text.trim() == "DSSH_TMUX_MISSING" {

@@ -4,6 +4,8 @@ import {
   maskAccount,
   parseChannel,
   parseQuotaReport,
+  channelStatus,
+  poolsLevel,
   quotaLevel,
   quotaStale,
   scrubReason,
@@ -65,12 +67,15 @@ describe("parseQuotaReport", () => {
     expect(report.host).toBe("example-host");
     expect(report.proxy).toBe("set");
     expect(report.channels.map((c) => c.name)).toEqual([
-      "tokenline", "kimi", "deepseek", "claude", "codex", "pi-codex", "cursor", "agy",
+      "tokenline", "kimi", "deepseek", "claude", "codex", "cursor", "agy",
     ]);
   });
 
   it("converts used% channels to remaining", () => {
-    const claude = channel(report, "claude");
+    const claude = parseChannel("claude", {
+      ok: true, plan: "max / example_tier", five_hour_pct: 7.0, five_hour_reset: "10-18 09:19",
+      seven_day_pct: 93.0, seven_day_reset: "10-22 18:59", weekly_Fable_pct: 0, extra_usage: "off",
+    });
     expect(claude.windows.filter((w) => w.primary).map((w) => [w.label, w.leftPct, w.reset])).toEqual([
       ["5 小时", 93, "10-18 09:19"],
       ["每周", 7, "10-22 18:59"],
@@ -96,7 +101,6 @@ describe("parseQuotaReport", () => {
       ["Claude/GPT · 每周", 0, "10-21 06:03"],
     ]);
     expect(agy.leftPct).toBe(0);
-    expect(agy.level).toBe("danger");
     expect(agy.account).toBe("ab…@example.com");
   });
 
@@ -108,20 +112,95 @@ describe("parseQuotaReport", () => {
   });
 
   it("keeps FAIL reasons but scrubs accounts, tokens and home paths", () => {
-    const fail = channel(report, "pi-codex");
-    expect(fail).toMatchObject({ ok: false, level: "fail", windows: [] });
-    expect(fail.error).toContain("令牌已过期");
+    const fail = channel(report, "claude");
+    expect(fail).toMatchObject({ ok: false, code: "token_expired", level: "fail", windows: [] });
+    expect(fail.error).toContain("access token 已过期");
     expect(fail.error).not.toContain("user@");
     expect(fail.error).toContain("u…@example.com");
     expect(fail.error).not.toContain("abcdefghijklmnop");
     expect(fail.error).not.toContain("alice");
   });
 
-  it("rejects output that is not quota.sh JSON", () => {
+  it("rejects output that is not quota JSON", () => {
     expect(() => parseQuotaReport("Traceback (most recent call last)")).toThrow("不是 JSON");
     expect(() => parseQuotaReport("{}")).toThrow("channels");
     expect(() => parseQuotaReport({ channels: [] })).toThrow("channels");
     expect(parseQuotaReport({ channels: {} })).toEqual({ host: "", at: "", proxy: "", channels: [] });
+  });
+});
+
+describe("multi-pool channels (agy)", () => {
+  const pool = (name: string, id: string, limit: string, left: number) =>
+    ({ pool: name, pool_id: id, limit, left_pct: left, reset: "10-21 06:03" });
+
+  it("groups windows by pools[].pool and only warns when one pool is exhausted", () => {
+    const agy = parseChannel("agy", { ok: true, pools: [
+      pool("Gemini Models", "gemini", "week", 77), pool("Gemini Models", "gemini", "5h", 88),
+      pool("Claude and GPT models", "claude_gpt", "week", 0),
+    ] });
+    expect(agy.windows.map((w) => w.pool)).toEqual(["Gemini Models", "Gemini Models", "Claude and GPT models"]);
+    expect(agy.pools).toEqual([
+      { id: "Gemini Models", label: "Gemini", leftPct: 77, level: "ok" },
+      { id: "Claude and GPT models", label: "Claude/GPT", leftPct: 0, level: "danger" },
+    ]);
+    expect(agy.level).toBe("warn");
+    expect(channelStatus(agy)).toBe("Gemini 77% · Claude/GPT 0%");
+    // Each row is still coloured by its own value.
+    expect(agy.windows.map((w) => quotaLevel(w.leftPct))).toEqual(["ok", "ok", "danger"]);
+  });
+
+  it("is red when every pool is exhausted", () => {
+    const agy = parseChannel("agy", { ok: true, pools: [
+      pool("Gemini Models", "gemini", "week", 10), pool("Gemini Models", "gemini", "5h", 60),
+      pool("Claude and GPT models", "claude_gpt", "week", 0),
+    ] });
+    expect(agy.pools?.map((p) => p.leftPct)).toEqual([10, 0]);
+    expect(agy.level).toBe("danger");
+    expect(channelStatus(agy)).toBe("Gemini 10% · Claude/GPT 0%");
+  });
+
+  it("uses the lowest pool when none is exhausted, ignoring pools without data", () => {
+    expect(poolsLevel([
+      { id: "a", label: "A", leftPct: 20, level: "warn" },
+      { id: "b", label: "B", leftPct: 90, level: "ok" },
+    ])).toBe("warn");
+    expect(poolsLevel([
+      { id: "a", label: "A", leftPct: null, level: "unknown" },
+      { id: "b", label: "B", leftPct: 5, level: "danger" },
+    ])).toBe("danger");
+    expect(poolsLevel([{ id: "a", label: "A", leftPct: null, level: "unknown" }])).toBe("unknown");
+  });
+
+  it("keeps a single pool on the plain 剩 X% view", () => {
+    const agy = parseChannel("agy", { ok: true, pools: [
+      pool("Gemini Models", "gemini", "week", 5), pool("Gemini Models", "gemini", "5h", 70),
+    ] });
+    expect(agy.pools).toBeUndefined();
+    expect(agy).toMatchObject({ leftPct: 5, level: "danger" });
+    expect(channelStatus(agy)).toBe("剩 5%");
+  });
+
+  it("lets limit_reached override the per-pool view", () => {
+    const agy = parseChannel("agy", { ok: true, limit_reached: true, pools: [
+      pool("Gemini Models", "gemini", "week", 80), pool("Claude and GPT models", "claude_gpt", "week", 50),
+    ] });
+    expect(agy).toMatchObject({ leftPct: 0, level: "danger" });
+    expect(agy.pools).toBeUndefined();
+    expect(channelStatus(agy)).toBe("剩 0%");
+  });
+});
+
+describe("single-pool channels (regression)", () => {
+  it("still shows 剩 X% and colours by the lowest primary window", () => {
+    const claude = parseChannel("claude", { ok: true, five_hour_pct: 80, seven_day_pct: 5 });
+    expect(claude.pools).toBeUndefined();
+    expect(claude).toMatchObject({ leftPct: 20, level: "warn" });
+    expect(channelStatus(claude)).toBe("剩 20%");
+    const red = parseChannel("codex", { ok: true, "5h_used_pct": 95, "7d_used_pct": 10 });
+    expect(red).toMatchObject({ leftPct: 5, level: "danger" });
+    expect(channelStatus(red)).toBe("剩 5%");
+    expect(channelStatus(parseChannel("deepseek", { ok: true, balance: "1 CNY" }))).toBe("OK");
+    expect(channelStatus(parseChannel("x", { ok: false, error: "e" }))).toBe("FAIL");
   });
 });
 
@@ -132,17 +211,16 @@ describe("parseChannel edge cases", () => {
     expect(parseChannel("x", "junk")).toMatchObject({ ok: false, level: "fail" });
     expect(parseChannel("x", null)).toMatchObject({ ok: false, level: "fail" });
     expect(parseChannel("agy", { ok: true, pools: [null, { left_pct: "oops" }] }).windows).toEqual([
-      { id: "pool0:0", label: "pool0", leftPct: null, reset: undefined, primary: true },
+      { id: "pool0:0", label: "pool0", leftPct: null, reset: undefined, primary: true, pool: undefined },
     ]);
   });
-  it("flags hard limits, stale fallbacks and shared codex accounts", () => {
+  it("flags hard limits and stale fallbacks", () => {
     expect(parseChannel("codex", { ok: true, limit_reached: true, "5h_used_pct": 40 })).toMatchObject({
       leftPct: 0, level: "danger", notes: ["已触顶"],
     });
     const stale = parseChannel("codex", { ok: true, source: "本地会话日志", STALE: true, primary_used_pct: 50, primary_reset: "10-18 01:00" });
     expect(stale.windows[0]).toMatchObject({ label: "主窗口", leftPct: 50 });
     expect(stale.notes[0]).toContain("过重置点");
-    expect(parseChannel("pi-codex", { ok: true, same_account_as_codex: true }).notes).toContain("与 codex 同账号");
     expect(parseChannel("deepseek", { ok: true, available: false }).level).toBe("danger");
   });
 });
@@ -166,13 +244,13 @@ describe("sharedAccounts", () => {
   it("links the same account across servers and ignores unique or missing ones", () => {
     const report = (account?: string) => parseQuotaReport({ channels: { agy: { ok: true, account, pools: [] }, kimi: { ok: true } } });
     const shared = sharedAccounts([
-      { server: "s1", name: "协同机1", report: report("ab…@example.com") },
-      { server: "s2", name: "协同机2", report: report("ab…@example.com") },
-      { server: "s3", name: "协同机3", report: report("zz…@example.com") },
-      { server: "s4", name: "开发机", report: report(undefined) },
+      { server: "s1", name: "server-a", report: report("ab…@example.com") },
+      { server: "s2", name: "server-b", report: report("ab…@example.com") },
+      { server: "s3", name: "server-c", report: report("zz…@example.com") },
+      { server: "s4", name: "server-d", report: report(undefined) },
     ]);
-    expect(shared.get("s1/agy")).toEqual(["协同机2 · agy"]);
-    expect(shared.get("s2/agy")).toEqual(["协同机1 · agy"]);
+    expect(shared.get("s1/agy")).toEqual(["server-b · agy"]);
+    expect(shared.get("s2/agy")).toEqual(["server-a · agy"]);
     expect(shared.has("s3/agy")).toBe(false);
     expect(shared.has("s4/agy")).toBe(false);
     expect(shared.has("s1/kimi")).toBe(false);
