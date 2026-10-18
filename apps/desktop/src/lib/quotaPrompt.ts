@@ -52,6 +52,10 @@ const REFRESH: Record<string, string> = {
   cursor: "运行 cursor-agent login 重新登录",
 };
 
+/** agy is several independent pools; one exhausted pool does not make the channel unusable. */
+const AGY_POOLS_HINT =
+  "agy 内含多个独立的池（pools[].pool，如 Gemini 与 Claude/GPT），按池分别汇报剩余，某个池见底不等于整个 agy 不可用。";
+
 /** Infer a failure code for output that predates the `code` field. */
 export function failureCode(channel: QuotaChannel): string {
   if (channel.code) return channel.code;
@@ -199,7 +203,7 @@ export function quotaPrompt(input: QuotaPromptInput): string {
       "运行额度脚本（单文件、只用 Python 标准库、只读）：",
       ...run,
       "",
-      "然后用一张表汇报：通道、状态、主要窗口剩余百分比（agy 的 left_pct 本身就是剩余，其余 *_pct 是已用，换算成剩余）、重置时间；剩余 ≤25% 的单独指出。不要写出账号。",
+      `然后用一张表汇报：通道、状态、主要窗口剩余百分比（agy 的 left_pct 本身就是剩余，其余 *_pct 是已用，换算成剩余）、重置时间；剩余 ≤25% 的单独指出。${AGY_POOLS_HINT}不要写出账号。`,
       "",
       ...rules,
     ].join("\n");
@@ -212,7 +216,7 @@ export function quotaPrompt(input: QuotaPromptInput): string {
     "逐条处理（不在这台机用的工具可以跳过，回报时说明），然后运行额度脚本自检（单文件、只用 Python 标准库、只读）：",
     ...run,
     "",
-    "确认各通道 ok 为 true（或说明为什么某通道在这台机上不需要），再用一张表回报：通道、状态、剩余百分比、重置时间，以及你改了哪些配置。不要写出账号。",
+    `确认各通道 ok 为 true（或说明为什么某通道在这台机上不需要），再用一张表回报：通道、状态、剩余百分比、重置时间，以及你改了哪些配置。${AGY_POOLS_HINT}不要写出账号。`,
     "",
     ...rules,
   ].join("\n");

@@ -18,6 +18,19 @@ export interface QuotaWindow {
   reset?: string;
   /** Main windows (5 小时 / 每周 / 本周期) get a bar; the rest are shown compactly. */
   primary: boolean;
+  /** Pool this window draws from (agy: `pools[].pool`); absent for single-pool channels. */
+  pool?: string;
+}
+
+/** One independent quota pool of a multi-pool channel (agy: Gemini vs Claude/GPT). */
+export interface QuotaPool {
+  /** Grouping key (`pools[].pool`, falling back to `pool_id`). */
+  id: string;
+  /** Short display name, e.g. `Gemini`, `Claude/GPT`. */
+  label: string;
+  /** Lowest remaining percentage over the pool's primary windows. */
+  leftPct: number | null;
+  level: QuotaLevel;
 }
 
 export interface QuotaChannel {
@@ -34,9 +47,15 @@ export interface QuotaChannel {
   notes: string[];
   /** Raw account identifier used for same-account matching; display via maskAccount. */
   account?: string;
-  /** Lowest remaining percentage over the primary windows. */
+  /** Lowest remaining percentage over the primary windows (all pools). */
   leftPct: number | null;
+  /**
+   * Card level. For a multi-pool channel this is only `danger` when every pool is exhausted;
+   * one exhausted pool next to a usable one is `warn` (rows still colour themselves).
+   */
   level: QuotaLevel;
+  /** Set only when the channel has two or more independent pools; the status shows each. */
+  pools?: QuotaPool[];
 }
 
 export interface QuotaReport {
@@ -139,12 +158,61 @@ function agyWindows(pools: unknown): QuotaWindow[] {
     const limit = text(pool.limit) ?? "";
     return {
       id: `${poolId}:${limit || index}`,
-      label: [AGY_POOLS[poolId] ?? text(pool.pool) ?? poolId, AGY_LIMITS[limit] ?? limit].filter(Boolean).join(" · "),
+      label: [poolLabel(pool, poolId), AGY_LIMITS[limit] ?? limit].filter(Boolean).join(" · "),
       leftPct: toLeftPct(pool.left_pct, "left"),
       reset: text(pool.reset),
       primary: true,
+      pool: text(pool.pool) ?? text(pool.pool_id),
     };
   });
+}
+
+function poolLabel(pool: Record<string, unknown>, poolId: string): string {
+  return AGY_POOLS[poolId] ?? text(pool.pool) ?? poolId;
+}
+
+/** Lowest remaining percentage over the primary windows that report one. */
+function lowestLeft(windows: QuotaWindow[]): number | null {
+  const known = windows.filter((w) => w.primary && w.leftPct !== null).map((w) => w.leftPct as number);
+  return known.length ? Math.min(...known) : null;
+}
+
+/**
+ * Group agy windows by `pools[].pool`. Returns undefined unless there are at least two pools,
+ * so a single-pool channel keeps the plain 「剩 X%」 behaviour.
+ */
+function agyPools(raw: unknown[], windows: QuotaWindow[]): QuotaPool[] | undefined {
+  const labels = new Map<string, string>();
+  raw.filter(isObject).forEach((pool, index) => {
+    const id = text(pool.pool) ?? text(pool.pool_id);
+    if (id && !labels.has(id)) labels.set(id, poolLabel(pool, text(pool.pool_id) ?? text(pool.pool) ?? `pool${index}`));
+  });
+  if (labels.size < 2) return undefined;
+  return [...labels].map(([id, label]) => {
+    const leftPct = lowestLeft(windows.filter((w) => w.pool === id));
+    return { id, label, leftPct, level: quotaLevel(leftPct) };
+  });
+}
+
+/**
+ * Card level of a multi-pool channel: red only when every pool with data is exhausted; one
+ * exhausted pool beside a usable one is a warning, since work can still go to the other pool.
+ */
+export function poolsLevel(pools: QuotaPool[]): QuotaLevel {
+  const known = pools.filter((p) => p.leftPct !== null);
+  if (!known.length) return "unknown";
+  if (known.every((p) => p.level === "danger")) return "danger";
+  if (known.some((p) => p.level === "danger" || p.level === "warn")) return "warn";
+  return "ok";
+}
+
+/** Card status text: 「剩 X%」 for one pool, 「Gemini 80% · Claude/GPT 0%」 for several. */
+export function channelStatus(channel: QuotaChannel): string {
+  if (!channel.ok) return "FAIL";
+  if (channel.pools) {
+    return channel.pools.map((p) => `${p.label} ${p.leftPct === null ? "未知" : `${p.leftPct}%`}`).join(" · ");
+  }
+  return channel.leftPct === null ? "OK" : `剩 ${channel.leftPct}%`;
 }
 
 function usedWindows(raw: Record<string, unknown>): QuotaWindow[] {
@@ -198,19 +266,21 @@ export function parseChannel(name: string, raw: unknown): QuotaChannel {
     };
   }
   const windows = Array.isArray(raw.pools) ? agyWindows(raw.pools) : usedWindows(raw);
+  let pools = Array.isArray(raw.pools) ? agyPools(raw.pools, windows) : undefined;
   const notes: string[] = [];
   if (raw.STALE === true) notes.push("数据已过重置点，仅供参考");
   if (raw.source !== undefined) notes.push(`来源：${text(raw.source)}（实时接口未取到）`);
   if (raw.extra_usage === "on") notes.push("超额用量已开");
   if (raw.on_demand === "on") notes.push("按需付费已开");
   if (raw.account_error !== undefined) notes.push("账户余额未取到");
-  const known = windows.filter((w) => w.primary && w.leftPct !== null).map((w) => w.leftPct as number);
-  let leftPct = known.length ? Math.min(...known) : null;
-  let level = quotaLevel(leftPct);
+  let leftPct = lowestLeft(windows);
+  let level = pools ? poolsLevel(pools) : quotaLevel(leftPct);
   if (raw.limit_reached === true) {
+    // A channel-wide hard limit overrides the per-pool view.
     notes.unshift("已触顶");
     leftPct = 0;
     level = "danger";
+    pools = undefined;
   }
   if (raw.available === false) {
     notes.unshift("账户不可用");
@@ -227,6 +297,7 @@ export function parseChannel(name: string, raw: unknown): QuotaChannel {
     account: account || undefined,
     leftPct,
     level,
+    ...(pools ? { pools } : {}),
   };
 }
 

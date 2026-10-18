@@ -89,6 +89,13 @@ describe("quotaPrompt", () => {
     expect(text).toContain("登录令牌已过期（claude）");
   });
 
+  it("asks for agy to be reported per pool rather than as one exhausted channel", () => {
+    const text = quotaPrompt({ state: "ok", report: report("set", { claude: ok }) });
+    expect(text).toContain("按池分别汇报剩余");
+    expect(text).toContain("某个池见底不等于整个 agy 不可用");
+    expect(quotaPrompt({ state: "ok", report: parseQuotaReport(fixture) })).toContain("按池分别汇报剩余");
+  });
+
   it("tells a server without python3 to install it", () => {
     const text = quotaPrompt({ state: "noPython" });
     expect(text).toContain("没有 python3");

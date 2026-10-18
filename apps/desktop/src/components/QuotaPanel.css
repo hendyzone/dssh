@@ -25,6 +25,8 @@
 .quota-fill-warn{background:var(--quota-warn)}
 .quota-fill-danger{background:var(--ui-danger)}
 .quota-window-value{text-align:right;font-variant-numeric:tabular-nums}
+.quota-value-danger{color:var(--ui-danger);font-weight:600}
+.quota-value-warn{color:var(--quota-warn);font-weight:600}
 .quota-reset{grid-column:2 / 4;color:var(--ui-muted);font-size:11px}
 .quota-secondary,.quota-summary,.quota-notes{color:var(--ui-muted);overflow-wrap:anywhere}
 .quota-missing{color:var(--ui-muted)}

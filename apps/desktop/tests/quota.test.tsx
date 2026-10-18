@@ -4,6 +4,8 @@ import {
   maskAccount,
   parseChannel,
   parseQuotaReport,
+  channelStatus,
+  poolsLevel,
   quotaLevel,
   quotaStale,
   scrubReason,
@@ -99,7 +101,6 @@ describe("parseQuotaReport", () => {
       ["Claude/GPT · 每周", 0, "10-21 06:03"],
     ]);
     expect(agy.leftPct).toBe(0);
-    expect(agy.level).toBe("danger");
     expect(agy.account).toBe("ab…@example.com");
   });
 
@@ -128,6 +129,81 @@ describe("parseQuotaReport", () => {
   });
 });
 
+describe("multi-pool channels (agy)", () => {
+  const pool = (name: string, id: string, limit: string, left: number) =>
+    ({ pool: name, pool_id: id, limit, left_pct: left, reset: "10-21 06:03" });
+
+  it("groups windows by pools[].pool and only warns when one pool is exhausted", () => {
+    const agy = parseChannel("agy", { ok: true, pools: [
+      pool("Gemini Models", "gemini", "week", 77), pool("Gemini Models", "gemini", "5h", 88),
+      pool("Claude and GPT models", "claude_gpt", "week", 0),
+    ] });
+    expect(agy.windows.map((w) => w.pool)).toEqual(["Gemini Models", "Gemini Models", "Claude and GPT models"]);
+    expect(agy.pools).toEqual([
+      { id: "Gemini Models", label: "Gemini", leftPct: 77, level: "ok" },
+      { id: "Claude and GPT models", label: "Claude/GPT", leftPct: 0, level: "danger" },
+    ]);
+    expect(agy.level).toBe("warn");
+    expect(channelStatus(agy)).toBe("Gemini 77% · Claude/GPT 0%");
+    // Each row is still coloured by its own value.
+    expect(agy.windows.map((w) => quotaLevel(w.leftPct))).toEqual(["ok", "ok", "danger"]);
+  });
+
+  it("is red when every pool is exhausted", () => {
+    const agy = parseChannel("agy", { ok: true, pools: [
+      pool("Gemini Models", "gemini", "week", 10), pool("Gemini Models", "gemini", "5h", 60),
+      pool("Claude and GPT models", "claude_gpt", "week", 0),
+    ] });
+    expect(agy.pools?.map((p) => p.leftPct)).toEqual([10, 0]);
+    expect(agy.level).toBe("danger");
+    expect(channelStatus(agy)).toBe("Gemini 10% · Claude/GPT 0%");
+  });
+
+  it("uses the lowest pool when none is exhausted, ignoring pools without data", () => {
+    expect(poolsLevel([
+      { id: "a", label: "A", leftPct: 20, level: "warn" },
+      { id: "b", label: "B", leftPct: 90, level: "ok" },
+    ])).toBe("warn");
+    expect(poolsLevel([
+      { id: "a", label: "A", leftPct: null, level: "unknown" },
+      { id: "b", label: "B", leftPct: 5, level: "danger" },
+    ])).toBe("danger");
+    expect(poolsLevel([{ id: "a", label: "A", leftPct: null, level: "unknown" }])).toBe("unknown");
+  });
+
+  it("keeps a single pool on the plain 剩 X% view", () => {
+    const agy = parseChannel("agy", { ok: true, pools: [
+      pool("Gemini Models", "gemini", "week", 5), pool("Gemini Models", "gemini", "5h", 70),
+    ] });
+    expect(agy.pools).toBeUndefined();
+    expect(agy).toMatchObject({ leftPct: 5, level: "danger" });
+    expect(channelStatus(agy)).toBe("剩 5%");
+  });
+
+  it("lets limit_reached override the per-pool view", () => {
+    const agy = parseChannel("agy", { ok: true, limit_reached: true, pools: [
+      pool("Gemini Models", "gemini", "week", 80), pool("Claude and GPT models", "claude_gpt", "week", 50),
+    ] });
+    expect(agy).toMatchObject({ leftPct: 0, level: "danger" });
+    expect(agy.pools).toBeUndefined();
+    expect(channelStatus(agy)).toBe("剩 0%");
+  });
+});
+
+describe("single-pool channels (regression)", () => {
+  it("still shows 剩 X% and colours by the lowest primary window", () => {
+    const claude = parseChannel("claude", { ok: true, five_hour_pct: 80, seven_day_pct: 5 });
+    expect(claude.pools).toBeUndefined();
+    expect(claude).toMatchObject({ leftPct: 20, level: "warn" });
+    expect(channelStatus(claude)).toBe("剩 20%");
+    const red = parseChannel("codex", { ok: true, "5h_used_pct": 95, "7d_used_pct": 10 });
+    expect(red).toMatchObject({ leftPct: 5, level: "danger" });
+    expect(channelStatus(red)).toBe("剩 5%");
+    expect(channelStatus(parseChannel("deepseek", { ok: true, balance: "1 CNY" }))).toBe("OK");
+    expect(channelStatus(parseChannel("x", { ok: false, error: "e" }))).toBe("FAIL");
+  });
+});
+
 describe("parseChannel edge cases", () => {
   it("tolerates missing fields", () => {
     expect(parseChannel("x", { ok: true })).toMatchObject({ ok: true, windows: [], summary: [], leftPct: null, level: "unknown" });
@@ -135,7 +211,7 @@ describe("parseChannel edge cases", () => {
     expect(parseChannel("x", "junk")).toMatchObject({ ok: false, level: "fail" });
     expect(parseChannel("x", null)).toMatchObject({ ok: false, level: "fail" });
     expect(parseChannel("agy", { ok: true, pools: [null, { left_pct: "oops" }] }).windows).toEqual([
-      { id: "pool0:0", label: "pool0", leftPct: null, reset: undefined, primary: true },
+      { id: "pool0:0", label: "pool0", leftPct: null, reset: undefined, primary: true, pool: undefined },
     ]);
   });
   it("flags hard limits and stale fallbacks", () => {

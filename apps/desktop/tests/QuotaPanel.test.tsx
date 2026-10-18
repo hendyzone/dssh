@@ -30,8 +30,18 @@ it("renders channels as remaining percent with colours, reasons and masked accou
   await flush();
   expect(invoke).toHaveBeenCalledWith("quota_fetch", { sessionId: "ssh-1" });
   const row = (name: string) => container.querySelector(`[data-channel="${name}"]`) as HTMLElement;
-  expect(row("agy").className).toContain("quota-danger");
-  expect(within(row("agy")).getByText("剩 0%")).toBeTruthy();
+  // agy: Claude/GPT pool exhausted but Gemini still usable — card warns, not red.
+  expect(row("agy").className).toContain("quota-warn");
+  expect(row("agy").className).not.toContain("quota-danger");
+  expect(within(row("agy")).getByText("Gemini 80% · Claude/GPT 0%")).toBeTruthy();
+  expect(within(row("agy")).queryByText("剩 0%")).toBeNull();
+  const fill = (label: string) =>
+    within(row("agy")).getByRole("meter", { name: `agy ${label} 剩余` }).firstElementChild!.className;
+  expect(fill("Claude/GPT · 每周")).toContain("quota-fill-danger");
+  expect(fill("Gemini · 每周")).toContain("quota-fill-ok");
+  // A 0% bar has no visible fill, so the row's value carries the red too.
+  expect(within(row("agy")).getByText("0%").className).toContain("quota-value-danger");
+  expect(within(row("agy")).getByText("80%").className).not.toContain("quota-value-danger");
   expect(within(row("agy")).getByText("10-21 06:03 重置")).toBeTruthy();
   expect(row("kimi").className).toContain("quota-warn");
   expect(within(row("kimi")).getByText("未知")).toBeTruthy();
@@ -44,6 +54,25 @@ it("renders channels as remaining percent with colours, reasons and masked accou
   expect(container.textContent).not.toContain("alice");
   expect(container.textContent).not.toContain("user@example.com");
   expect(within(row("deepseek")).getByText("余额 100.00 CNY")).toBeTruthy();
+});
+
+it("paints a multi-pool card red only when every pool is exhausted", async () => {
+  const body = JSON.stringify({ meta: {}, channels: {
+    agy: { ok: true, pools: [
+      { pool: "Gemini Models", pool_id: "gemini", limit: "week", left_pct: 8 },
+      { pool: "Claude and GPT models", pool_id: "claude_gpt", limit: "week", left_pct: 0 },
+    ] },
+    claude: { ok: true, five_hour_pct: 50, seven_day_pct: 93 },
+  } });
+  vi.mocked(invoke).mockResolvedValue({ kind: "ok", body });
+  const { container } = render(<QuotaPanel servers={one} currentId="s1" visible onClose={() => {}} />);
+  await flush();
+  const row = (name: string) => container.querySelector(`[data-channel="${name}"]`) as HTMLElement;
+  expect(row("agy").className).toContain("quota-danger");
+  expect(within(row("agy")).getByText("Gemini 8% · Claude/GPT 0%")).toBeTruthy();
+  // Single-pool channel is unchanged: 剩 X% of the lowest window, coloured by it.
+  expect(row("claude").className).toContain("quota-danger");
+  expect(within(row("claude")).getByText("剩 7%")).toBeTruthy();
 });
 
 it("explains a server without python3 and shows failures without raw output", async () => {

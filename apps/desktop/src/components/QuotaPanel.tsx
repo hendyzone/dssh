@@ -4,6 +4,7 @@ import { Copy, RefreshCw } from "lucide-react";
 import { Button } from "./ui/button";
 import { IconClose } from "./Icons";
 import {
+  channelStatus,
   maskAccount,
   parseQuotaReport,
   quotaLevel,
@@ -106,9 +107,7 @@ function ChannelRow({ channel, shared }: { channel: QuotaChannel; shared?: strin
       <div className="quota-channel-head">
         <strong>{channel.name}</strong>
         {channel.plan && <small>{channel.plan}</small>}
-        <span className="quota-status">
-          {!channel.ok ? "FAIL" : channel.leftPct === null ? "OK" : `剩 ${channel.leftPct}%`}
-        </span>
+        <span className="quota-status">{channelStatus(channel)}</span>
       </div>
       {channel.error && <p className="quota-error">{channel.error}</p>}
       {primary.map((w) => (
@@ -127,7 +126,7 @@ function ChannelRow({ channel, shared }: { channel: QuotaChannel; shared?: strin
               style={{ width: `${w.leftPct ?? 0}%` }}
             />
           </span>
-          <span className="quota-window-value">{w.leftPct === null ? "未知" : `${w.leftPct}%`}</span>
+          <span className={`quota-window-value quota-value-${quotaLevel(w.leftPct)}`}>{w.leftPct === null ? "未知" : `${w.leftPct}%`}</span>
           {w.reset && <small className="quota-reset">{w.reset} 重置</small>}
         </div>
       ))}
