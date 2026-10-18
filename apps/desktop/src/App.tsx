@@ -12,6 +12,7 @@ import { useTmuxProgramStatus } from "./lib/tmuxProgramStatus";
 import ToolRail from "./components/ToolRail";
 import CollaborationPanel from "./components/CollaborationPanel";
 import TeamPanel from "./components/TeamPanel";
+import QuotaPanel, { type QuotaServer } from "./components/QuotaPanel";
 import { collaborationKey, useActiveCollaboration, useCollaboration } from "./lib/collaboration";
 import { boardSource, inferProject, paneProfiles, useLookupSettings } from "./lib/taskLookup";
 import { connectedMemberTab, type TeamMember } from "./lib/teamMembers";
@@ -83,6 +84,7 @@ type SidePanel =
   | "tasks"
   | "changes"
   | "monitor"
+  | "quota"
   | null;
 type ContextMenu = { tabId: string; x: number; y: number };
 
@@ -143,6 +145,7 @@ export default function App() {
     if (isLocalShell(pane.server)) return;
     if (sessionId && !claudeHosts.has(pane.server.id)) claudeHosts.set(pane.server.id, {serverId:pane.server.id, name:pane.server.name, sessionId});
   }));
+  const quotaServers: QuotaServer[] = [...claudeHosts.values()].map(host => ({ id: host.serverId, name: host.name, sessionId: host.sessionId }));
   const aiSnapshots = useAiStatus([...claudeHosts.values()], tabs.flatMap(tab => tab.panes), backendIds);
   const tmuxProgramSnapshots = useTmuxProgramStatus([...tmuxHosts.values()]);
   const claudeSnapshots = useClaudeStatus([...claudeHosts.values()], Object.entries(aiSnapshots).flatMap(([serverId, snapshot]) =>
@@ -1099,6 +1102,16 @@ export default function App() {
                       <aside
                         className="monitor-dock"
                         id={"monitor-dock-" + t.id}
+                      />
+                    </PanelDock>
+                  )}
+                  {panel === "quota" && (
+                    <PanelDock kind="quota">
+                      <QuotaPanel
+                        servers={quotaServers}
+                        currentId={t.panes[t.activePane]?.server.id}
+                        visible={t.id === activeTabId}
+                        onClose={() => togglePanel(t.id, null)}
                       />
                     </PanelDock>
                   )}

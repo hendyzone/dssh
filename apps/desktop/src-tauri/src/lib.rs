@@ -2,6 +2,7 @@ mod commands;
 mod local_shell;
 mod collaboration;
 mod taskboard;
+mod quota;
 mod claude;
 mod ai;
 mod diagnostics;
@@ -90,6 +91,7 @@ pub fn run() {
             collaboration::collaboration_export_guide,
             taskboard::taskboard_get,
             taskboard::taskboard_open,
+            quota::quota_fetch,
             claude::claude_status,
             ai::ai_status,
             ai::ai_setup,
