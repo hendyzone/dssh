@@ -117,7 +117,7 @@ describe("parseQuotaReport", () => {
     expect(fail.error).not.toContain("alice");
   });
 
-  it("rejects output that is not quota.sh JSON", () => {
+  it("rejects output that is not quota JSON", () => {
     expect(() => parseQuotaReport("Traceback (most recent call last)")).toThrow("不是 JSON");
     expect(() => parseQuotaReport("{}")).toThrow("channels");
     expect(() => parseQuotaReport({ channels: [] })).toThrow("channels");
@@ -166,13 +166,13 @@ describe("sharedAccounts", () => {
   it("links the same account across servers and ignores unique or missing ones", () => {
     const report = (account?: string) => parseQuotaReport({ channels: { agy: { ok: true, account, pools: [] }, kimi: { ok: true } } });
     const shared = sharedAccounts([
-      { server: "s1", name: "协同机1", report: report("ab…@example.com") },
-      { server: "s2", name: "协同机2", report: report("ab…@example.com") },
-      { server: "s3", name: "协同机3", report: report("zz…@example.com") },
-      { server: "s4", name: "开发机", report: report(undefined) },
+      { server: "s1", name: "server-a", report: report("ab…@example.com") },
+      { server: "s2", name: "server-b", report: report("ab…@example.com") },
+      { server: "s3", name: "server-c", report: report("zz…@example.com") },
+      { server: "s4", name: "server-d", report: report(undefined) },
     ]);
-    expect(shared.get("s1/agy")).toEqual(["协同机2 · agy"]);
-    expect(shared.get("s2/agy")).toEqual(["协同机1 · agy"]);
+    expect(shared.get("s1/agy")).toEqual(["server-b · agy"]);
+    expect(shared.get("s2/agy")).toEqual(["server-a · agy"]);
     expect(shared.has("s3/agy")).toBe(false);
     expect(shared.has("s4/agy")).toBe(false);
     expect(shared.has("s1/kimi")).toBe(false);

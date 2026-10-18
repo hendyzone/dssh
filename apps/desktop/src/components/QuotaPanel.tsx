@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { RefreshCw } from "lucide-react";
+import { Copy, RefreshCw } from "lucide-react";
 import { Button } from "./ui/button";
 import { IconClose } from "./Icons";
 import {
@@ -12,6 +12,7 @@ import {
   type QuotaChannel,
   type QuotaReport,
 } from "../lib/quota";
+import { quotaPrompt, type QuotaPromptInput } from "../lib/quotaPrompt";
 import "./QuotaPanel.css";
 
 export interface QuotaServer {
@@ -22,12 +23,12 @@ export interface QuotaServer {
 
 type Entry =
   | { state: "ok"; report: QuotaReport; fetchedAt: number }
-  | { state: "missing"; fetchedAt: number }
+  | { state: "noPython"; fetchedAt: number }
   | { state: "error"; message: string; fetchedAt: number };
 
 type RemoteResult =
   | { kind: "ok"; body: string }
-  | { kind: "missing" }
+  | { kind: "noPython" }
   | { kind: "failed"; message: string };
 
 /** Results survive closing the panel so reopening within 5 minutes does not re-query. */
@@ -38,7 +39,7 @@ async function fetchQuota(sessionId: string): Promise<Entry> {
   const fetchedAt = Date.now();
   try {
     const result = await invoke<RemoteResult>("quota_fetch", { sessionId });
-    if (result.kind === "missing") return { state: "missing", fetchedAt };
+    if (result.kind === "noPython") return { state: "noPython", fetchedAt };
     if (result.kind === "failed") return { state: "error", message: result.message, fetchedAt };
     return { state: "ok", report: parseQuotaReport(result.body), fetchedAt };
   } catch (reason) {
@@ -51,6 +52,48 @@ async function fetchQuota(sessionId: string): Promise<Entry> {
 }
 
 const ALL = "__all__";
+
+function promptInput(entry: Entry): QuotaPromptInput {
+  if (entry.state === "ok") return { state: "ok", report: entry.report };
+  if (entry.state === "noPython") return { state: "noPython" };
+  return { state: "error", message: entry.message };
+}
+
+/** 「复制提示词」: copies a setup/self-check prompt for the terminal AI on that server. */
+function CopyPrompt({ server, entry }: { server: QuotaServer; entry: Entry }) {
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const prompt = quotaPrompt(promptInput(entry));
+  useEffect(() => {
+    if (status !== "copied") return;
+    const timer = setTimeout(() => setStatus("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [status]);
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="quota-copy"
+        title="复制给这台服务器上终端 AI 的提示词：按当前问题配置额度查询并自检"
+        aria-label={`复制 ${server.name} 的额度提示词`}
+        onClick={() => {
+          navigator.clipboard.writeText(prompt).then(
+            () => setStatus("copied"),
+            () => setStatus("failed"),
+          );
+        }}
+      >
+        <Copy size={13} /> {status === "copied" ? "已复制" : "复制提示词"}
+      </Button>
+      {status === "failed" && (
+        <div className="quota-copy-fallback" role="alert">
+          复制失败，请手动复制：
+          <textarea aria-label={`${server.name} 的额度提示词`} readOnly value={prompt} />
+        </div>
+      )}
+    </>
+  );
+}
 const QUOTA_CHECK_MS = 30_000;
 const clock = (time: number) =>
   new Date(time).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
@@ -222,7 +265,7 @@ export default function QuotaPanel({
         </div>
       )}
       <p className="workspace-hint">
-        在服务器上运行 ~/.amail/client/scripts/quota.sh；额度跟账号凭据走，每台机各查各的。面板打开时每 5 分钟刷新。
+        经 SSH 在服务器上运行内置的额度脚本（只需 python3）；额度跟账号凭据走，每台机各查各的。面板打开时每 5 分钟刷新。有 FAIL 时点「复制提示词」交给那台机上的终端 AI 修。
       </p>
       <div className="workspace-scroll">
         {targets.length === 0 && <p>连接服务器后查看额度。</p>}
@@ -237,10 +280,11 @@ export default function QuotaPanel({
                   {busy ? "查询中…" : entry ? `更新于 ${clock(entry.fetchedAt)}` : ""}
                 </small>
               </h4>
+              {entry && !busy && <CopyPrompt server={server} entry={entry} />}
               {!entry && (busy ? <p className="workspace-hint">正在查询各家接口，约需十几秒…</p> : !server.sessionId && <p>未连接。</p>)}
-              {entry?.state === "missing" && (
+              {entry?.state === "noPython" && (
                 <p className="quota-missing" role="status">
-                  这台服务器没有 ~/.amail/client/scripts/quota.sh，未安装 amail 客户端。装好 amail 客户端后点刷新。
+                  这台服务器没有 python3，无法运行额度脚本。安装 python3（3.8+）后点刷新。
                 </p>
               )}
               {entry?.state === "error" && (

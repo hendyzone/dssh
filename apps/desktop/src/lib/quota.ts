@@ -1,7 +1,8 @@
 /**
  * Model quota parsing for the 额度 panel.
  *
- * Input is the JSON printed by amail `quota.sh --json`: `{meta, channels:{name:{ok,…}}}`.
+ * Input is the JSON printed by `tools/model-quota/model-quota.py --json` (bundled with dssh and
+ * streamed to the server): `{meta, channels:{name:{ok,…}}}`.
  * Channels report differently: most give *used* percentages (`five_hour_pct`,
  * `week_used_pct`, `7d_used_pct`, `total_pct`…), agy gives *left* percentages in a
  * `pools` array. Everything here is converted to "剩余%" so the panel reads one way.
@@ -25,6 +26,8 @@ export interface QuotaChannel {
   plan?: string;
   /** FAIL reason, already scrubbed of accounts and tokens. */
   error?: string;
+  /** Machine-readable FAIL code from the script (`no_credentials`, `token_expired`, …). */
+  code?: string;
   windows: QuotaWindow[];
   /** Balance-style figures for channels without a percentage (deepseek, tokenline…). */
   summary: string[];
@@ -40,6 +43,8 @@ export interface QuotaReport {
   host: string;
   at: string;
   proxy: string;
+  /** `set` / `none` when the script reports whether the tokenline relay address is configured. */
+  tokenlineBase?: string;
   channels: QuotaChannel[];
 }
 
@@ -177,13 +182,20 @@ function balanceSummary(raw: Record<string, unknown>): string[] {
   return summary;
 }
 
-/** Normalize one channel object from quota.sh. Never throws. */
+/** Normalize one channel object from the quota script. Never throws. */
 export function parseChannel(name: string, raw: unknown): QuotaChannel {
   const base = { name, windows: [] as QuotaWindow[], summary: [] as string[], notes: [] as string[], leftPct: null };
   if (!isObject(raw)) return { ...base, ok: false, error: "返回格式无效", level: "fail" };
   if (raw.ok !== true) {
     const reason = text(raw.error);
-    return { ...base, ok: false, error: reason ? scrubReason(reason) : "未给出原因", level: "fail" };
+    const code = text(raw.code);
+    return {
+      ...base,
+      ok: false,
+      error: reason ? scrubReason(reason) : "未给出原因",
+      ...(code && /^[a-z0-9_]{1,40}$/.test(code) ? { code } : {}),
+      level: "fail",
+    };
   }
   const windows = Array.isArray(raw.pools) ? agyWindows(raw.pools) : usedWindows(raw);
   const notes: string[] = [];
@@ -219,22 +231,23 @@ export function parseChannel(name: string, raw: unknown): QuotaChannel {
   };
 }
 
-/** Parse the full quota.sh JSON. Throws a user-facing message when the shape is wrong. */
+/** Parse the full quota script JSON. Throws a user-facing message when the shape is wrong. */
 export function parseQuotaReport(input: string | unknown): QuotaReport {
   let value = input;
   if (typeof input === "string") {
     try {
       value = JSON.parse(input);
     } catch {
-      throw new Error("quota.sh 输出不是 JSON");
+      throw new Error("额度脚本输出不是 JSON");
     }
   }
-  if (!isObject(value) || !isObject(value.channels)) throw new Error("quota.sh 输出缺少 channels");
+  if (!isObject(value) || !isObject(value.channels)) throw new Error("额度脚本输出缺少 channels");
   const meta = isObject(value.meta) ? value.meta : {};
   return {
     host: text(meta.host) ?? "",
     at: text(meta.at) ?? "",
     proxy: text(meta.proxy) ?? "",
+    tokenlineBase: text(meta.tokenline_base),
     channels: Object.entries(value.channels).map(([name, raw]) => parseChannel(name, raw)),
   };
 }

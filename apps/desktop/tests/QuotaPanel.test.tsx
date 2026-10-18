@@ -6,8 +6,8 @@ import fixture from "./fixtures/quota.json?raw";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-const one = [{ id: "s1", name: "协同机1", sessionId: "ssh-1" }];
-const two = [...one, { id: "s2", name: "协同机2", sessionId: "ssh-2" }];
+const one = [{ id: "s1", name: "server-a", sessionId: "ssh-1" }];
+const two = [...one, { id: "s2", name: "server-b", sessionId: "ssh-2" }];
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const setHidden = (hidden: boolean) => {
@@ -46,15 +46,15 @@ it("renders channels as remaining percent with colours, reasons and masked accou
   expect(within(row("deepseek")).getByText("余额 100.00 CNY")).toBeTruthy();
 });
 
-it("explains a server without quota.sh and shows failures without raw output", async () => {
-  vi.mocked(invoke).mockResolvedValueOnce({ kind: "missing" });
+it("explains a server without python3 and shows failures without raw output", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce({ kind: "noPython" });
   render(<QuotaPanel servers={one} currentId="s1" visible onClose={() => {}} />);
   await flush();
-  expect(screen.getByRole("status").textContent).toContain("没有 ~/.amail/client/scripts/quota.sh");
-  vi.mocked(invoke).mockResolvedValueOnce({ kind: "failed", message: "quota.sh 运行失败（退出码 1）" });
+  expect(screen.getByRole("status").textContent).toContain("没有 python3");
+  vi.mocked(invoke).mockResolvedValueOnce({ kind: "failed", message: "额度脚本运行失败（退出码 1）" });
   fireEvent.click(screen.getByLabelText("刷新额度"));
   await flush();
-  expect(screen.getByRole("alert").textContent).toBe("quota.sh 运行失败（退出码 1）");
+  expect(screen.getByRole("alert").textContent).toBe("额度脚本运行失败（退出码 1）");
   vi.mocked(invoke).mockRejectedValueOnce("额度查询超时");
   fireEvent.click(screen.getByLabelText("刷新额度"));
   await flush();
@@ -62,7 +62,32 @@ it("explains a server without quota.sh and shows failures without raw output", a
   vi.mocked(invoke).mockResolvedValueOnce({ kind: "ok", body: "not json" });
   fireEvent.click(screen.getByLabelText("刷新额度"));
   await flush();
-  expect(screen.getByRole("alert").textContent).toBe("quota.sh 输出不是 JSON");
+  expect(screen.getByRole("alert").textContent).toBe("额度脚本输出不是 JSON");
+});
+
+it("copies a setup prompt for the server and confirms with 已复制", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  render(<QuotaPanel servers={one} currentId="s1" visible onClose={() => {}} />);
+  await flush();
+  const button = screen.getByLabelText("复制 server-a 的额度提示词");
+  expect(button.textContent).toContain("复制提示词");
+  fireEvent.click(button);
+  await flush();
+  expect(writeText).toHaveBeenCalledTimes(1);
+  const prompt = writeText.mock.calls[0][0] as string;
+  expect(prompt).toContain("pi-codex");
+  expect(prompt).toContain("令牌已过期");
+  expect(prompt).not.toContain("example.com");
+  expect(prompt).not.toContain("abcdefghijklmnop");
+  expect(button.textContent).toContain("已复制");
+  await advance(2500);
+  expect(button.textContent).toContain("复制提示词");
+  writeText.mockRejectedValueOnce(new Error("denied"));
+  fireEvent.click(button);
+  await flush();
+  expect(screen.getByRole("alert").textContent).toContain("复制失败");
+  expect((screen.getByLabelText("server-a 的额度提示词") as HTMLTextAreaElement).value).toBe(prompt);
 });
 
 it("polls every five minutes only while visible and stops on unmount", async () => {
@@ -111,11 +136,11 @@ it("switches servers, shows them side by side and flags shared accounts", async 
   fireEvent.change(screen.getByLabelText("服务器"), { target: { value: "s2" } });
   await flush();
   expect(invoke).toHaveBeenLastCalledWith("quota_fetch", { sessionId: "ssh-2" });
-  expect(screen.getByLabelText("协同机2 额度")).toBeTruthy();
+  expect(screen.getByLabelText("server-b 额度")).toBeTruthy();
   fireEvent.change(screen.getByLabelText("服务器"), { target: { value: "__all__" } });
   await flush();
   expect(invoke).toHaveBeenCalledTimes(2);
   expect(container.querySelectorAll(".quota-server")).toHaveLength(2);
-  const agy = within(screen.getByLabelText("协同机1 额度")).getByText(/共用/);
-  expect(agy.textContent).toContain("与 协同机2 · agy 共用");
+  const agy = within(screen.getByLabelText("server-a 额度")).getByText(/共用/);
+  expect(agy.textContent).toContain("与 server-b · agy 共用");
 });
