@@ -183,3 +183,5 @@ The documents below are written in Chinese.
 ## License
 
 [MIT](LICENSE) © 2026 hendyzone
+
+Third-party components are listed in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).

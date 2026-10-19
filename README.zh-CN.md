@@ -180,3 +180,5 @@ npm run tauri build
 ## 许可证
 
 [MIT](LICENSE) © 2026 hendyzone
+
+第三方组件及其许可证见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES)。
