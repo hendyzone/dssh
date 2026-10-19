@@ -176,3 +176,7 @@ npm run tauri build
 | `prototypes/kitty-image` | 早期终端图片协议验证原型 |
 
 </details>
+
+## 许可证
+
+[MIT](LICENSE) © 2026 hendyzone

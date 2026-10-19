@@ -179,3 +179,7 @@ The documents below are written in Chinese.
 | `prototypes/kitty-image` | Early prototype validating the terminal image protocol |
 
 </details>
+
+## License
+
+[MIT](LICENSE) © 2026 hendyzone
