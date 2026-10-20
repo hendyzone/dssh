@@ -483,4 +483,4 @@ The current suite covers terminal integration, Ghostty ABI behavior, input handl
 
 ## License
 
-See cmux LICENSE (AGPL-3.0)
+License: MIT (./LICENSE)
