@@ -10,6 +10,7 @@ import { Input } from "./ui/input";
 import TeamMemberNotes from "./TeamMemberNotes";
 import TeamDynamics from "./TeamDynamics";
 import { isLeadMember, liveSnapshot, useAgentSessions } from "../lib/agentSessions";
+import type { OfficeSnapshot } from "../lib/teamOffice";
 
 export interface TeamNavigation {
   server: ServerEntry;
@@ -23,10 +24,13 @@ export interface TeamNavigation {
  * The list itself is the single merged view in TeamDynamics (no 「动态 / 成员」 tabs):
  * management operations live in each member's expandable details.
  */
-export default function TeamMembers({ sessionId, profile, navigation, board }: {
+export default function TeamMembers({ sessionId, profile, navigation, board, officeSnapshot, officeVisible=true, onPopOut, onRoomOpenChange }: {
   sessionId: string; profile: CollaborationProfile; navigation: TeamNavigation;
   /** Read-only taskboard (the same source as the task lookup above) for live member status. */
   board?: BoardSource;
+  /** Pixel room shared by the team panel and the collaboration panel. */
+  officeSnapshot?: OfficeSnapshot; officeVisible?: boolean; onPopOut?: () => Promise<void>;
+  onRoomOpenChange?: (open: boolean) => void;
 }) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [adding, setAdding] = useState(false);
@@ -169,6 +173,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
     {!sessionId && <p role="status">连接 Lead 终端后即可读取团队。</p>}
     <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} board={board} live={live} onUpdated={()=>request("members")}
       pinnedKeys={[noteMember, editing?memberKey(editing):undefined].filter((key):key is string=>!!key)}
+      officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
       onRefresh={()=>void run(()=>request("members"))} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>
     {!workers.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>点击「添加成员」，从已打开的终端中选择。成员可以在不同服务器上。</p></div>}
   </section>;

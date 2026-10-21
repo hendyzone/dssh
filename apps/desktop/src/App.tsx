@@ -1147,7 +1147,7 @@ export default function App() {
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
                     <PanelDock kind="collaboration">
-                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (

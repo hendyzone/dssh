@@ -10,6 +10,8 @@ import type {ServerEntry} from "../types";
 import type {BoardSource} from "../lib/taskLookup";
 import {STATUS_GROUPS,ago,briefKey,isLeadMember,liveSnapshot,rankMembers,summarizeTeam,useAgentSessions,type LiveSessions,type LiveStatus,type StatusGroup} from "../lib/agentSessions";
 import TeamLiveSummary from "./TeamLiveSummary";
+import TeamOffice from "./TeamOffice";
+import type { OfficeSnapshot } from "../lib/teamOffice";
 
 type LiveConnection={sessionId:string;serverId?:string;host:string;port:number;username:string;tmux?:{id:string;created:number};tmuxWorkdir?:string};
 
@@ -41,7 +43,7 @@ function displayName(member:TeamMember,members:TeamMember[]){
 
 /** `live`: the panel's shared collector data (so the merged view shows one snapshot); polled here when omitted. */
 export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,onUpdated,board,live:shared,
-  onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys}:{
+  onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange}:{
   sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource;live?:LiveSessions;
   /** Shell actions owned by TeamMembers: the merged view keeps one toolbar row. */
   onRefresh?:()=>void;onAddMember?:()=>void;disabled?:boolean;more?:ReactNode;addForm?:ReactNode;
@@ -49,6 +51,9 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   renderMemberAdmin?:(member:TeamMember)=>ReactNode;
   /** Rows that must stay expanded while the shell is editing them (notes editor / terminal update). */
   pinnedKeys?:string[];
+  /** Pixel room, shared by the team panel and the collaboration panel. */
+  officeSnapshot?:OfficeSnapshot; officeVisible?:boolean; onPopOut?:()=>Promise<void>;
+  onRoomOpenChange?:(open:boolean)=>void;
 }){
   const self={...profile,username:navigation.server.username};
   const isLead=(m:TeamMember)=>isLeadMember(m,self);
@@ -79,6 +84,8 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   const [openGroups,setOpenGroups]=useState<Record<string,boolean>>({});
   // Per-member expansion, keyed by memberKey: a member moving to another group keeps its state.
   const [openMembers,setOpenMembers]=useState<Record<string,boolean>>({});
+  const [roomOpen,setRoomOpen]=useState(false);
+  const [officeError,setOfficeError]=useState("");
   const running=useRef(false);
   const revision=useRef(0);
   const alive=useRef(true);
@@ -207,6 +214,9 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     return()=>window.clearInterval(timer);
   },[auto]);
   const connectionKey=JSON.stringify(selected.map(id=>{const m=members.find(m=>memberKey(m)===id);return m?[id,connection(m).backend??""]:[id];}));
+  // The room consumes the same collection gate as the team panel: App turns it into
+  // inlineRoomOpen and pauses/stops collecting when the panel is closed.
+  useEffect(()=>{onRoomOpenChange?.(roomOpen);return()=>onRoomOpenChange?.(false);},[roomOpen,onRoomOpenChange]);
   const previousConnection=useRef(connectionKey);
   useEffect(()=>{
     const changed=previousConnection.current!==connectionKey;previousConnection.current=connectionKey;
@@ -303,6 +313,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       <TeamLiveSummary board={board} live={live} summary={summarizeTeam(ranked,snapshot)} filter={activeFilter} onFilter={toggleFilter}/>
       {activeFilter&&<Button size="sm" variant="ghost" onClick={()=>setFilter(undefined)}>清除筛选</Button>}
       <div className="team-toolbar-actions">
+        {officeSnapshot&&<Button size="sm" variant={roomOpen?"secondary":"ghost"} aria-pressed={roomOpen} onClick={()=>setRoomOpen(open=>!open)}>房间</Button>}
         <Button size="icon-sm" variant="ghost" aria-label="刷新成员" title="刷新成员" disabled={!!disabled||busy} onClick={()=>onRefresh?.()}><RefreshCw size={15}/></Button>
         <Button size="sm" disabled={!!disabled||busy} onClick={()=>onAddMember?.()}><Plus size={14}/> 添加成员</Button>
         <Button size="sm" variant="outline" disabled={busy||!members.length||!config.endpoint||!config.model} title={`使用 ${configName(config)} 发送并总结全部 ${members.length} 位 Worker 的终端输出`} onClick={summarizeAll}>{batchProgress||"总结全部"}</Button>
@@ -329,6 +340,14 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       <div><Button size="sm" disabled={busy} onClick={startAuto}>确认开启</Button><Button size="sm" variant="ghost" onClick={()=>setConfirmAuto(false)}>取消</Button></div>
     </div>}
     {(busy||notice)&&<small role="status">{busy?"正在更新…":notice}</small>}
+    {officeSnapshot&&roomOpen
+      ? <div className="team-room-view">
+          {officeError&&<p role="alert">{officeError}</p>}
+          <TeamOffice snapshot={officeSnapshot} visible={officeVisible&&roomOpen} onPopOut={onPopOut?()=>{
+            setOfficeError("");void onPopOut().catch(()=>setOfficeError("房间窗口未能打开，请重试。"));
+          }:undefined}/>
+        </div>
+      : <>
     {addForm}
     {GROUP_ORDER.map(group=>{
       if(filtered&&group.key!==activeFilter)return null;
@@ -347,5 +366,6 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
         </details>
       </section>;
     })}
+      </>}
   </section>;
 }

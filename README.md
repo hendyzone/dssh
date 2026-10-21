@@ -5,7 +5,7 @@
 <h1 align="center">dssh</h1>
 
 <p align="center">Remote terminals, files and dev tasks in one workspace.</p>
-<p align="center"><strong>v1.2.18</strong> · Tauri SSH client · Windows / macOS / Linux</p>
+<p align="center"><strong>v1.2.19</strong> · Tauri SSH client · Windows / macOS / Linux</p>
 <p align="center"><strong>English</strong> | <a href="README.zh-CN.md">简体中文</a></p>
 
 dssh is built for everyday remote development and server administration: connect to servers, keep long jobs running in tmux, edit remote files, review code diffs, and paste screenshot paths into remote tools such as Codex and Claude. For projects run by a team of coding agents, it also shows member status, task cards and model quota in the same window.

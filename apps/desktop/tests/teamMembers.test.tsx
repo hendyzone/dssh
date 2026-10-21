@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import TeamMembers from "../src/components/TeamMembers";
+import CollaborationPanel from "../src/components/CollaborationPanel";
 import TeamDynamics from "../src/components/TeamDynamics";
 import TeamPanel from "../src/components/TeamPanel";
 import ToolRail from "../src/components/ToolRail";
@@ -327,16 +328,37 @@ it.each([true,false])("promotes a member only after checking the migrated roster
   expect(vi.mocked(invoke).mock.calls.every(([command,args]:any)=>command==="collaboration_worktree"||args.request?.operation==="members")).toBe(true);
 });
 
-it("opens the room without adding inline roster avatars and pauses it when the main view is hidden",async()=>{
+it("opens the room from the merged toolbar without inline roster avatars and pauses it when hidden",async()=>{
   const officeSnapshot={version:1 as const,themeId:"one-light",animationEnabled:true,mailAvailability:"unavailable" as const,projects:[{id:"demo",name:"demo",sources:[{id:"source",label:"Demo",availability:"ready" as const,notice:"",members:[{id:"worker",name:"Worker",isLead:false,status:{state:"working" as const,source:"activity" as const,label:"工作中（成员活动）"},taskText:"Task",taskSource:"manual" as const,paletteKey:"worker"}]}]}]};
-  const props={sessionId:"ssh",pane:{id:"lead",server,tmux:{id:"$1",created:100,name:"lead"}},profile,navigation:{server,servers:[server],onOpen:vi.fn()},onClose:vi.fn(),officeSnapshot,onRoomOpenChange:vi.fn()};
-  const view=render(<TeamPanel {...props}/>);const avatar=view.container.querySelector('.team-office .team-member-avatar')!;
-  expect((avatar.closest(".collaboration-content") as HTMLElement).style.display).toBe("none");expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);expect(avatar.getAttribute("data-paused")).toBe("true");fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect((avatar.closest(".collaboration-content") as HTMLElement).style.display).not.toBe("none");expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(true);expect(avatar.getAttribute("data-paused")).toBe("false");
-  view.rerender(<TeamPanel {...props} officeVisible={false}/>);expect(avatar.getAttribute("data-paused")).toBe("true");
-  view.rerender(<TeamPanel {...props} officeVisible/>);expect(avatar.getAttribute("data-paused")).toBe("false");
-  fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(view.container.querySelector('.team-office .team-member-avatar')).toBe(avatar);expect(avatar.getAttribute("data-paused")).toBe("true");
+  const props={sessionId:"ssh",pane:{id:"lead",server,tmux:{id:"$1",created:100,name:"lead"}},profile,navigation:{server,servers:[server],onOpen:vi.fn()},onClose:vi.fn(),officeSnapshot,onRoomOpenChange:vi.fn(),onPopOut:vi.fn().mockResolvedValue(undefined)};
+  const view=render(<TeamPanel {...props}/>);
+  // 列表与房间同一个工具栏入口，标题栏不再有第二个「房间」按钮
+  await screen.findByRole("region", {name:"Lead成员"}).catch(()=>undefined);
+  const buttons=screen.getAllByRole("button",{name:"房间",exact:true});
+  expect(buttons).toHaveLength(1);
+  expect(view.container.querySelector(".team-office")).toBeNull();
+  expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);
+  // 打开房间：列表让位给房间，采集门控打开、动画开始
+  fireEvent.click(buttons[0]);
+  const avatar=view.container.querySelector('.team-office .team-member-avatar')!;
+  expect(avatar.getAttribute("data-paused")).toBe("false");
+  expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(true);
+  expect(view.container.querySelector(".team-members button[aria-pressed=true]")).toBeTruthy();
+  // 弹出窗口仍可用
+  fireEvent.click(screen.getByRole("button",{name:"弹出窗口"}));
+  await waitFor(()=>expect(props.onPopOut).toHaveBeenCalledTimes(1));
+  // 主窗口不可见时暂停
+  view.rerender(<TeamPanel {...props} officeVisible={false}/>);
+  expect(avatar.getAttribute("data-paused")).toBe("true");
+  view.rerender(<TeamPanel {...props} officeVisible/>);
+  expect(avatar.getAttribute("data-paused")).toBe("false");
+  // 再点回列表：房间卸载、门控复位
+  fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));
+  expect(view.container.querySelector(".team-office")).toBeNull();
+  expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);
   expect(view.container.querySelector('.team-members .team-member-avatar')).toBeNull();
-  expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(true);view.unmount();expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);
+  view.unmount();
+  expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);
 });
 
 // ── DS-13：合并后的单列表（概览筛选 / 空闲紧凑行 / 名字去重 / 无当前卡） ──────────
@@ -556,4 +578,36 @@ it("keeps a pinned row expanded while the shell is editing it", async () => {
   const row = document.querySelector(".team-compact-row") as HTMLDetailsElement;
   expect(row.open).toBe(true);
   expect(row.querySelector(".admin-stub")).toBeTruthy();
+});
+
+
+it("opens the pixel room from the collaboration panel with the same room callbacks", async () => {
+  const officeSnapshot={version:1 as const,themeId:"one-light",animationEnabled:true,mailAvailability:"unavailable" as const,
+    projects:[{id:"demo",name:"demo",sources:[{id:"source",label:"Demo",availability:"ready" as const,notice:"",
+      members:[{id:"worker",name:"Worker",isLead:false,status:{state:"working" as const,source:"activity" as const,label:"工作中（成员活动）"},taskText:"Task",taskSource:"manual" as const,paletteKey:"worker"}]}]}]};
+  const lead={...member, email:"lead@example.test", role:"Lead", tmux:{id:"$1", created:100, name:"lead"}};
+  vi.mocked(invoke).mockImplementation(async (command:string) =>
+    command==="collaboration_request" ? JSON.stringify([lead, member]) : "{}");
+  const onRoomOpenChange=vi.fn();
+  const onPopOut=vi.fn().mockResolvedValue(undefined);
+  const navigation={server,servers:[server],onOpen:vi.fn()};
+  render(<CollaborationPanel sessionId="ssh" profile={profile} onClose={vi.fn()} teamNavigation={navigation}
+    officeSnapshot={officeSnapshot} onRoomOpenChange={onRoomOpenChange} onPopOut={onPopOut}/>);
+  // 协作面板里也能看到唯一的房间入口
+  const room=await screen.findByRole("button",{name:"房间",exact:true});
+  expect(screen.getAllByRole("button",{name:"房间",exact:true})).toHaveLength(1);
+  expect(onRoomOpenChange).toHaveBeenLastCalledWith(false);
+  // 打开：房间渲染、列表让位
+  fireEvent.click(room);
+  expect(screen.getByRole("region",{name:"公司办公室"})).toBeTruthy();
+  expect(document.querySelector(".team-live-row")).toBeNull();     // 列表让位给房间
+  expect(onRoomOpenChange).toHaveBeenLastCalledWith(true);
+  // 弹出窗口
+  fireEvent.click(screen.getByRole("button",{name:"弹出窗口"}));
+  await waitFor(()=>expect(onPopOut).toHaveBeenCalledTimes(1));
+  // 再点回列表
+  fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));
+  expect(screen.queryByRole("region",{name:"公司办公室"})).toBeNull();
+  expect(document.querySelector(".team-live-row")).toBeTruthy();    // 回到列表
+  expect(onRoomOpenChange).toHaveBeenLastCalledWith(false);
 });
