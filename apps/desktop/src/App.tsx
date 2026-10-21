@@ -12,13 +12,15 @@ import { useTmuxProgramStatus } from "./lib/tmuxProgramStatus";
 import ToolRail from "./components/ToolRail";
 import CollaborationPanel from "./components/CollaborationPanel";
 import TeamPanel from "./components/TeamPanel";
+import { useOfficeMail } from "./lib/useOfficeMail";
+import type { OfficeMailDirectory } from "./lib/teamOffice";
 import { useTeamOffice } from "./lib/useTeamOffice";
 import { useOfficePublisher, openOfficeWindow, useMainWindowVisibility, useOfficePresence } from "./lib/officeWindowSync";
 import QuotaPanel, { type QuotaServer } from "./components/QuotaPanel";
 import { collaborationKey, useActiveCollaboration, useCollaboration } from "./lib/collaboration";
 import { boardSource, inferProject, paneProfiles, useLookupSettings } from "./lib/taskLookup";
 import { connectedMemberTab, type TeamMember } from "./lib/teamMembers";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWindowClose } from "./lib/useWindowClose";
 import { loadWorkspace, saveWorkspace } from "./lib/workspaceRestore";
 import { confirmAction } from "./lib/confirm";
@@ -394,10 +396,14 @@ export default function App() {
   const officeMainVisible = useMainWindowVisibility();
   const officeExists = useOfficePresence();
   const [inlineRoomOpen, setInlineRoomOpen] = useState(false);
-  const officeSnapshot = useTeamOffice({profiles:collaborationProfiles, servers,
-    sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))),
+  const officeMailDirectory = useRef<OfficeMailDirectory>(new Map());
+  const officeSessions = tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""})));
+  const officeRoomSnapshot = useTeamOffice({profiles:collaborationProfiles, servers,
+    sessions:officeSessions,
     programSnapshots:tmuxProgramSnapshots, lookupSettings, themeId:settings.themeId,
-    animationEnabled:settings.teamAvatarAnimation !== false, enabled:(inlineRoomOpen || officeExists) && officeMainVisible, officeExists});
+    animationEnabled:settings.teamAvatarAnimation !== false, enabled:(inlineRoomOpen || officeExists) && officeMainVisible, officeExists, mailDirectoryRef:officeMailDirectory});
+  const officeMail = useOfficeMail({profiles:collaborationProfiles,servers,sessions:officeSessions,enabled:(inlineRoomOpen || officeExists) && officeMainVisible,directory:officeMailDirectory});
+  const officeSnapshot = useMemo(()=>({...officeRoomSnapshot,mail:officeMail}),[officeRoomSnapshot,officeMail]);
   useOfficePublisher(officeSnapshot, officeExists);
   /** Board route and project for one pane: lock > collaboration binding > manual choice. */
   const paneTaskContext = (pane: SessionInfo) => {
@@ -1137,11 +1143,11 @@ export default function App() {
                     </PanelDock>
                   )}
                   {panel === "team" && t.id === activeTabId && t.panes[t.activePane]?.tmux && <PanelDock kind="team">
-                    <TeamPanel officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                    <TeamPanel officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
                     <PanelDock kind="collaboration">
-                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (

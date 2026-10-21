@@ -94,3 +94,9 @@ it("starts inactive without building or serializing office data",()=>{
  const opts=options();vi.mocked(buildOfficeSnapshot).mockClear();const stringify=vi.spyOn(JSON,"stringify");const view=renderHook(()=>useTeamOffice({...opts,enabled:false,officeExists:false}));
  expect(buildOfficeSnapshot).not.toHaveBeenCalled();expect(stringify).not.toHaveBeenCalled();expect(collaborationRequest).not.toHaveBeenCalled();expect(view.result.current.projects).toEqual([]);view.unmount();stringify.mockRestore();
 });
+it('keeps exact mail station addresses exclusively in the main directory ref',async()=>{
+ const directory={current:new Map()};const opts=options();const view=renderHook(()=>useTeamOffice({...opts,mailDirectoryRef:directory}));
+ await waitFor(()=>expect(directory.current.get(member.email)).toHaveLength(1));
+ const station=view.result.current.projects[0].sources[0];expect(directory.current.get(member.email)[0]).toEqual({kind:'station',sourceId:station.id,memberId:station.members[0].id});
+ expect(JSON.stringify(view.result.current)).not.toContain(member.email);view.unmount();
+});

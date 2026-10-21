@@ -1,5 +1,6 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "./ui/button";
+import OfficeMail, {officeStationAnchor} from "./OfficeMail";
 import TeamMemberAvatar from "./TeamMemberAvatar";
 import type { OfficeSnapshot } from "../lib/teamOffice";
 import "./TeamOffice.css";
@@ -42,6 +43,7 @@ const shortStatus = {working:"工作中",idle:"空闲",unknown:"待确认",done:
 export default function TeamOffice({snapshot, visible = true, onPopOut}: {
   snapshot: OfficeSnapshot; visible?: boolean; onPopOut?: () => void;
 }) {
+  const mailContainer=useRef<HTMLDivElement>(null);
   const [scale,setScale] = useState<1|2|3>(2);
   const [collapsed,setCollapsed] = useState<Set<string>>(() => new Set());
   const [hidden,setHidden] = useState(() => document.hidden);
@@ -58,7 +60,7 @@ export default function TeamOffice({snapshot, visible = true, onPopOut}: {
       </select></label>{onPopOut && <Button size="sm" variant="outline" onClick={onPopOut}>弹出窗口</Button>}
     </div></header>
     <p className="office-coverage">显示本机已登记的团队；未连接的 Lead 工作区暂不可读取。</p>
-    <div className="office-projects">
+    <div className="office-projects" ref={mailContainer}>
       <UpperWall/>
       {!snapshot.projects.length && <div className="office-unassigned"><p className="office-empty">暂无已登记的团队。先在 Lead 终端的团队面板登记项目。</p><EmptyDesks scale={scale}/></div>}
       {snapshot.projects.map(project => {
@@ -75,7 +77,7 @@ export default function TeamOffice({snapshot, visible = true, onPopOut}: {
                 : !source.members.length ? <p className="office-source-notice">此团队尚未登记成员。</p> : null}
               {!source.members.length && <EmptyDesks scale={scale}/>}
               <div className="office-desks" style={{"--office-station-width":`${Math.max(128,96*scale)}px`} as CSSProperties}>
-                {source.members.map(member => <article className={`office-station${member.isLead?" is-lead":""}`} key={member.id} data-member-id={member.id} data-state={member.status.state} aria-label={`工位 ${member.name}`}>
+                {source.members.map(member => <article className={`office-station${member.isLead?" is-lead":""}`} key={member.id} data-member-id={member.id} data-office-station={officeStationAnchor(source.id,member.id)} data-state={member.status.state} aria-label={`工位 ${member.name}`}>
                   <span className="office-sr-only">{member.status.label}</span>
                   <div className="office-pixels" style={{width:96*scale,height:72*scale}}>
                     <Desk scale={scale} lead={member.isLead}/>
@@ -89,7 +91,8 @@ export default function TeamOffice({snapshot, visible = true, onPopOut}: {
           </div>
         </section>;
       })}
+      <OfficeMail mail={snapshot.mail} paused={paused} motion={snapshot.animationEnabled} container={mailContainer} layoutKey={[scale,collapsed,snapshot.projects]}/>
     </div>
-    <footer className="office-mailbox"><span aria-hidden="true">✉</span> 邮件动态不可用</footer>
+    <footer className="office-mailbox"><span aria-hidden="true">✉</span> {snapshot.mail?.availability==="ready"?"邮件动态已连接":snapshot.mail?.availability==="loading"?"正在连接邮件动态…":snapshot.mail?.availability==="error"?"邮件动态暂时失败":"邮件动态不可用"}</footer>
   </section>;
 }

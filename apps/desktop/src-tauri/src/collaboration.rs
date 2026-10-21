@@ -83,6 +83,7 @@ pub enum Operation {
     MemberRemove,
     Context,
     Inbox,
+    InboxHeaders,
     Read,
     Send,
     Reply,
@@ -96,6 +97,10 @@ pub struct Request {
     task: String,
     #[serde(default)]
     uid: String,
+    #[serde(default)]
+    after_uid: Option<u32>,
+    #[serde(default)]
+    through_uid: Option<u32>,
     #[serde(default)]
     to: String,
     #[serde(default)]
@@ -154,6 +159,11 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
     }
     if !identifier(&profile.project) {
         return Err("项目编号格式无效".into());
+    }
+    if !matches!(request.operation, Operation::InboxHeaders)
+        && (request.after_uid.is_some() || request.through_uid.is_some())
+    {
+        return Err("邮件分页参数仅用于只读信头".into());
     }
     let directory = absolute_path(&profile.workdir)?;
     let resolve = worktree_command(&Target {
@@ -253,6 +263,19 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
         ];
         match request.operation {
             Operation::Inbox => args.extend(["inbox".into(), "--limit".into(), "20".into()]),
+            Operation::InboxHeaders => {
+                let after = request.after_uid.ok_or("只读信头需要 afterUid")?;
+                if request.through_uid.is_some_and(|through| through < after) {
+                    return Err("throughUid 不得小于 afterUid".into());
+                }
+                args.extend([
+                    "inbox".into(), "--json".into(), "--headers-only".into(),
+                    "--limit".into(), "100".into(), "--after-uid".into(), after.to_string(),
+                ]);
+                if let Some(through) = request.through_uid {
+                    args.extend(["--through-uid".into(), through.to_string()]);
+                }
+            }
             Operation::Read | Operation::Reply => {
                 if request.uid.is_empty()
                     || request.uid.len() > 20
@@ -452,10 +475,59 @@ mod tests {
             operation: op,
             task: "T1".into(),
             uid: "42".into(),
+            after_uid: None,
+            through_uid: None,
             to: "pi@example.test".into(),
             kind: "request".into(),
             body: "hello".into(),
             preview: true,
+        }
+    }
+    #[test]
+    fn inbox_headers_are_bounded_read_only_and_keep_identity_guards() {
+        let p = profile();
+        let mut r = request(Operation::InboxHeaders);
+        r.after_uid = Some(0);
+        let command = build_command(&p, &r, "ssh").unwrap();
+        assert!(command.ends_with("inbox --json --headers-only --limit 100 --after-uid 0"));
+        assert!(command.contains("#{session_created}"));
+        assert!(command.contains("[ \"$dssh_collab_actual\" = '/repo with space' ]"));
+        assert!(command.contains("[ -f '/repo with space/.dssh/agents/tmux-1-123/.agent-mail/env' ]"));
+        assert!(command.contains("AGENT_MAIL_HOME='/repo with space/.dssh/agents/tmux-1-123'"));
+        r.after_uid = Some(25);
+        r.through_uid = Some(4_294_967_295);
+        assert!(build_command(&p, &r, "ssh").unwrap().ends_with(
+            "inbox --json --headers-only --limit 100 --after-uid 25 --through-uid 4294967295"));
+        assert!(build_command(&p, &request(Operation::Inbox), "ssh").unwrap().ends_with("inbox --limit 20"));
+        let mut disabled = p.clone();
+        disabled.mail_enabled = false;
+        assert!(build_command(&disabled, &r, "ssh").is_err());
+        disabled = p.clone();
+        disabled.tmux_created = 0;
+        assert!(build_command(&disabled, &r, "ssh").is_err());
+    }
+    #[test]
+    fn inbox_headers_reject_invalid_numeric_pages_before_execution() {
+        for raw in [
+            r#"{"operation":"inboxHeaders","afterUid":-1}"#,
+            r#"{"operation":"inboxHeaders","afterUid":1.5}"#,
+            r#"{"operation":"inboxHeaders","afterUid":"0; touch /tmp/no"}"#,
+            r#"{"operation":"inboxHeaders","afterUid":4294967296}"#,
+            r#"{"operation":"inboxHeaders","afterUid":true}"#,
+            r#"{"operation":"inboxHeaders","afterUid":0,"throughUid":-1}"#,
+            r#"{"operation":"inboxHeaders","afterUid":0,"throughUid":4294967296}"#,
+            r#"{"operation":"inboxHeaders","afterUid":0,"limit":1000}"#,
+        ] {
+            assert!(serde_json::from_str::<Request>(raw).is_err(), "{raw}");
+        }
+        for raw in [
+            r#"{"operation":"inboxHeaders"}"#,
+            r#"{"operation":"inboxHeaders","afterUid":null}"#,
+            r#"{"operation":"inboxHeaders","afterUid":9,"throughUid":8}"#,
+            r#"{"operation":"inbox","afterUid":0}"#,
+        ] {
+            let r: Request = serde_json::from_str(raw).unwrap();
+            assert!(build_command(&profile(), &r, "ssh").is_err(), "{raw}");
         }
     }
     #[test]

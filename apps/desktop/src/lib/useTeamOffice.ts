@@ -1,18 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { collaborationRequest, type CollaborationProfile, type CollaborationSession } from "./collaboration";
 import { briefKey, fetchAgentSessions, matchSession, taskBrief } from "./agentSessions";
 import { boardSource, isIdentifier, type TaskLookupSettings } from "./taskLookup";
 import { loadTeamMappings, parseMember } from "./teamMembers";
-import { buildOfficeSnapshot, officeTeamSources, type OfficeBoard, type OfficeRoster, type OfficeSnapshot } from "./teamOffice";
+import { buildOfficeMailDirectory, type OfficeMailDirectory, buildOfficeSnapshot, officeTeamSources, type OfficeBoard, type OfficeRoster, type OfficeSnapshot } from "./teamOffice";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
 import type { ServerEntry } from "../types";
 
 interface CachedSource { fingerprint: string; identity: string; roster?: OfficeRoster; board?: OfficeBoard; fresh: boolean; }
 /** Main-only, demand-driven collection. A changed connection invalidates just its own source. */
-export function useTeamOffice({ profiles, servers, sessions, programSnapshots, lookupSettings, themeId, animationEnabled, enabled = false, officeExists = false }: {
+export function useTeamOffice({ profiles, servers, sessions, programSnapshots, lookupSettings, themeId, animationEnabled, enabled = false, officeExists = false, mailDirectoryRef }: {
   profiles: Record<string, CollaborationProfile>; servers: ServerEntry[]; sessions: CollaborationSession[];
   programSnapshots: Record<string, TmuxProgramSnapshot>; lookupSettings: TaskLookupSettings;
-  themeId: string; animationEnabled: boolean; enabled?: boolean; officeExists?: boolean;
+  themeId: string; animationEnabled: boolean; enabled?: boolean; officeExists?: boolean; mailDirectoryRef?: MutableRefObject<OfficeMailDirectory>;
 }) {
   const active = enabled || officeExists;
   const stable = useRef<{content:string;snapshot:OfficeSnapshot}>({content:"",snapshot:{version:1,themeId,animationEnabled,mailAvailability:"unavailable",projects:[]}});
@@ -118,6 +118,7 @@ export function useTeamOffice({ profiles, servers, sessions, programSnapshots, l
       if((exact || sameSource) && entry.roster)rosters[source.id]=entry.roster;
       if(exact && entry.board)boards[source.id]=entry.board;
     }
+    if(mailDirectoryRef)mailDirectoryRef.current=buildOfficeMailDirectory(sources,rosters);
     return buildOfficeSnapshot(sources,rosters,{servers,sessions,programSnapshots,mapping,boards,themeId,animationEnabled});
   },[buildKey,active]);
   const content=active ? JSON.stringify(result) : stable.current.content;

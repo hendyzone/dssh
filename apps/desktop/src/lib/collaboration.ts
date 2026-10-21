@@ -114,15 +114,20 @@ export function useCollaboration() {
   }, []);
   return profiles;
 }
-export type CollaborationOperation = "context" | "inbox" | "read" | "send" | "reply" | "members" | "memberSave" | "memberRemove" | "memberNotes" | "memberLease";
+export type CollaborationOperation = "context" | "inbox" | "inboxHeaders" | "read" | "send" | "reply" | "members" | "memberSave" | "memberRemove" | "memberNotes" | "memberLease";
 export interface CollaborationRequest {
   operation: CollaborationOperation;
   task?: string; uid?: string; to?: string; kind?: string; body?: string; preview?: boolean;
+  afterUid?: number; throughUid?: number;
 }
 export async function collaborationRequest(sessionId:string, profile:CollaborationProfile, request:CollaborationRequest):Promise<string> {
   if (!profile.enabled) throw new Error("Agent 协作未开启");
   const error = profileError(profile); if(error) throw new Error(error);
   if (!sessionId) throw new Error("请先连接此服务器");
-  if (request.operation === "context" ? !profile.taskboardEnabled : ["inbox","read","send","reply"].includes(request.operation) && !profile.mailEnabled) throw new Error("该服务未开启");
+  if (request.operation === "context" ? !profile.taskboardEnabled : ["inbox","inboxHeaders","read","send","reply"].includes(request.operation) && !profile.mailEnabled) throw new Error("该服务未开启");
+  if (request.operation === "inboxHeaders") {
+    const validUid = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
+    if (!validUid(request.afterUid) || (request.throughUid !== undefined && (!validUid(request.throughUid) || request.throughUid < request.afterUid))) throw new Error("邮件分页 UID 无效");
+  } else if (request.afterUid !== undefined || request.throughUid !== undefined) throw new Error("邮件分页参数仅用于只读信头");
   return invoke("collaboration_request", {sessionId, profile, request});
 }

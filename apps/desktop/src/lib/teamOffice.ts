@@ -6,6 +6,30 @@ import { sameSshEndpoint } from "./tmuxTabs";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
 import type { ServerEntry } from "../types";
 
+export type OfficeMailEndpoint = {kind:"station";sourceId:string;memberId:string} | {kind:"edge"};
+export interface OfficeMailEvent { id:string; uid:number; kind:string|null; from:OfficeMailEndpoint; to:OfficeMailEndpoint; }
+export interface OfficeMailView {
+  sequence:number; reset:number; expiresAt:number; events:OfficeMailEvent[]; overflow:number;
+  availability:"ready"|"loading"|"error"|"unavailable";
+}
+/** Main-memory only; addresses are never included in OfficeSnapshot. */
+export type OfficeMailDirectory = Map<string, OfficeMailEndpoint[]>;
+export function officeMailAddress(address:string):string {
+  const value=address.trim();const at=value.lastIndexOf("@");
+  return at>0 ? value.slice(0,at)+"@"+value.slice(at+1).toLowerCase() : value;
+}
+export function buildOfficeMailDirectory(sources:OfficeTeamSource[],rosters:Record<string,OfficeRoster>):OfficeMailDirectory {
+  const directory:OfficeMailDirectory=new Map();
+  for(const source of sources)for(const member of rosters[source.id]?.availability==="ready"?rosters[source.id].members:[]){
+    if(!member.email)continue;
+    const address=officeMailAddress(member.email);
+    const matches=directory.get(address)??[];
+    matches.push({kind:"station",sourceId:source.id,memberId:officeKey(JSON.stringify([source.id,memberKey(member)]))});
+    directory.set(address,matches);
+  }
+  return directory;
+}
+
 export interface OfficeMember {
   id: string; name: string; isLead: boolean; status: TeamAvatarStatus;
   taskText: string; taskSource: "board" | "manual" | "none"; paletteKey: string;
@@ -18,7 +42,7 @@ export interface OfficeProject { id: string; name: string; sources: OfficeSource
 /** Presentation-only allowlist: never send server records, profiles, handles or mail bodies. */
 export interface OfficeSnapshot {
   version: 1; themeId: string; animationEnabled: boolean;
-  mailAvailability: "unavailable"; projects: OfficeProject[];
+  mailAvailability: "unavailable"; projects: OfficeProject[]; mail?:OfficeMailView;
 }
 /** Internal main-window transport; deliberately separate from OfficeSnapshot. */
 export interface OfficeTeamSource {
