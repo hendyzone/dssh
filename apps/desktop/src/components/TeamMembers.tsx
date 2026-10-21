@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { collaborationRequest, resolveWorktree, type CollaborationProfile, type CollaborationSession } from "../lib/collaboration";
 import { loadTeamMappings, matchingServers, memberKey, memberMappingKey, memberNoteFields, parseMember, TEAM_MAPPING_KEY, type MemberNoteField, type TeamMember } from "../lib/teamMembers";
 import { teamLeadPrompt } from "../lib/teamLeadPrompt";
@@ -9,8 +9,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import TeamMemberNotes from "./TeamMemberNotes";
 import TeamDynamics from "./TeamDynamics";
-import { STATUS_GROUPS, briefKey, isLeadMember, liveSnapshot, rankMembers, summarizeTeam, useAgentSessions } from "../lib/agentSessions";
-import TeamLiveSummary from "./TeamLiveSummary";
+import { liveSnapshot, useAgentSessions } from "../lib/agentSessions";
 
 export interface TeamNavigation {
   server: ServerEntry;
@@ -19,13 +18,17 @@ export interface TeamNavigation {
   onOpen: (member: TeamMember, server: ServerEntry) => Promise<void>;
 }
 
+/**
+ * Team panel shell: roster IO, add/update form, notes editor and the shared toolbar actions.
+ * The list itself is the single merged view in TeamDynamics (no 「动态 / 成员」 tabs):
+ * management operations live in each member's expandable details.
+ */
 export default function TeamMembers({ sessionId, profile, navigation, board }: {
   sessionId: string; profile: CollaborationProfile; navigation: TeamNavigation;
   /** Read-only taskboard (the same source as the task lookup above) for live member status. */
   board?: BoardSource;
 }) {
   const [members, setMembers] = useState<TeamMember[]>([]);
-  const [view,setView]=useState<"activity"|"members">("activity");
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState("");
   const [role, setRole] = useState("");
@@ -36,15 +39,12 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
   const [busy, setBusy] = useState(false);
   const [mapping, setMapping] = useState(loadTeamMappings);
   const [noteMember, setNoteMember] = useState<string>();
-  const [managedMember, setManagedMember] = useState<string>();
 
   const [noteDraft, setNoteDraft] = useState<Partial<Record<MemberNoteField,string>>>({});
   const leadPrompt = teamLeadPrompt(profile,navigation.server);
-  // One collector poll for both pages, so 「动态」 and 「成员」 always show the same snapshot.
+  // One collector poll feeds the merged list, so status and details read the same snapshot.
   const live = useAgentSessions(board, members);
   const snapshot = liveSnapshot(live);
-  const isLead = (m:TeamMember) => isLeadMember(m,{...profile,username:navigation.server.username});
-  const ranked = rankMembers(members, snapshot, isLead);
   const pending = useRef(false);
   const generation = useRef(0);
   const choices = (navigation.sessions ?? []).filter(s=>s.pane.tmux && s.backendId);
@@ -69,7 +69,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
     return () => { generation.current++; pending.current = false; };
   }, [sessionId, profile]);
   const disabled = busy || !sessionId || !profile.enabled;
-  const startAdd = (member?:TeamMember) => {setView("members");setAdding(true);setEditing(member);setRole(member?.role??"");setSelected("");setError("");};
+  const startAdd = (member?:TeamMember) => {setAdding(true);setEditing(member);setRole(member?.role??"");setSelected("");setError("");};
   const setConnection = (member:TeamMember, id:string) => {
     try {
       const next = {...loadTeamMappings(), [memberMappingKey(member)]:id};
@@ -81,88 +81,60 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
       <option value="">选择对应服务器</option>{navigation.servers.map(s=><option value={s.id} key={s.id}>{s.name} · {s.username}@{s.host}:{s.port}</option>)}
     </select>
   </label>;
-  return <section className="team-members" aria-label="团队成员">
-    <div className="team-toolbar"><div className="team-view-switch" aria-label="团队视图">
-      <Button size="sm" variant={view==="activity"?"secondary":"ghost"} aria-pressed={view==="activity"} onClick={()=>setView("activity")}>动态</Button>
-      <Button size="sm" variant={view==="members"?"secondary":"ghost"} aria-pressed={view==="members"} onClick={()=>setView("members")}>成员 {members.length}</Button>
-    </div><div className="collaboration-actions">
-      <Button size="icon-sm" variant="ghost" aria-label="刷新成员" disabled={disabled} onClick={()=>void run(()=>request("members"))}><RefreshCw size={15}/></Button>
-      <Button size="sm" disabled={disabled} onClick={()=>startAdd()}><Plus size={14}/> 添加成员</Button>
-    </div></div>
-    {error && <p role="alert" className="collaboration-error">{error}</p>}
-    {notice && <p role="status">{notice}</p>}
-    <div hidden={view!=="activity"}>
-      <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} board={board} live={live} onUpdated={()=>request("members")}/>
-    </div>
-    <div hidden={view!=="members"} className="team-roster-view">
-    <div className="team-lead-guide">
-      <Button size="sm" disabled={busy} onClick={()=>void run(async current=>{
-        try {await navigator.clipboard.writeText(leadPrompt);} catch {throw new Error("复制失败，请展开“查看提示词”手动复制。");}
-        if(current())setNotice("提示词已复制，请粘贴到 Lead 对话。执行完成后刷新成员。");
-      })}>复制给 Lead 的提示词</Button>
-      <details><summary>查看提示词</summary><p>贴给 Lead 批量登记成员和维护备注，完成后刷新成员。</p><textarea aria-label="给 Lead 的团队管理提示词" readOnly value={leadPrompt}/></details>
-    </div>
-    {busy && <p role="status">正在处理…</p>}
-    {!sessionId && <p role="status">连接 Lead 终端后即可读取团队。</p>}
-    {!members.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>点击「添加成员」，从已打开的终端中选择。成员可以在不同服务器上。</p></div>}
-    {adding && <div className="team-add" aria-label="添加成员表单">
-      <strong>{editing ? `更新 ${editing.role} 的终端` : "选择一个成员终端"}</strong>
-      <label className="collaboration-field">成员终端<select value={selected} disabled={busy} onChange={e=>{
-        setSelected(e.target.value); const next=choices.find(s=>s.pane.id===e.target.value); if(!editing)setRole(next?.pane.tmux?.name??"");
-      }}><option value="">选择已打开的终端</option>{choices.map(s=><option key={s.pane.id} value={s.pane.id}>{s.pane.tmux?.name} · {s.pane.server.name}</option>)}</select></label>
-      {!choices.length && <p>先从左侧连接成员的服务器，在 tmux 列表打开它的会话，然后回到这里添加。</p>}
-      <label className="collaboration-field">成员名称<Input value={role} disabled={busy} onChange={e=>setRole(e.target.value)} placeholder="例如 后端开发"/></label>
-      <div className="collaboration-actions"><Button size="sm" disabled={disabled || !candidate || !role.trim()} onClick={()=>void run(async current=>{
-        if(!candidate?.pane.tmux)return;
-        const {pane,backendId}=candidate;
-        const workdir=await resolveWorktree(backendId,pane.tmux!);
-        if(!current())return;
-        const existing=editing??members.find(m=>m.host===pane.server.host && m.port===pane.server.port && m.username===pane.server.username && m.tmux.id===pane.tmux!.id && m.tmux.created===pane.tmux!.created);
-        const member=parseMember({id:existing?.id??`member-${crypto.randomUUID()}`,email:existing?.email??"",role:role.trim(),project:profile.project,host:pane.server.host,port:pane.server.port,username:pane.server.username,workdir,tmux:pane.tmux},profile.project);
-        await request("memberSave",JSON.stringify(member));
-        if(current()){setAdding(false);setEditing(undefined);setNotice(`${member.role} 已加入团队，可以直接打开终端。`);}
-      })}>{editing?"更新终端":"加入团队"}</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>setAdding(false)}>取消</Button></div>
-      <p>服务器和工作目录会自动读取，不需要配置邮箱。</p>
-    </div>}
-    {!!members.length && <TeamLiveSummary board={board} live={live} summary={summarizeTeam(ranked.filter(r=>!isLead(r.member)),snapshot)}/>}
-    {STATUS_GROUPS.map(({key:groupKey,label:groupLabel,title:groupTitle})=>{
-      const group=ranked.filter(r=>r.status.group===groupKey);
-      if(!group.length)return null;
-      return <section className={`team-activity-group team-live-group-${groupKey}`} key={groupKey} aria-label={`${groupLabel}成员`}>
-        <div className="team-activity-heading" title={groupTitle}><strong>{groupLabel}</strong><span>{group.length}</span></div>
-        {group.map(({member,session,status})=>{
-      const matches=matchingServers(member,navigation.servers);
-      const selectedServer=mapping[memberMappingKey(member)]??(matches.length===1?matches[0].id:"");
-      const server=navigation.servers.find(s=>s.id===selectedServer);
-      const brief=session?.taskCode?live.briefs[briefKey(session.project,session.taskCode)]:undefined;
-      return <article key={memberKey(member)} className={`team-card${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} data-group={status.group}>
-        <div className="team-card-main"><span className="team-avatar"><Terminal size={15}/></span><div className="team-card-title"><strong title={member.role}>{member.role}</strong><p title={`${server?.name??member.host} · ${member.tmux.name}`}><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small className="team-live-duration"> {status.duration}</small>} {server?.name??member.host}{member.tmux.name!==member.role ? ` · ${member.tmux.name}` : ""}</p></div></div>
-        {session&&<p className="team-card-extra team-live-current"><strong>当前</strong>{session.taskCode?<span className="team-live-task"><b>{session.taskCode}</b>{session.taskStatus&&<em>{live.statusNames[briefKey(session.project,session.taskStatus)]??session.taskStatus}</em>}{(brief?.brief||brief?.title)&&<span>{brief.brief||brief.title}</span>}</span>:<span className="team-live-task is-empty">无当前卡</span>}</p>}
-        <div className="team-card-actions"><Button className="team-open" size="sm" disabled={disabled||!server} aria-label={`打开终端 · ${member.role}`} onClick={()=>server&&void run(()=>navigation.onOpen(member,server))}>打开</Button><Button size="sm" variant="ghost" aria-expanded={managedMember===memberKey(member)} onClick={()=>setManagedMember(old=>old===memberKey(member)?undefined:memberKey(member))}>管理</Button></div>
-        <TeamMemberNotes member={member} nowMs={snapshot?snapshot.now*1000:undefined}/>
-        {noteMember===memberKey(member) && <div className="team-card-extra team-member-notes">
-          {noteMember===memberKey(member) ? <div className="team-notes-editor">
-            {(Object.entries(memberNoteFields).filter(([key])=>key!=="quota") as [MemberNoteField,string][]).map(([key,label])=><label className="collaboration-field" key={key}>{label}<textarea maxLength={2000} disabled={busy} value={noteDraft[key]??""} onChange={e=>setNoteDraft(old=>({...old,[key]:e.target.value}))}/></label>)}
-            <div className="collaboration-actions"><Button size="sm" disabled={disabled} onClick={()=>void run(async current=>{
-              await request("memberNotes",JSON.stringify({project:profile.project,id:member.id,email:member.email,...noteDraft}));
-              if(current()){setNoteMember(undefined);setNotice("成员备注已保存。");}
-            })}>保存备注</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>setNoteMember(undefined)}>取消备注编辑</Button></div>
-          </div>:null}
-        </div>}
-        {!server && <div className="team-card-extra"><p>为这位成员选择本机的 SSH 连接。</p>{connectionSelect(member)}{!navigation.servers.length&&<p>请先在左侧添加服务器。</p>}</div>}
-        {managedMember===memberKey(member) && <div className="team-card-extra team-manage team-manage-content">
-          <p>{member.username}@{member.host}:{member.port}</p><p>{member.workdir}</p>{member.email&&<p>{member.email}</p>}
-          <p>信息更新：{member.updatedAt?new Date(member.updatedAt).toLocaleString():"未知"}（不代表在线）</p>
-          {server&&connectionSelect(member,server)}
-          <div className="collaboration-actions"><Button size="sm" variant="ghost" disabled={disabled} aria-label={`编辑备注 · ${member.role}`} onClick={()=>{
-            setNoteMember(memberKey(member));setNoteDraft(Object.fromEntries(Object.keys(memberNoteFields).filter(key=>key!=="quota").map(key=>[key,member[key as MemberNoteField]??""])));
-          }}>编辑备注</Button><Button size="sm" variant="ghost" disabled={disabled} onClick={()=>startAdd(member)}>更新终端</Button>
-            <Button size="sm" variant="ghost" disabled={disabled} onClick={()=>void run(()=>request("memberRemove",memberKey(member)))}>从团队移除</Button></div>
-        </div>}
-      </article>;
-        })}
-      </section>;
-    })}
+  const copyLeadPrompt = () => void run(async current=>{
+    try {await navigator.clipboard.writeText(leadPrompt);} catch {throw new Error("复制失败，请展开“查看提示词”手动复制。");}
+    if(current())setNotice("提示词已复制，请粘贴到 Lead 对话。执行完成后刷新成员。");
+  });
+  /** Member management, rendered inside each member's expandable details. */
+  const renderMemberAdmin = (member:TeamMember) => {
+    const matches=matchingServers(member,navigation.servers);
+    const selectedServer=mapping[memberMappingKey(member)]??(matches.length===1?matches[0].id:"");
+    const server=navigation.servers.find(s=>s.id===selectedServer);
+    const key=memberKey(member);
+    return <>
+      <TeamMemberNotes member={member} nowMs={snapshot?snapshot.now*1000:undefined}/>
+      {noteMember===key && <div className="team-card-extra team-member-notes">
+        <div className="team-notes-editor">
+          {(Object.entries(memberNoteFields).filter(([key])=>key!=="quota") as [MemberNoteField,string][]).map(([field,label])=><label className="collaboration-field" key={field}>{label}<textarea maxLength={2000} disabled={busy} value={noteDraft[field]??""} onChange={e=>setNoteDraft(old=>({...old,[field]:e.target.value}))}/></label>)}
+          <div className="collaboration-actions"><Button size="sm" disabled={disabled} onClick={()=>void run(async current=>{
+            await request("memberNotes",JSON.stringify({project:profile.project,id:member.id,email:member.email,...noteDraft}));
+            if(current()){setNoteMember(undefined);setNotice("成员备注已保存。");}
+          })}>保存备注</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>setNoteMember(undefined)}>取消备注编辑</Button></div>
+        </div>
+      </div>}
+      <div className="team-card-extra team-manage team-manage-content">
+        <p>{member.username}@{member.host}:{member.port}</p><p>{member.workdir}</p>{member.email&&<p>{member.email}</p>}
+        <p>信息更新：{member.updatedAt?new Date(member.updatedAt).toLocaleString():"未知"}（不代表在线）</p>
+        {server?connectionSelect(member,server):<><p>为这位成员选择本机的 SSH 连接。</p>{connectionSelect(member)}{!navigation.servers.length&&<p>请先在左侧添加服务器。</p>}</>}
+        <div className="collaboration-actions"><Button size="sm" variant="ghost" disabled={disabled} aria-label={`编辑备注 · ${member.role}`} onClick={()=>{
+          setNoteMember(key);setNoteDraft(Object.fromEntries(Object.keys(memberNoteFields).filter(field=>field!=="quota").map(field=>[field,member[field as MemberNoteField]??""])));
+        }}>编辑备注</Button><Button size="sm" variant="ghost" disabled={disabled} onClick={()=>startAdd(member)}>更新终端</Button>
+          <Button size="sm" variant="ghost" disabled={disabled} onClick={()=>void run(()=>request("memberRemove",key))}>从团队移除</Button></div>
+      </div>
+    </>;
+  };
+  const addForm = adding ? <div className="team-add" aria-label="添加成员表单">
+    <strong>{editing ? `更新 ${editing.role} 的终端` : "选择一个成员终端"}</strong>
+    <label className="collaboration-field">成员终端<select value={selected} disabled={busy} onChange={e=>{
+      setSelected(e.target.value); const next=choices.find(s=>s.pane.id===e.target.value); if(!editing)setRole(next?.pane.tmux?.name??"");
+    }}><option value="">选择已打开的终端</option>{choices.map(s=><option key={s.pane.id} value={s.pane.id}>{s.pane.tmux?.name} · {s.pane.server.name}</option>)}</select></label>
+    {!choices.length && <p>先从左侧连接成员的服务器，在 tmux 列表打开它的会话，然后回到这里添加。</p>}
+    <label className="collaboration-field">成员名称<Input value={role} disabled={busy} onChange={e=>setRole(e.target.value)} placeholder="例如 后端开发"/></label>
+    <div className="collaboration-actions"><Button size="sm" disabled={disabled || !candidate || !role.trim()} onClick={()=>void run(async current=>{
+      if(!candidate?.pane.tmux)return;
+      const {pane,backendId}=candidate;
+      const workdir=await resolveWorktree(backendId,pane.tmux!);
+      if(!current())return;
+      const existing=editing??members.find(m=>m.host===pane.server.host && m.port===pane.server.port && m.username===pane.server.username && m.tmux.id===pane.tmux!.id && m.tmux.created===pane.tmux!.created);
+      const member=parseMember({id:existing?.id??`member-${crypto.randomUUID()}`,email:existing?.email??"",role:role.trim(),project:profile.project,host:pane.server.host,port:pane.server.port,username:pane.server.username,workdir,tmux:pane.tmux},profile.project);
+      await request("memberSave",JSON.stringify(member));
+      if(current()){setAdding(false);setEditing(undefined);setNotice(`${member.role} 已加入团队，可以直接打开终端。`);}
+    })}>{editing?"更新终端":"加入团队"}</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>setAdding(false)}>取消</Button></div>
+    <p>服务器和工作目录会自动读取，不需要配置邮箱。</p>
+  </div> : undefined;
+  const more = <>
+    <Button size="sm" disabled={busy} onClick={copyLeadPrompt}>复制给 Lead 的提示词</Button>
+    <details className="team-lead-guide"><summary>查看提示词</summary><p>贴给 Lead 批量登记成员和维护备注，完成后刷新成员。</p><textarea aria-label="给 Lead 的团队管理提示词" readOnly value={leadPrompt}/></details>
     <details><summary>高级：导入或分享成员位置</summary>
       <p className="team-footnote">团队保存在 Lead 工作区，换电脑后连接同一工作区即可继续使用。</p>
       <p>需要从其他设备转移成员位置时使用。</p>
@@ -180,6 +152,14 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
         setPosition(JSON.stringify(parseMember({id:existing?.id??`member-${crypto.randomUUID()}`,email:existing?.email??"",project:profile.project,role:existing?.role??profile.tmuxName,host:navigation.server.host,port:navigation.server.port,username:navigation.server.username,workdir:profile.workdir,tmux:{id:profile.tmuxId,created:profile.tmuxCreated,name:profile.tmuxName}},profile.project),null,2));
       })}>生成当前会话位置</Button></div>
     </details>
-    </div>
+  </>;
+  return <section className="team-members" aria-label="团队成员">
+    {error && <p role="alert" className="collaboration-error">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
+    {busy && <p role="status">正在处理…</p>}
+    {!sessionId && <p role="status">连接 Lead 终端后即可读取团队。</p>}
+    <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} board={board} live={live} onUpdated={()=>request("members")}
+      onRefresh={()=>void run(()=>request("members"))} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>
+    {!members.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>点击「添加成员」，从已打开的终端中选择。成员可以在不同服务器上。</p></div>}
   </section>;
 }

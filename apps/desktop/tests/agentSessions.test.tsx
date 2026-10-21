@@ -273,7 +273,7 @@ it("renders live status, card brief, last commit, dirty files and model without 
   expect(within(first).getByText("15 分钟")).toBeTruthy();
   expect(within(first).getByText("待验收")).toBeTruthy();
   expect(within(first).getByText("只有标题的卡")).toBeTruthy();
-  expect(within(document.querySelector(".team-live-group-attention") as HTMLElement).getAllByRole("group")).toHaveLength(1);
+  expect([...document.querySelectorAll(".team-live-group-attention .team-live-row")]).toHaveLength(1);
   expect(within(second).getByText("运行中")).toBeTruthy();
   expect(within(second).getByText("T0504")).toBeTruthy();
   expect(within(second).getByText("进行中")).toBeTruthy();
@@ -281,7 +281,9 @@ it("renders live status, card brief, last commit, dirty files and model without 
   expect(within(second).getByText("Gemini 4")).toBeTruthy();
   expect(within(second).getByText("提交 2 小时前 · chore(s4): apply review")).toBeTruthy();
   expect(within(third).getByText("空闲·可派活")).toBeTruthy();
-  expect(within(third).getByText("无当前卡")).toBeTruthy();
+  // 空闲成员是可派活的紧凑行；没有当前卡时不再显示「无当前卡」空信息
+  expect(third.classList.contains("team-compact-row")).toBe(true);
+  expect(screen.queryByText("无当前卡")).toBeNull();
   // AI summary stays on demand.
   expect(screen.getByRole("button", { name: "总结 · cw1-pi" })).toBeTruthy();
   expect(mocks.invoke.mock.calls.every(([command]) => command === "taskboard_get")).toBe(true);
@@ -352,64 +354,60 @@ function fakeTeam(command: string, args: { path?: string; request?: { operation:
 }
 const statusByMember = (scope: ParentNode, rowSelector: string, nameOf: (row: Element) => string) =>
   Object.fromEntries([...scope.querySelectorAll(rowSelector)].map(r => [nameOf(r), [r.getAttribute("data-group"), r.querySelector(".team-live-badge")?.textContent]]));
-const views = () => ({
-  dynamics: statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!),
-  roster: statusByMember(document, ".team-roster-view article.team-card", r => r.querySelector(".team-card-title strong")!.textContent!),
-});
+
 const rosterNavigation = { server, servers: [server], onOpen: vi.fn() };
 const rosterProfile = { ...profile, membersEnabled: true };
 
-it("「动态」 and 「成员」 show the same live status, groups and summary; 「当前」 is live and the hand-written note is 「Lead 备注」 with its age", async () => {
+it("the merged list shows live status, groups and the clickable summary; Lead is not a row", async () => {
   state.sessions = teamSessions();
   mocks.invoke.mockImplementation(fakeTeam);
   render(<TeamMembers sessionId="ssh" profile={rosterProfile} navigation={rosterNavigation} board={board}/>);
-  await waitFor(() => expect(document.querySelectorAll(".team-roster-view .team-live-badge")).toHaveLength(6));
+  await waitFor(() => expect(document.querySelectorAll(".team-live-row")).toHaveLength(5));
   await screen.findAllByText("告警带设备标识时主动去查");
-  const { dynamics, roster } = views();
+  const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
   const expected = {
     stuck: ["attention", "卡住：429"], wait: ["waitLead", "等 Lead"], review: ["review", "已交付·待验收"],
     run: ["running", "运行中"], free: ["available", "空闲·可派活"],
   };
   expect(dynamics).toEqual(expected);
-  // The roster also lists the Lead (never 「等 Lead」/「可派活」); everyone else reads exactly as on 「动态」.
-  expect(roster).toEqual({ ...expected, Lead: ["lead", "空闲"] });
-  // Same order on both pages.
-  const order = (sel: string, name: string) => [...document.querySelectorAll(sel)].map(r => r.querySelector(name)!.textContent);
-  expect(order(".team-dynamics .team-live-row", ".team-ai-identity")).toEqual(["stuckworker-demo-stuck", "waitworker-demo-wait", "reviewworker-demo-review", "runworker-demo-run", "freeworker-demo-free"]);
-  expect(order(".team-roster-view article.team-card", ".team-card-title strong")).toEqual(["Lead", "stuck", "wait", "review", "run", "free"]);
-  // One summary text on both pages; the Lead is not counted.
-  const summaries = [...document.querySelectorAll(".team-live-summary")].map(e => e.textContent);
-  expect(summaries).toEqual(["需要处理 1等 Lead 1（最长 5 小时）待验收 1可派活 1", "需要处理 1等 Lead 1（最长 5 小时）待验收 1可派活 1"]);
-  // 等 Lead is highlighted yellow on both pages.
-  expect(document.querySelectorAll(".team-live-wait-lead")).toHaveLength(2);
-  // 「当前」 on the roster comes from the collector, not the stale hand-written note.
-  const card = (name: string) => [...document.querySelectorAll(".team-roster-view article.team-card")].find(r => r.querySelector(".team-card-title strong")!.textContent === name) as HTMLElement;
-  expect(within(card("run")).getByText("T0504")).toBeTruthy();
-  expect(within(card("run")).getByText("告警带设备标识时主动去查")).toBeTruthy();
-  expect(within(card("wait")).getByText("T7")).toBeTruthy();
-  expect(within(card("wait")).getByText("Lead 备注")).toBeTruthy();
-  expect(within(card("wait")).getByText(/2 天前 · 可能过期/)).toBeTruthy();
-  expect(within(card("free")).getByText("1 小时前").classList.contains("is-stale")).toBe(false);
-  expect(within(card("free")).queryByText(/可能过期/)).toBeNull();
-  expect(document.querySelector(".team-roster-view")?.textContent).not.toMatch(/工作中（/);
-  // One collector poll serves both pages.
+  // 紧急度排序仍是 需要处理 → 等 Lead → 待验收 → 运行中 → 空闲
+  expect([...document.querySelectorAll(".team-live-group")].map(g => g.getAttribute("aria-label")))
+    .toEqual(["需要处理成员", "等 Lead成员", "已交付·待验收成员", "运行中成员", "空闲·可派活成员"]);
+  // 概览是三个可点的计数块（Lead 不计入）
+  const chips = [...document.querySelectorAll(".team-live-counts button")].map(b => [b.querySelector("span")?.textContent, b.querySelector("b")?.textContent]);
+  expect(chips).toEqual([["需要处理", "1"], ["等 Lead", "1"], ["可派活", "1"]]);
+  // 待验收仍有分组，计数在组标题
+  expect(document.querySelector(".team-live-group-review .team-activity-heading")?.textContent).toContain("已交付·待验收");
+  // 等 Lead 仍带黄色左边框标记
+  expect(document.querySelectorAll(".team-live-wait-lead").length).toBeGreaterThan(0);
+  // Lead 不再是列表行
+  expect([...document.querySelectorAll(".team-live-row .team-ai-identity")].map(e => e.textContent)).not.toContain("Lead");
+  const rowOf = (name: string) => [...document.querySelectorAll(".team-dynamics .team-live-row")]
+    .find(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent === name) as HTMLElement;
+  expect(within(rowOf("run")).getByText("T0504")).toBeTruthy();
+  expect(within(rowOf("run")).getByText("告警带设备标识时主动去查")).toBeTruthy();
+  expect(within(rowOf("wait")).getByText("T7")).toBeTruthy();
+  expect(within(rowOf("wait")).getByText("Lead 备注")).toBeTruthy();
+  expect(within(rowOf("wait")).getByText(/2 天前 · 可能过期/)).toBeTruthy();
+  expect(within(rowOf("free")).getByText("1 小时前").classList.contains("is-stale")).toBe(false);
+  // 合并后只有一份采集
   expect(state.paths.filter(p => p.endsWith("/agent-sessions"))).toHaveLength(1);
 });
 
-it("both pages fall back to the hand-written state and say 「看板离线」 when the board is unreachable", async () => {
+it("the merged list falls back to the hand-written state and says 「看板离线」 when the board is unreachable", async () => {
   state.offline = true;
   mocks.invoke.mockImplementation(fakeTeam);
   render(<TeamMembers sessionId="ssh" profile={rosterProfile} navigation={rosterNavigation} board={board}/>);
-  await waitFor(() => expect(document.querySelectorAll(".team-live-offline")).toHaveLength(2));
+  await waitFor(() => expect(document.querySelectorAll(".team-live-offline")).toHaveLength(1));
   expect(screen.queryByRole("alert")).toBeNull();
-  const { dynamics, roster } = views();
-  const expected = {
+  const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
+  expect(dynamics).toEqual({
     run: ["rosterUnknown", "待确认（手写）"], wait: ["rosterWorking", "工作中（手写）"], review: ["rosterUnknown", "待确认（手写）"],
     free: ["rosterWorking", "工作中（手写）"], stuck: ["rosterUnknown", "待确认（手写）"],
-  };
-  expect(dynamics).toEqual(expected);
-  expect(roster).toEqual({ ...expected, Lead: ["lead", "工作中（手写）"] });
-  expect(document.querySelectorAll(".team-live-summary")).toHaveLength(0);
-  // Dynamics shows the hand-written note in place of the live card.
-  expect(document.querySelector(".team-dynamics .team-live-task.is-roster")?.textContent).toBe("Lead 备注工作中·T7 等合入");
+  });
+  // 看板离线时不显示实时计数块
+  expect(document.querySelectorAll(".team-live-counts")).toHaveLength(0);
+  // 看板离线时用 Lead 备注顶替实时信息
+  expect([...document.querySelectorAll(".team-dynamics .team-compact-card.is-roster")].map(e => e.textContent))
+    .toEqual(["工作中·T7 等合入", "工作中·T5"]);
 });

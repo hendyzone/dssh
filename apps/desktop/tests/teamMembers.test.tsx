@@ -2,31 +2,55 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import TeamMembers from "../src/components/TeamMembers";
+import TeamDynamics from "../src/components/TeamDynamics";
 import TeamPanel from "../src/components/TeamPanel";
 import ToolRail from "../src/components/ToolRail";
 import { teamLeadPrompt } from "../src/lib/teamLeadPrompt";
 import { collaborationKey, emptyProfile, loadCollaboration, saveCollaboration } from "../src/lib/collaboration";
 import { connectedMemberTab, matchingServers, parseMember, type TeamMember } from "../src/lib/teamMembers";
 import type { ServerEntry } from "../src/types";
+import type { AgentSession, LiveSessions } from "../src/lib/agentSessions";
+import type { BoardSource } from "../src/lib/taskLookup";
 
 vi.mock("@tauri-apps/api/core", () => ({invoke:vi.fn()}));
 const member:TeamMember = {project:"demo", email:"worker@example.test", role:"cw2", host:"remote", port:22, username:"dev", workdir:"/repo", tmux:{id:"$2", created:123, name:"worker"}};
 const server:ServerEntry = {id:"local-device-id", name:"开发机", host:"remote", port:22, username:"dev", authMethod:"password"};
 const profile = {...emptyProfile(), enabled:true, taskboardEnabled:true, project:"demo", workdir:"/lead", tmuxId:"$1", tmuxCreated:100, tmuxName:"lead", taskboardUrl:"https://board.test"};
+
+/** Open a closed <details> the way the panel's own onToggle state expects. */
+async function expand(el: HTMLElement | null) {
+  const details = el?.closest("details");
+  if (!details) throw new Error("details not found");
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+  await waitFor(() => expect((el!.closest("details") as HTMLDetailsElement).open).toBe(true));
+  await new Promise(resolve => setTimeout(resolve, 20));   // 让 React 提交这次展开
+  return details;
+}
+
 beforeEach(() => { localStorage.clear(); vi.mocked(invoke).mockReset().mockResolvedValue(JSON.stringify([member])); });
 
-it("defaults to activity and switches roster views without remounting summaries",async()=>{
+it("renders one merged team view without tabs and keeps member actions reachable",async()=>{
   const onOpen=vi.fn().mockResolvedValue(undefined);
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen}}/>);
   const dynamics=screen.getByRole("region",{name:"团队动态"});
+  expect(dynamics).toBeTruthy();
+  // 页签已合并：不再有「动态 / 成员」切换按钮
+  expect(screen.queryByRole("button",{name:/^成员 \d+$/})).toBeNull();
+  expect(screen.queryByRole("button",{name:"动态"})).toBeNull();
   fireEvent.click(await screen.findByRole("button",{name:"打开 · cw2 · worker"}));
   await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(member,server));
-  expect(screen.queryByRole("button",{name:"复制给 Lead 的提示词"})).toBeNull();
-  fireEvent.click(screen.getByRole("button",{name:"成员 1"}));
-  expect(screen.queryByRole("region",{name:"团队动态"})).toBeNull();
+  // 原成员页的管理操作都在每人的展开详情里（先展开所在分组与该成员）
+  await expand(await screen.findByText("待确认（Lead 手写）"));
+  await expand(screen.getByRole("button",{name:"打开 · cw2 · worker"}));
+  expect(screen.getByRole("button",{name:"编辑备注 · cw2"})).toBeTruthy();
+  expect(screen.getByRole("button",{name:"更新终端"})).toBeTruthy();
+  expect(screen.getByRole("button",{name:"从团队移除"})).toBeTruthy();
+  expect(screen.getByRole("button",{name:"打开终端 · cw2"})).toBeTruthy();
+  // 复制提示词收进「更多」
+  await expand(await screen.findByText("更多"));
   expect(screen.getByRole("button",{name:"复制给 Lead 的提示词"})).toBeTruthy();
-  expect(document.querySelector(".team-roster-view .team-member-avatar")).toBeNull();
-  fireEvent.click(screen.getByRole("button",{name:"动态"}));
+  expect(document.querySelector(".team-members .team-member-avatar")).toBeNull();
   expect(screen.getByRole("region",{name:"团队动态"})).toBe(dynamics);
 });
 
@@ -70,9 +94,10 @@ it("copies a project-specific executable Lead guide without credentials or remot
   Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});
   const p={...profile,workdir:"/lead's repo",tokenFile:"/private/token"};
   render(<TeamMembers sessionId="ssh" profile={p} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
-  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
-  await screen.findByRole("button",{name:"打开终端 · cw2"});
+  await expand(await screen.findByText("待确认（Lead 手写）"));
+  await screen.findByRole("button",{name:"打开 · cw2 · worker"});
   const count=vi.mocked(invoke).mock.calls.length;
+  await expand(await screen.findByText("更多"));
   fireEvent.click(screen.getByRole("button",{name:"复制给 Lead 的提示词"}));
   await waitFor(()=>expect(writeText).toHaveBeenCalledWith(teamLeadPrompt(p,server)));
   const prompt=writeText.mock.calls[0][0] as string;
@@ -87,11 +112,9 @@ it("shows Lead notes and edits them without sending a stale terminal location",a
   const annotated={...member,responsibilities:"后端",quota:"未知",currentTask:"T12 测试中",notes:"等待审查"};
   vi.mocked(invoke).mockResolvedValue(JSON.stringify([annotated]));
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
-  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   await screen.findByText("后端",{exact:false});
   expect(screen.getByLabelText("成员摘要").textContent).toContain("T12 测试中");
   expect(screen.getByText("详细信息").closest("details")?.open).toBe(false);
-  fireEvent.click(screen.getByText("管理"));
   fireEvent.click(screen.getByRole("button",{name:"编辑备注 · cw2"}));
   expect(screen.queryByLabelText("额度情况")).toBeNull();
   fireEvent.change(screen.getByLabelText("其他备注"),{target:{value:"等待验收"}});
@@ -123,43 +146,45 @@ it("reuses a live split pane across saved IDs only after verifying its remote wo
 it("reads the shared remote roster and opens the member with this device's connection", async () => {
   const onOpen = vi.fn().mockResolvedValue(undefined);
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server, servers:[server], onOpen}}/>);
-  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
-  fireEvent.click(await screen.findByRole("button", {name:"打开终端 · cw2"}));
+  await expand(await screen.findByText("待确认（Lead 手写）"));
+  fireEvent.click(await screen.findByRole("button", {name:"打开 · cw2 · worker"}));
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(member, server));
   expect(invoke).toHaveBeenCalledWith("collaboration_request", {sessionId:"lead-ssh", profile, request:{operation:"members", body:""}});
 });
 
 it("requires an explicit alias mapping when no endpoint matches and remembers it locally", async () => {
   const alias = {...server, host:"100.66.1.5"};
+  // 本窗口的服务器也不是这位成员（否则实时连接会自动解析出可用终端）
+  const leadOnly = {...server, id:"lead-device", host:"lead-remote"};
   const onOpen = vi.fn().mockResolvedValue(undefined);
-  const props = {sessionId:"lead-ssh", profile, navigation:{server, servers:[alias], onOpen}};
+  const props = {sessionId:"lead-ssh", profile, navigation:{server:leadOnly, servers:[alias], onOpen}};
   const view = render(<TeamMembers {...props}/>);
-  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
-  const button = await screen.findByRole("button", {name:"打开终端 · cw2"});
+  await expand(await screen.findByText("待确认（Lead 手写）"));
+  const button = await screen.findByRole("button", {name:"打开 · cw2 · worker"});
+  await expand(button);
   expect((button as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(screen.getByLabelText("本机连接 · cw2"), {target:{value:alias.id}});
   fireEvent.click(button);
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(member, alias));
   view.unmount();
   render(<TeamMembers {...props}/>);
-  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
-  fireEvent.click(await screen.findByRole("button",{name:"管理"}));
   expect((await screen.findByLabelText("本机连接 · cw2") as HTMLSelectElement).value).toBe(alias.id);
 });
 
 it("reports stale sessions and never silently retargets a member", async () => {
   const onOpen = vi.fn().mockRejectedValue(new Error("成员会话已结束"));
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server, servers:[server], onOpen}}/>);
-  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
-  fireEvent.click(await screen.findByRole("button", {name:"打开终端 · cw2"}));
-  expect((await screen.findByRole("alert")).textContent).toContain("成员会话已结束");
+  await expand(await screen.findByText("待确认（Lead 手写）"));
+  fireEvent.click(await screen.findByRole("button", {name:"打开 · cw2 · worker"}));
+  // 合并后打开终端走面板内的状态提示（原成员页用的是 alert，行为等价）
+  expect((await screen.findByRole("status")).textContent).toContain("成员会话已结束");
   expect(onOpen).toHaveBeenCalledTimes(1);
 });
 
 it("registers only validated location fields and does not send agent messages", async () => {
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server, servers:[server], onOpen:vi.fn()}}/>);
-  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
-  await screen.findByRole("button",{name:"打开终端 · cw2"});
+  await screen.findByRole("button",{name:"打开 · cw2 · worker"});
+  await expand(await screen.findByText("更多"));
   fireEvent.change(screen.getByLabelText("成员位置 JSON"), {target:{value:JSON.stringify({...member, password:"secret"})}});
   fireEvent.click(screen.getByRole("button", {name:"登记到当前团队"}));
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("collaboration_request", {sessionId:"lead-ssh", profile, request:{operation:"memberSave", body:JSON.stringify(member)}}));
@@ -170,12 +195,13 @@ it("adds an open terminal without email or JSON using its actual remote worktree
   vi.mocked(invoke).mockImplementation(async (command,args:any)=>command==="collaboration_worktree"?"/worker/repo":args.request.operation==="memberSave"?JSON.stringify([JSON.parse(args.request.body)]):"[]");
   const pane={id:"worker-pane",server,tmux:{id:"$9",created:987,name:"后端开发"}};
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server,servers:[server],sessions:[{pane,backendId:"worker-ssh"}],onOpen:vi.fn()}}/>);
-  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   await screen.findByText("把成员终端放在一起");
   fireEvent.click(screen.getByRole("button",{name:"添加成员"}));
   fireEvent.change(screen.getByLabelText("成员终端"),{target:{value:"worker-pane"}});
   expect((screen.getByLabelText("成员名称") as HTMLInputElement).value).toBe("后端开发");
   fireEvent.click(screen.getByRole("button",{name:"加入团队"}));
+  await expand(await screen.findByText("待确认（Lead 手写）"));
+  await expand(await screen.findByRole("button",{name:"打开 · 后端开发 · 后端开发"}));
   await screen.findByRole("button",{name:"打开终端 · 后端开发"});
   const save=vi.mocked(invoke).mock.calls.find(([,args]:any)=>args.request?.operation==="memberSave")!;
   expect(JSON.parse((save[1] as any).request.body)).toMatchObject({email:"",id:expect.stringMatching(/^member-/),workdir:"/worker/repo",host:"remote",tmux:{id:"$9",created:987}});
@@ -264,13 +290,12 @@ it("without a board, groups by the Lead's hand-written note (working, idle, unkn
     {...member,email:"unknown@example.test",role:"未知成员",currentTask:"待确认\n历史：空闲"},
   ]));
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
-  fireEvent.click(screen.getByRole("button",{name:/^成员 \d+$/}));
   const working=await screen.findByRole("region",{name:"工作中（Lead 手写）成员"});
   expect(working.textContent).toContain("工作成员");
   expect(screen.getByRole("region",{name:"空闲（Lead 手写）成员"}).textContent).toContain("空闲成员");
   expect(screen.getByRole("region",{name:"待确认（Lead 手写）成员"}).textContent).toContain("未知成员");
-  expect(screen.getAllByRole("region").map(el=>el.getAttribute("aria-label"))).toEqual(["团队成员","工作中（Lead 手写）成员","空闲（Lead 手写）成员","待确认（Lead 手写）成员"]);
-  expect(screen.getAllByText(/未配置看板，无法显示实时状态/)).toHaveLength(2);
+  expect(screen.getAllByRole("region").map(el=>el.getAttribute("aria-label"))).toEqual(["团队成员","团队动态","工作中（Lead 手写）成员","空闲（Lead 手写）成员","待确认（Lead 手写）成员"]);
+  expect(screen.getAllByText(/未配置看板，无法显示实时状态/)).toHaveLength(1);
 });
 
 it.each([true,false])("promotes a member only after checking the migrated roster (present=%s)",async migrated=>{
@@ -306,6 +331,97 @@ it("opens the room without adding inline roster avatars and pauses it when the m
   view.rerender(<TeamPanel {...props} officeVisible={false}/>);expect(avatar.getAttribute("data-paused")).toBe("true");
   view.rerender(<TeamPanel {...props} officeVisible/>);expect(avatar.getAttribute("data-paused")).toBe("false");
   fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(view.container.querySelector('.team-office .team-member-avatar')).toBe(avatar);expect(avatar.getAttribute("data-paused")).toBe("true");
-  expect(view.container.querySelector('.team-roster-view .team-member-avatar')).toBeNull();
+  expect(view.container.querySelector('.team-members .team-member-avatar')).toBeNull();
   expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(true);view.unmount();expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);
+
+// ── DS-13：合并后的单列表（概览筛选 / 空闲紧凑行 / 名字去重 / 无当前卡） ──────────
+
+const board: BoardSource = {route:{kind:"direct",url:"https://board.test"},key:"demo-board",webUrl:"https://board.test",label:"看板"};
+const NOW = 1_760_000_000;
+const asSession = (over: Partial<AgentSession> & {session:string}): AgentSession => ({
+  host:"remote", box:"", tool:"codex", project:"demo", state:"idle", stateDetail:"",
+  stateSince:NOW-120, hostOk:true, hostError:"", stale:false, seenAt:NOW,
+  taskCode:"", taskStatus:"", worktree:"/repo", branch:"main",
+  commitHash:"abc1234", commitTime:NOW-3600, commitSubject:"fix(x)", dirty:0,
+  model:"gpt-6", lastLine:"", ...over,
+});
+const liveOf = (sessions: AgentSession[]): LiveSessions => ({
+  snapshot:{sessions, now:NOW, ttlSeconds:180, alertAfterSeconds:600, collectedAt:NOW},
+  briefs:{}, statusNames:{}, offline:false, error:"",
+});
+const worker = (over: Partial<TeamMember>): TeamMember => ({...member, ...over});
+
+function renderMerged(members: TeamMember[], live: LiveSessions) {
+  return render(<TeamDynamics sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}} members={members} onUpdated={async()=>{}} board={board} live={live}/>);
+}
+
+it("filters the merged list by the overview counts and clears on a second click", async () => {
+  const stuck = worker({email:"stuck@example.test", role:"a", tmux:{...member.tmux, name:"worker-demo-a"}});
+  const running = worker({email:"run@example.test", role:"b", tmux:{...member.tmux, name:"worker-demo-b"}});
+  const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}});
+  renderMerged([stuck, running, idle], liveOf([
+    asSession({session:"worker-demo-a", state:"stuck"}),
+    asSession({session:"worker-demo-b", state:"running"}),
+    asSession({session:"worker-demo-c", state:"idle"}),
+  ]));
+  expect(screen.getByRole("region", {name:"需要处理成员"})).toBeTruthy();
+  expect(screen.getByRole("region", {name:"运行中成员"})).toBeTruthy();
+  expect(screen.getByRole("region", {name:"空闲·可派活成员"})).toBeTruthy();
+
+  const attention = screen.getByRole("button", {name:/需要处理/});
+  expect(attention.getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(attention);
+  expect(attention.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("region", {name:"需要处理成员"})).toBeTruthy();
+  expect(screen.queryByRole("region", {name:"运行中成员"})).toBeNull();
+  expect(screen.queryByRole("region", {name:"空闲·可派活成员"})).toBeNull();
+
+  fireEvent.click(attention);   // 再点取消
+  expect(attention.getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByRole("region", {name:"运行中成员"})).toBeTruthy();
+});
+
+it("shows 没有符合的成员 when the filtered group is empty", async () => {
+  const running = worker({email:"run@example.test", role:"b", tmux:{...member.tmux, name:"worker-demo-b"}});
+  renderMerged([running], liveOf([asSession({session:"worker-demo-b", state:"running"})]));
+  fireEvent.click(screen.getByRole("button", {name:/等 Lead/}));
+  expect(screen.getByRole("region", {name:"等 Lead成员"})).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toContain("没有符合的成员");
+});
+
+it("keeps idle members on one compact row while urgent groups stay cards", async () => {
+  const stuck = worker({email:"stuck@example.test", role:"a", tmux:{...member.tmux, name:"worker-demo-a"}});
+  const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}});
+  const {container} = renderMerged([stuck, idle], liveOf([
+    asSession({session:"worker-demo-a", state:"stuck", taskCode:"DS-1", taskStatus:"doing"}),
+    asSession({session:"worker-demo-c", state:"idle", taskCode:"DC-16", taskStatus:"done"}),
+  ]));
+  expect(container.querySelectorAll(".team-live-card")).toHaveLength(1);
+  expect(container.querySelectorAll(".team-compact-row")).toHaveLength(1);
+  // 空闲行显示上一张卡号，并从「空闲·可派活」组默认折叠开始
+  const idleGroup = screen.getByRole("region", {name:"空闲·可派活成员"});
+  expect(idleGroup.querySelector("details")?.open).toBe(false);
+  expect(idleGroup.textContent).toContain("DC-16");
+});
+
+it("disambiguates repeated roles with the tmux short name", async () => {
+  const a = worker({email:"a@example.test", role:"worker", tmux:{id:"$2", created:1, name:"worker-demo-cw1-codex"}});
+  const b = worker({email:"b@example.test", role:"worker", tmux:{id:"$3", created:2, name:"worker-demo-cw2-codex"}});
+  const solo = worker({email:"solo@example.test", role:"reviewer", tmux:{id:"$4", created:3, name:"worker-demo-reviewer"}});
+  renderMerged([a, b, solo], liveOf([
+    asSession({session:"worker-demo-cw1-codex", state:"idle"}),
+    asSession({session:"worker-demo-cw2-codex", state:"idle"}),
+    asSession({session:"worker-demo-reviewer", state:"idle"}),
+  ]));
+  expect(screen.getByTitle("worker · worker-demo-cw1-codex").textContent).toBe("worker · cw1-codex");
+  expect(screen.getByTitle("worker · worker-demo-cw2-codex").textContent).toBe("worker · cw2-codex");
+  // 角色在本团队里唯一时只显示角色名
+  expect(screen.getByTitle("reviewer · worker-demo-reviewer").textContent).toBe("reviewer");
+});
+
+it("does not render a 无当前卡 line for idle members without a card", async () => {
+  const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}});
+  const {container} = renderMerged([idle], liveOf([asSession({session:"worker-demo-c", state:"idle"})]));
+  expect(screen.queryByText("无当前卡")).toBeNull();
+  expect(container.querySelectorAll(".team-card-line2")).toHaveLength(0);
 });

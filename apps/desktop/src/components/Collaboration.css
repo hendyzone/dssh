@@ -13,56 +13,120 @@
 .collaboration-error{color:var(--ui-danger,#e06c75)}
 .team-members{display:flex;flex-direction:column;gap:6px}
 .team-members details{display:block}
-.team-members summary{cursor:pointer;font-size:11px;margin:0}
+.team-members summary{cursor:pointer;margin:0}
 .team-members details[open]>summary{margin-bottom:6px}
 .team-members select{max-width:100%;min-width:0}
-.team-toolbar,.team-card-main{display:flex;align-items:center;gap:6px;min-width:0}
-.team-toolbar{justify-content:space-between}
-.team-summary-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
-.team-count{font-size:11px;font-weight:normal;margin-left:4px}
+.team-toolbar{display:flex;align-items:center;gap:6px;min-width:0}
+.team-toolbar{flex-wrap:wrap;gap:6px 10px}
+.team-toolbar-title{display:flex;align-items:baseline;gap:6px;min-width:0}
+.team-toolbar-title strong{font-size:13px;white-space:nowrap}
+.team-toolbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin-left:auto}
+.team-toolbar-details{margin:0}
+.team-more-body{display:flex;flex-direction:column;gap:6px;padding:6px 0}
 .team-dynamics{padding:8px;border:1px solid var(--ui-border);border-radius:6px;display:flex;flex-direction:column;gap:6px}
 .team-dynamics small{font-size:10px;color:var(--ui-muted);font-weight:normal}
 .team-ai-selection{display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;margin:8px 0}
 .team-ai-selection label{font-size:11px;display:flex;align-items:center;gap:5px}
 .team-ai-preview{display:flex;flex-direction:column;gap:8px;margin-top:8px}
-.team-ai-row{border-bottom:1px solid var(--ui-border);padding:5px 0}
-.team-ai-row>summary{display:flex;gap:8px;align-items:center}
-.team-ai-row>summary strong{flex:0 1 40%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.team-ai-row>summary span{flex:1;min-width:0}
-.team-activity-working .team-ai-row>summary span{color:var(--ui-accent)}
 .team-dynamics pre{max-height:180px;white-space:pre-wrap;font-size:11px}
-.team-activity-group{display:flex;flex-direction:column;gap:6px}
-.team-activity-heading{display:flex;align-items:center;gap:6px;font-size:11px;padding:5px 0 1px;color:var(--ui-muted)}
-.team-activity-heading span{font-variant-numeric:tabular-nums;opacity:.7}
-.team-activity-working>.team-activity-heading{color:var(--ui-accent)}
 .team-activity-badge{font-size:10px;border:1px solid currentColor;border-radius:3px;padding:0 3px}
-.team-activity-badge.team-activity-working{color:var(--ui-accent)}
-.team-activity-badge.team-activity-idle{color:var(--ui-muted)}
 .team-empty,.team-setup{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:20px 8px}
 .team-empty{align-items:center;text-align:center;padding:24px 12px}
 .team-empty h4,.team-setup h3{margin:0;font-size:15px}
 .team-add{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-panel)}
-.team-members .team-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;align-items:center;padding:8px;border-radius:5px}
-.team-avatar{display:flex;align-items:center;justify-content:center;width:20px;height:24px;flex-shrink:0;color:var(--ui-muted)}
-.team-card-title{min-width:0}
-.team-card-title strong{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.collaboration-panel .team-card-title p{margin:0;font-size:11px;line-height:1.4;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.team-card-extra{grid-column:1/-1;min-width:0}
-.team-card-extra summary,.team-footnote{opacity:.7}
-.team-open{white-space:nowrap}
-.team-card-actions{display:flex;align-items:center;gap:2px}
-.team-members .team-card{align-content:start;transition:border-color .15s}
-.team-members .team-card:hover{border-color:var(--ui-accent)}
-.team-card-main .team-avatar{display:none}
+/* ── 概览计数（可点击筛选） ───────────────────────────────────────────── */
+.team-live-counts{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
+.team-count{display:inline-flex;flex-direction:column;align-items:flex-start;gap:0;min-width:58px;
+ padding:3px 9px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-panel);
+ color:var(--ui-fg);cursor:pointer;line-height:1.15;transition:border-color .15s,opacity .15s}
+.team-count b{font-size:16px;font-variant-numeric:tabular-nums}
+.team-count span{font-size:10px;color:var(--ui-muted)}
+.team-count:hover{border-color:var(--ui-accent)}
+.team-count.is-zero{opacity:.5}
+.team-count.is-on{border-color:var(--ui-accent);box-shadow:inset 0 0 0 1px var(--ui-accent)}
+.team-count.is-bad b{color:var(--ui-danger,#e06c75)}
+.team-count.is-wait b{color:#d19a66}
+.team-count.is-idle b{color:var(--ui-fg)}
+/* ── 分组 ────────────────────────────────────────────────────────────── */
+.team-live-group{display:flex;flex-direction:column}
+.team-live-group>details>summary.team-activity-heading{display:flex;align-items:center;gap:6px;font-size:11px;
+ padding:4px 0 2px;color:var(--ui-muted)}
+.team-live-group>details[open]>summary.team-activity-heading{margin-bottom:2px}
+.team-activity-heading span{font-variant-numeric:tabular-nums;opacity:.7}
+.team-live-group-attention>details>summary.team-activity-heading{color:var(--ui-danger,#e06c75)}
+.team-live-group-waitLead>details>summary.team-activity-heading{color:#d19a66}
+.team-live-group-running>details>summary.team-activity-heading{color:var(--ui-accent)}
+.team-live-group-body{display:flex;flex-direction:column}
+.team-live-empty{margin:2px 0 4px;font-size:11px;color:var(--ui-muted)}
+/* ── 卡片行（需要处理 / 等 Lead / 运行中 / 待验收） ───────────────────── */
+.team-live-card{border-bottom:1px solid var(--ui-border)}
+.team-live-card:last-child{border-bottom:0}
+.team-live-card>summary.team-card-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;
+ align-items:center;gap:2px 8px;padding:6px 2px;min-width:0}
+.team-live-dot{width:7px;height:7px;border-radius:50%;background:var(--ui-muted);flex:none}
+.team-live-dot.is-bad{background:var(--ui-danger,#e06c75);box-shadow:0 0 0 2px color-mix(in srgb,var(--ui-danger,#e06c75) 25%,transparent)}
+.team-live-dot.is-warn,.team-live-dot.is-wait,.team-live-dot.is-lead{background:#d19a66}
+.team-live-dot.is-run{background:var(--ui-accent)}
+.team-live-dot.is-review{background:var(--ui-accent)}
+.team-live-dot.is-idle,.team-live-dot.is-gone,.team-live-dot.is-offline,.team-live-dot.is-none{background:var(--ui-muted)}
+.team-ai-identity{font-size:13px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.team-live-suffix{font-size:11px;font-weight:400;color:var(--ui-muted)}
+.team-live-status{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+.team-live-status small{font-variant-numeric:tabular-nums;white-space:nowrap}
+.team-live-badge{font-size:11px;border:1px solid currentColor;border-radius:3px;padding:0 4px;line-height:16px;white-space:nowrap}
+.team-live-badge.is-bad{color:var(--ui-danger,#e06c75);font-weight:600}
+.team-live-badge.is-warn,.team-live-badge.is-wait{color:#d19a66;font-weight:600}
+.team-live-badge.is-run{color:var(--ui-accent)}
+.team-live-badge.is-lead{color:#d19a66;font-weight:600}
+.team-live-badge.is-review{color:var(--ui-accent)}
+.team-live-badge.is-idle,.team-live-badge.is-gone,.team-live-badge.is-offline,.team-live-badge.is-none{color:var(--ui-muted)}
+.team-ai-row-actions{display:flex;align-items:center;gap:2px;flex:none}
+.team-ai-row-actions .team-ai-single{color:var(--ui-accent)}
+.team-ai-busy-dot{display:inline-block;width:5px;height:5px;margin-left:3px;border-radius:50%;
+ background:var(--ui-accent);animation:team-pulse 1s ease-in-out infinite}
+@keyframes team-pulse{50%{opacity:.25}}
+/* 第二行：卡号 + 卡状态 + 一句话；第三行：提交 / 模型 / 主机 */
+.team-card-line2{grid-column:1/-1;display:flex;align-items:baseline;gap:6px;min-width:0;font-size:12px}
+.team-card-line2 b{font-weight:600;flex:none}
+.team-card-line2 em{font-style:normal;font-size:11px;color:var(--ui-muted);flex:none}
+.team-card-brief{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.4}
+.team-card-line2.is-roster b{font-weight:500;color:var(--ui-muted);font-size:10px;flex:none}
+.team-card-line2.is-roster .team-card-brief{-webkit-line-clamp:1;color:var(--ui-muted);font-size:11px}
+.team-card-line3{grid-column:1/-1;display:flex;gap:6px;align-items:baseline;min-width:0;font-size:11px;
+ color:var(--ui-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.team-card-line3>span{overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.team-card-line3>span:first-child{flex:1 1 auto}
+.team-live-dirty{color:#d19a66;flex:none}
+.team-card-expanded{display:flex;flex-direction:column;gap:6px;padding:2px 4px 8px 16px;border-top:1px solid var(--ui-border);margin-top:2px}
+.team-card-expanded>p{margin:2px 0}
+.team-ai-note{font-size:11px;color:var(--ui-muted)}
+.team-ai-summary{font-size:11px;color:var(--ui-muted);white-space:normal;line-height:1.5}
+.team-live-detail{font-size:11px;color:var(--ui-muted);overflow-wrap:anywhere}
+/* ── 紧凑行（空闲·可派活 / 离开 / Lead 手写回退） ─────────────────────── */
+.team-compact-row{border-bottom:1px solid var(--ui-border)}
+.team-compact-row:last-child{border-bottom:0}
+.team-compact-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;align-items:center;
+ gap:2px 8px;padding:3px 2px;min-width:0}
+.team-compact-state{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ui-muted);white-space:nowrap}
+.team-compact-card{font-size:11px;color:var(--ui-muted);white-space:nowrap}
+.team-compact-card.is-empty{opacity:.55}
+.team-compact-row>summary span{flex:none}
+.team-compact-row>summary .team-ai-identity{flex:1 1 auto}
+.team-live-alert{border-left:3px solid var(--ui-danger,#e06c75);padding-left:7px;
+ background:color-mix(in srgb,var(--ui-danger,#e06c75) 7%,transparent)}
+.team-live-wait-lead{border-left:3px solid #d19a66;padding-left:7px;
+ background:color-mix(in srgb,#d19a66 8%,transparent)}
+/* ── 成员管理（展开详情内） ─────────────────────────────────────────── */
 .team-manage-content{border-top:1px solid var(--ui-border);padding-top:5px}
+.collaboration-panel .team-manage p{margin:3px 0;font-size:11px}
+.team-notes-editor{display:flex;flex-direction:column;gap:8px}
+.team-notes-editor textarea{min-height:65px}
 .team-binding{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px;border-bottom:1px solid var(--ui-border);padding-bottom:6px}
 .team-binding>p{grid-column:1/-1;margin:0;opacity:.75}
 .team-binding strong{font-size:12px}
 .collaboration-panel .team-binding div p{margin:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .team-binding>div{min-width:0}
-.team-lead-guide{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;padding:0 0 6px;border-bottom:1px solid var(--ui-border)}
-.team-lead-guide:has(details[open]){align-items:flex-start}
-.team-lead-guide details[open]{flex-basis:100%}
+.team-lead-guide{display:flex;flex-direction:column;align-items:flex-start;gap:4px 8px;padding:2px 0 6px;border-bottom:1px solid var(--ui-border)}
 .team-lead-guide strong{font-size:13px}
 .team-lead-guide p{margin:0}
 .team-lead-guide textarea{width:100%;box-sizing:border-box;min-height:200px}
@@ -77,11 +141,6 @@
 .collaboration-panel .collaboration-content:has(.team-members){gap:7px;padding:8px}
 .collaboration-panel .team-members>p{margin:2px 0;font-size:11px}
 .collaboration-panel .team-members button,.collaboration-panel .team-binding button{min-height:24px;height:auto;padding:3px 6px;font-size:11px}
-.team-manage:not([open]){justify-self:end}
-.team-manage[open]{border-top:1px solid var(--ui-border);padding-top:5px}
-.collaboration-panel .team-manage p{margin:3px 0;font-size:11px}
-.team-notes-editor{display:flex;flex-direction:column;gap:8px}
-.team-notes-editor textarea{min-height:65px}
 .agent-guide{display:flex;flex-direction:column;gap:10px;border:1px solid var(--ui-border);border-radius:8px;padding:12px}
 .agent-guide textarea{box-sizing:border-box;width:100%;min-height:180px;resize:vertical;padding:8px;background:var(--ui-panel);color:var(--ui-fg);border:1px solid var(--ui-border);border-radius:4px;font-family:monospace;font-size:12px}
 .agent-guide summary{cursor:pointer;font-size:12px;margin:6px 0}
@@ -90,62 +149,20 @@
 .team-ai-key-saved{color:#86d9b0;background:rgba(56,161,105,.12);border-color:rgba(56,161,105,.35)}
 .team-ai-key-error{color:#f0bc73}
 .team-ai-profile-toolbar{display:flex;align-items:end;gap:8px}.team-ai-profile-toolbar .collaboration-field{flex:1;min-width:0;margin:0}.team-ai-profile-toolbar>button{width:auto;flex-shrink:0}.team-ai-profile-actions{display:flex;gap:8px;flex-wrap:wrap}.team-ai-profile-actions>button{width:auto}
-.team-ai-options{font-size:11px;color:var(--ui-muted)}.team-ai-options>summary{cursor:pointer}.team-ai-confirm{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--ui-border);border-radius:5px}.team-ai-confirm p{margin:0}.team-ai-confirm small{overflow-wrap:anywhere}.team-ai-confirm>div{display:flex;gap:6px}.team-dynamics .team-toolbar{justify-content:space-between}.team-ai-row>summary span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.team-ai-row .team-ai-single{flex-shrink:0;padding:2px 7px;height:24px;font-size:11px;color:var(--ui-accent)}
-.team-view-switch{display:flex;align-items:center;gap:2px}
-.team-roster-view:not([hidden]){display:flex;flex-direction:column;gap:8px}
-.team-dynamics{border:0;padding:4px 0}
-.team-ai-row{padding:10px 0}
-.team-ai-row:last-child{border-bottom:0}
-.team-ai-row>summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;cursor:pointer}
-.team-ai-row>summary .team-ai-identity{grid-column:1;min-width:0;font-size:12px}
-.team-ai-identity small{display:block;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-.team-ai-row>summary .team-ai-summary{grid-column:1;grid-row:2;white-space:normal;line-height:1.5;font-size:12px}
-.team-ai-row-actions{grid-column:2;grid-row:1/3;display:flex;align-items:center;gap:2px}
-/* Live member status from the taskboard collector (T9). */
+.team-ai-options{font-size:11px;color:var(--ui-muted)}.team-ai-options>summary{cursor:pointer}
+.team-ai-confirm{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--ui-border);border-radius:5px}.team-ai-confirm p{margin:0}.team-ai-confirm small{overflow-wrap:anywhere}.team-ai-confirm>div{display:flex;gap:6px}
+.team-ai-options .team-ai-selection{margin:6px 0}
+/* 保留：TeamMembership 里仍在用的成员卡样式 */
+.team-members .team-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;align-items:center;padding:8px;border-radius:5px}
+.team-avatar{display:flex;align-items:center;justify-content:center;width:20px;height:24px;flex-shrink:0;color:var(--ui-muted)}
+.team-card-title{min-width:0}
+.team-card-title strong{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.collaboration-panel .team-card-title p{margin:0;font-size:11px;line-height:1.4;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.team-card-extra{grid-column:1/-1;min-width:0}
+.team-card-extra summary,.team-footnote{opacity:.7}
+.team-members .team-card{align-content:start;transition:border-color .15s}
+.team-members .team-card:hover{border-color:var(--ui-accent)}
 .team-live-note,.team-live-offline{margin:0;font-size:11px;color:var(--ui-muted)}
 .team-live-offline{color:var(--ui-danger,#e06c75)}
-.team-live-group{display:flex;flex-direction:column}
-.team-live-group-attention>.team-activity-heading{color:var(--ui-danger,#e06c75)}
-.team-live-group-running>.team-activity-heading{color:var(--ui-accent)}
-.team-live-row>summary>*:not(.team-ai-row-actions){grid-column:1;grid-row:auto}
-.team-live-row>summary>.team-ai-row-actions{grid-row:1/span 6}
-.team-live-row.team-live-alert{border-left:3px solid var(--ui-danger,#e06c75);padding-left:7px;background:color-mix(in srgb,var(--ui-danger,#e06c75) 7%,transparent)}
-.team-live-status{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.team-live-status small{font-variant-numeric:tabular-nums}
-.team-live-badge{font-size:11px;border:1px solid currentColor;border-radius:3px;padding:0 4px;line-height:16px;white-space:nowrap}
-.team-live-badge.is-bad{color:var(--ui-danger,#e06c75);font-weight:600}
-.team-live-badge.is-warn,.team-live-badge.is-wait{color:#d19a66;font-weight:600}
-.team-live-badge.is-run{color:var(--ui-accent)}
-.team-live-badge.is-idle,.team-live-badge.is-gone,.team-live-badge.is-offline,.team-live-badge.is-none{color:var(--ui-muted)}
-.team-live-facts{display:flex;flex-direction:column;gap:2px;font-size:11px;min-width:0;line-height:1.45}
-.team-live-task{display:flex;gap:6px;align-items:baseline;min-width:0}
-.team-live-task b{font-weight:600;flex-shrink:0}
-.team-live-task em{font-style:normal;color:var(--ui-muted);flex-shrink:0}
-.team-live-task span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.team-live-task.is-empty,.team-live-commit,.team-live-meta{color:var(--ui-muted)}
-.team-live-commit{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.team-live-meta{display:flex;gap:8px;flex-wrap:wrap}
-.team-live-dirty{color:#d19a66}
-.team-live-detail{font-size:11px;color:var(--ui-muted);overflow-wrap:anywhere}
-.team-live-row>summary span{flex:0 1 auto;white-space:normal;overflow:visible;color:inherit}
-.team-live-row>summary .team-live-task span,.team-live-row>summary .team-live-commit{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.team-live-row>summary .team-live-task span{flex:1 1 auto;min-width:0}
-.team-live-row>summary .team-ai-summary{white-space:normal;color:var(--ui-muted)}
-/* T10: 等 Lead (yellow), 待验收, panel summary, Lead 备注 age */
-.team-live-badge.is-lead{color:#d19a66;font-weight:600}
-.team-live-badge.is-review{color:var(--ui-accent)}
-.team-live-row.team-live-wait-lead,.team-members .team-card.team-live-wait-lead{border-left:3px solid #d19a66;padding-left:7px;background:color-mix(in srgb,#d19a66 8%,transparent)}
-.team-members .team-card.team-live-alert{border-left:3px solid var(--ui-danger,#e06c75);padding-left:7px;background:color-mix(in srgb,var(--ui-danger,#e06c75) 7%,transparent)}
-.team-live-group-waitLead>.team-activity-heading{color:#d19a66}
-.team-live-group-attention>.team-activity-heading{color:var(--ui-danger,#e06c75)}
-.team-live-summary{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;font-size:11px;color:var(--ui-muted)}
-.team-live-summary b{font-variant-numeric:tabular-nums;color:var(--ui-fg)}
-.team-live-summary .is-bad,.team-live-summary .is-bad b{color:var(--ui-danger,#e06c75)}
-.team-live-summary .is-lead,.team-live-summary .is-lead b{color:#d19a66}
-.team-live-duration{font-size:10px;font-variant-numeric:tabular-nums}
-.collaboration-panel .team-live-current{display:flex;gap:6px;align-items:baseline;margin:0;font-size:11px;min-width:0}
-.team-live-current>strong{font-weight:500;color:var(--ui-muted);font-size:10px;flex-shrink:0}
-.team-live-task.is-roster b{font-weight:500;color:var(--ui-muted)}
 .team-note-age{font-size:10px;color:var(--ui-muted)}
 .team-note-age.is-stale{color:#d19a66}
