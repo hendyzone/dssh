@@ -203,18 +203,6 @@ async function mountReal(config = { cols: 80, rows: 12, scrollbackLimit: 10000 }
   return mount(overrides);
 }
 
-async function mountWithFakeClock() {
-  mocks.realConfig = { cols: 80, rows: 12, scrollbackLimit: 10000 };
-  const openPage = vi.fn();
-  const onStateChange = vi.fn();
-  const onCwdChange = vi.fn();
-  const backendReady = vi.fn();
-  const view = render(<TerminalView {...props} onOpenPage={openPage} onStateChange={onStateChange} onCwdChange={onCwdChange} onBackendReady={backendReady}/>);
-  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-  expect(onStateChange).toHaveBeenLastCalledWith("pane", "connected");
-  return { ...view, term: mocks.instances[0], openPage, onStateChange, onCwdChange, backendReady };
-}
-
 function bufferText(term: any, y: number): string {
   const line = term.buffer.active.getLine(y);
   if (!line) return "";
@@ -349,31 +337,12 @@ it("keeps Chinese path characters, excludes Chinese punctuation, and maps wide c
   expect(await linkAt(term, end + 1)).toBeUndefined();
 });
 
-it.each([
-  ["./x.png", "/workspace/project/src/x.png", "image"],
-  ["out/y.md", "/workspace/project/src/out/y.md", "markdown"],
-  ["../preview.html", "/workspace/project/preview.html", "html"],
-  ["out/../../docs/notes.md", "/workspace/project/docs/notes.md", "markdown"],
-])("resolves %s against the cwd reported by the real OSC 7 listener", async (relative, path, kind) => {
+it.each([false, true])("never offers relative paths as links (OSC 7 received: %s)", async reported => {
   const { term, openPage } = await mount();
-  await reportCwd("/workspace/project/src");
-  setLine(term, `Read(${relative})`);
-  await activate(await linkAt(term, "Read(".length));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind, path }, "backend");
-});
-
-it("uses a newly reported cwd instead of retaining the initial restored directory", async () => {
-  const { term, openPage } = await mount({ session: { ...props.session, restoreCwd: "/old" } });
-  await reportCwd("/workspace/latest");
-  setLine(term, "./notes.md");
-  await activate(await linkAt(term, 0));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/workspace/latest/notes.md" }, "backend");
-});
-
-it("does not reinterpret a relative path's slash as an absolute path without cwd", async () => {
-  const { term, openPage } = await mount();
-  const text = "./x.png out/y.md ../preview.html";
+  if (reported) await reportCwd("/workspace");
+  const text = "./a.png out/a.md ../preview.html";
   setLine(term, text);
+  expect(await allCandidates(term)).toEqual([]);
   for (let x = 0; x < text.length; x++) expect(await linkAt(term, x)).toBeUndefined();
   expect(openPage).not.toHaveBeenCalled();
 });
@@ -504,7 +473,6 @@ it.each([".", ",", ";", "!", "?", ":", "…", "—", ":12:", ":12:3:"])(
 
 it.each(["key=", "--out="])("separates the assignment prefix %s from an absolute path", async prefix => {
   const { term, openPage } = await mount();
-  await reportCwd("/workspace");
   const path = "/tmp/chart.png";
   const text = `${prefix}${path}`;
   setLine(term, text);
@@ -514,21 +482,20 @@ it.each(["key=", "--out="])("separates the assignment prefix %s from an absolute
   expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "image", path }, "backend");
 });
 
-it("separates comma-delimited explicit relative paths", async () => {
+it("separates comma-delimited absolute paths", async () => {
   const { term, openPage } = await mount();
-  await reportCwd("/workspace");
-  const text = "./a.png,./b.png";
+  const text = "/tmp/a.png,/tmp/b.png";
   setLine(term, text);
   await activate(await linkAt(term, 1));
-  await activate(await linkAt(term, text.indexOf("./b")));
+  await activate(await linkAt(term, text.indexOf("/tmp/b")));
   expect(openPage.mock.calls).toEqual([
-    [{ kind: "image", path: "/workspace/a.png" }, "backend"],
-    [{ kind: "image", path: "/workspace/b.png" }, "backend"],
+    [{ kind: "image", path: "/tmp/a.png" }, "backend"],
+    [{ kind: "image", path: "/tmp/b.png" }, "backend"],
   ]);
   expect(await linkAt(term, text.indexOf(","))).toBeUndefined();
 });
 
-it("does not link bare filenames even when cwd is known", async () => {
+it("does not link bare filenames after an OSC 7 report", async () => {
   const { term, openPage } = await mount();
   await reportCwd("/workspace");
   const text = "a.png README.md a.png,b.png";
@@ -537,132 +504,27 @@ it("does not link bare filenames even when cwd is known", async () => {
   expect(openPage).not.toHaveBeenCalled();
 });
 
-it("does not resolve a wrapped continuation as a new relative path", async () => {
-  const { term, openPage } = await mount();
-  await reportCwd("/workspace");
-  term.lines = ["long output prefix/", "out/chart.png"];
-  term.cols = row(term.lines[0]).length;
-  term.wrapped.add(1);
-  term.detector.invalidateCache();
+it("does not turn a visible wrapped slash fragment into an absolute path", async () => {
+  const { term, openPage } = await mountReal({ cols: 12, rows: 5, scrollbackLimit: 10000 });
+  await finishInitialization();
+  await emitOutput("/home/u/proj/docs/a.md");
+  expect(bufferText(term, 1)).toBe("/docs/a.md");
+  expect(term.buffer.active.getLine(1).isWrapped).toBe(true);
   expect(await linkAt(term, 1, 1)).toBeUndefined();
   expect(openPage).not.toHaveBeenCalled();
 });
 
 it("does not link the apparent supported suffix before a wrapped filename continuation", async () => {
-  const { term } = await mount();
-  term.lines = ["/tmp/chart.png", ".backup"];
-  term.cols = row(term.lines[0]).length;
-  term.wrapped.add(1);
-  term.detector.invalidateCache();
-  expect(await linkAt(term, 1, 0)).toBeUndefined();
-});
-
-it("rejects old relative rows and cached links after cd, while keeping absolute paths usable", async () => {
-  const { term, openPage } = await mount();
-  await reportCwd("/old");
-  await emitOutput("./old.png /tmp/absolute.png\r\n");
-  const oldRelative = await linkAt(term, 1, 0);
-  expect(oldRelative).toBeDefined();
-  const oldAbsolute = await linkAt(term, "./old.png ".length + 1, 0);
-  expect(oldAbsolute).toBeDefined();
-  // Keep both rows visible so a history-row guard cannot hide a broken cwd fence.
-  await emitOutput("\r\n".repeat(2) + osc7("/new") + "./fresh.png");
-  expect(term.scrollback).toBe(0);
-  const currentRow = term.buffer.active.length - term.rows + term.buffer.active.cursorY;
-  expect(currentRow).toBe(3);
-  expect(await linkAt(term, 1, 0)).toBeUndefined();
-  await activate(oldRelative);
-  expect(openPage).not.toHaveBeenCalled();
-  await activate(oldAbsolute);
-  expect(openPage).not.toHaveBeenCalled();
-  await activate(await linkAt(term, "./old.png ".length + 1, 0));
-  expect(openPage).toHaveBeenLastCalledWith({ kind: "image", path: "/tmp/absolute.png" }, "backend");
-  await activate(await linkAt(term, 1, currentRow));
-  expect(openPage).toHaveBeenLastCalledWith({ kind: "image", path: "/new/fresh.png" }, "backend");
-  expect(openPage).toHaveBeenCalledTimes(2);
-});
-
-it("rejects history relative paths with missing wrap metadata while retaining absolute paths", async () => {
-  const { term, openPage } = await mount();
-  await reportCwd("/workspace");
-  await emitOutput("./old.png /tmp/absolute.png\r\n");
-  const oldRelative = await linkAt(term, 1, 0);
-  expect(oldRelative).toBeDefined();
-  await emitOutput("\r\n".repeat(30));
-  expect(term.scrollback).toBeGreaterThan(0);
-  expect(term.buffer.active.baseY).toBe(0);
+  const { term } = await mountReal({ cols: 14, rows: 5, scrollbackLimit: 10000 });
+  await finishInitialization();
+  await emitOutput("/tmp/chart.png.backup");
+  expect(bufferText(term, 0)).toBe("/tmp/chart.png");
   expect(term.buffer.active.getLine(0).isWrapped).toBe(false);
-  // cwd never changed, so only the missing history wrap metadata justifies
-  // withholding this relative path; a cwd-age guard cannot mask this test.
+  expect(term.buffer.active.getLine(1).isWrapped).toBe(true);
   expect(await linkAt(term, 1, 0)).toBeUndefined();
-  await activate(oldRelative);
-  expect(openPage).not.toHaveBeenCalled();
-  await activate(await linkAt(term, "./old.png ".length + 1, 0));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "image", path: "/tmp/absolute.png" }, "backend");
 });
 
-it("records the cwd boundary at OSC 7 within a chunk, before later output advances the cursor", async () => {
-  const { term, openPage } = await mount();
-  await reportCwd("/old");
-  await emitOutput("./old.png\r\n" + osc7("/new") + "./fresh.png\r\nnext prompt");
-  expect(term.cursorY).toBe(2);
-  expect(await linkAt(term, 1, 0)).toBeUndefined();
-  await activate(await linkAt(term, 1, 1));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "image", path: "/new/fresh.png" }, "backend");
-});
-
-it("does not change a displayed row's cwd until its synchronized output is written", async () => {
-  const { term, openPage } = await mount();
-  await reportCwd("/old");
-  await emitOutput("./old.png");
-  const oldRelative = await linkAt(term, 1, 0);
-  expect(oldRelative).toBeDefined();
-  await emitOutput("\x1b[?2026h\r\n" + osc7("/new") + "./fresh.png");
-  expect(term.cursorY).toBe(0);
-  await activate(oldRelative);
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "image", path: "/old/old.png" }, "backend");
-  await emitOutput("\x1b[?2026l");
-  expect(term.cursorY).toBe(1);
-  await activate(oldRelative);
-  expect(openPage).toHaveBeenCalledTimes(1);
-  await activate(await linkAt(term, 1, 1));
-  expect(openPage).toHaveBeenLastCalledWith({ kind: "image", path: "/new/fresh.png" }, "backend");
-});
-
-it("updates the cwd boundary only when a split OSC 7 sequence completes", async () => {
-  const { term, openPage } = await mount();
-  await reportCwd("/old");
-  await emitOutput("./old.png");
-  const oldRelative = await linkAt(term, 1, 0);
-  expect(oldRelative).toBeDefined();
-  await emitOutput("\r\n\x1b]7;file://example.com/ne");
-  await activate(oldRelative);
-  expect(openPage).not.toHaveBeenCalled();
-  await activate(await linkAt(term, 1, 0));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "image", path: "/old/old.png" }, "backend");
-  await emitOutput("w\x07./fresh.png");
-  expect(term.cursorY).toBe(1);
-  await activate(oldRelative);
-  expect(openPage).toHaveBeenCalledTimes(1);
-  await activate(await linkAt(term, 1, 1));
-  expect(openPage).toHaveBeenLastCalledWith({ kind: "image", path: "/new/fresh.png" }, "backend");
-});
-
-it("does not transfer a cwd between normal and alternate buffers without a fresh report", async () => {
-  const { term, openPage } = await mount();
-  await reportCwd("/workspace");
-  term.buffer.active.type = "alternate";
-  setLine(term, "./alt.png /tmp/absolute.png");
-  expect(await linkAt(term, 1)).toBeUndefined();
-  await activate(await linkAt(term, "./alt.png ".length + 1));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "image", path: "/tmp/absolute.png" }, "backend");
-  await reportCwd("/workspace");
-  term.detector.invalidateCache();
-  await activate(await linkAt(term, 1));
-  expect(openPage).toHaveBeenLastCalledWith({ kind: "image", path: "/workspace/alt.png" }, "backend");
-});
-
-it("does not treat a tilde path as relative when remote HOME is unavailable", async () => {
+it("does not link a tilde path after an OSC 7 report", async () => {
   const { term, openPage } = await mount();
   await reportCwd("/workspace");
   setLine(term, "~/chart.png");
@@ -672,7 +534,6 @@ it("does not treat a tilde path as relative when remote HOME is unavailable", as
 
 it("does not add a file-path candidate inside a URL already handled by the built-in provider", async () => {
   const { term, openPage } = await mount();
-  await reportCwd("/workspace");
   const url = "https://example.test/chart.png";
   setLine(term, url);
   const candidates = await allCandidates(term);
@@ -733,7 +594,7 @@ it.each([false, true])("matches built-in URL hover and click behavior with mouse
 
 it("keeps two absolute paths separate across an unwritten terminal cell", async () => {
   const { term, openPage } = await mountReal();
-  await reportCwd("/workspace");
+  await finishInitialization();
   // Cursor-forward leaves a real width-1/codepoint-0 cell; writing a NUL byte
   // would be ignored by the terminal and would not exercise this boundary.
   await emitOutput("/tmp/a.md\x1b[C/tmp/b.md");
@@ -749,52 +610,29 @@ it("keeps two absolute paths separate across an unwritten terminal cell", async 
   ]);
 });
 
-it("moves the cwd boundary after real reflow moves an old unwrapped row past its former boundary", async () => {
-  const { term, openPage } = await mountReal();
-  await reportCwd("/a");
-  await emitOutput("x".repeat(70) + "\r\nsrc/foo.md\r\n");
-  await reportCwd("/b");
-  await emitOutput("promptB");
-  const oldBoundary = cursorRow(term);
-  expect(oldBoundary).toBe(2);
-  expect(findBufferRow(term, "src/foo.md")).toBe(1);
-  await act(async () => { term.resize(20, 12); });
-  const pathRow = findBufferRow(term, "src/foo.md");
-  expect(pathRow).toBe(4);
-  expect(pathRow).toBeGreaterThanOrEqual(oldBoundary);
-  expect(term.buffer.active.length - term.rows).toBe(0);
-  expect(term.buffer.active.getLine(pathRow).isWrapped).toBe(false);
-  expect(term.buffer.active.getLine(pathRow + 1).isWrapped).toBe(false);
-  expect(await allCandidates(term, pathRow)).toEqual([]);
-  await clickAt(term, 1, { ctrlKey: true }, pathRow);
-  expect(openPage).not.toHaveBeenCalled();
-  await emitOutput("\r\n./fresh.md");
-  await clickAt(term, 1, { ctrlKey: true }, cursorRow(term));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/b/fresh.md" }, "backend");
-});
-
-it("invalidates a cached link after widening reflow even when its old row passes the new cwd boundary", async () => {
+it("invalidates a cached absolute link after widening reflow", async () => {
   const { term, openPage } = await mountReal({ cols: 20, rows: 12, scrollbackLimit: 10000 });
-  await reportCwd("/workspace");
-  await emitOutput("x".repeat(70) + "\r\n./old.md\r\nprompt");
-  const oldRow = findBufferRow(term, "./old.md");
+  await finishInitialization();
+  await emitOutput("x".repeat(70) + "\r\n/tmp/old.md\r\nprompt");
+  const oldRow = findBufferRow(term, "/tmp/old.md");
   const cached = await linkAt(term, 1, oldRow);
   expect(oldRow).toBe(4);
   expect(cached).toBeDefined();
   await act(async () => { term.resize(80, 12); });
-  expect(findBufferRow(term, "./old.md")).toBe(1);
+  expect(findBufferRow(term, "/tmp/old.md")).toBe(1);
   expect(cursorRow(term)).toBe(2);
-  expect(oldRow).toBeGreaterThanOrEqual(cursorRow(term));
   // The real vendor leaves the detector cache intact on resize.
   expect(await linkAt(term, 1, oldRow)).toBe(cached);
   await activate(cached);
   expect(openPage).not.toHaveBeenCalled();
+  await clickAt(term, 1, { ctrlKey: true }, 1);
+  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/tmp/old.md" }, "backend");
 });
 
-it("rebaselines the cwd boundary after a rows-only resize", async () => {
+it("invalidates a cached absolute link after a rows-only resize", async () => {
   const { term, openPage } = await mountReal();
-  await reportCwd("/workspace");
-  await emitOutput("./earlier.md\r\nprompt");
+  await finishInitialization();
+  await emitOutput("/tmp/earlier.md\r\nprompt");
   const cached = await linkAt(term, 1, 0);
   expect(cached).toBeDefined();
   await act(async () => { term.resize(80, 6); });
@@ -802,205 +640,19 @@ it("rebaselines the cwd boundary after a rows-only resize", async () => {
   expect(term.rows).toBe(6);
   expect(cursorRow(term)).toBe(1);
   expect(term.buffer.active.length - term.rows).toBe(0);
-  expect(bufferText(term, 0)).toBe("./earlier.md");
+  expect(bufferText(term, 0)).toBe("/tmp/earlier.md");
   expect(term.buffer.active.getLine(0).isWrapped).toBe(false);
-  expect(await allCandidates(term, 0)).toEqual([]);
+  expect(await linkAt(term, 1, 0)).toBe(cached);
   await activate(cached);
   expect(openPage).not.toHaveBeenCalled();
-  await emitOutput("\r\n./fresh.md");
+  await emitOutput("\r\n/tmp/fresh.md");
   await clickAt(term, 1, { ctrlKey: true }, cursorRow(term));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/workspace/fresh.md" }, "backend");
-});
-
-it("does not reuse a normal-buffer cwd boundary when resize happens in the alternate buffer", async () => {
-  const { term, openPage } = await mountReal();
-  await reportCwd("/a");
-  await emitOutput("x".repeat(70) + "\r\nsrc/foo.md\r\n");
-  await reportCwd("/b");
-  await emitOutput("promptB\x1b[?1049h");
-  expect(term.buffer.active.type).toBe("alternate");
-  await act(async () => { term.resize(20, 12); });
-  await emitOutput("\x1b[?1049l");
-  expect(term.buffer.active.type).toBe("normal");
-  const oldRow = findBufferRow(term, "src/foo.md");
-  expect(oldRow).toBe(4);
-  expect(term.buffer.active.getLine(oldRow).isWrapped).toBe(false);
-  expect(term.buffer.active.length - term.rows).toBe(0);
-  expect(await allCandidates(term, oldRow)).toEqual([]);
-  await clickAt(term, 1, { ctrlKey: true }, oldRow);
-  expect(openPage).not.toHaveBeenCalled();
-  await reportCwd("/b");
-  await emitOutput("\r\n./fresh.md");
-  await clickAt(term, 1, { ctrlKey: true }, cursorRow(term));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/b/fresh.md" }, "backend");
-});
-
-it.each([false, true])("restores links after clearing the screen without another OSC report (split CSI %s)", async split => {
-  const { term, openPage } = await mountReal({ cols: 40, rows: 12, scrollbackLimit: 10000 });
-  await reportCwd("/a");
-  await emitOutput("./old.md\r\n\r\n");
-  const cached = await linkAt(term, 1, 0);
-  expect(cached).toBeDefined();
-  await reportCwd("/b");
-  expect(cursorRow(term)).toBe(2);
-  if (split) {
-    // ESC [ alone can be held as a synchronized-frame prefix by output. The
-    // third byte forces this incomplete CSI through to the rendered scanner.
-    await emitOutput("\x1b[2");
-    expect(term.write).toHaveBeenLastCalledWith("\x1b[2");
-    await emitOutput("J\x1b[H");
-  }
-  else await emitOutput("\x1b[2J\x1b[H");
-  await emitOutput("./fresh.md");
-  expect(cursorRow(term)).toBe(0);
-  expect(bufferText(term, 0)).toBe("./fresh.md");
-  await activate(cached);
-  expect(openPage).not.toHaveBeenCalled();
-  await clickAt(term, 1, { ctrlKey: true });
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/b/fresh.md" }, "backend");
-});
-
-it.each([false, true])("translates the cwd boundary by the history actually removed by clear (split CSI %s)", async split => {
-  const { term, openPage } = await mountReal({ cols: 40, rows: 5, scrollbackLimit: 10000 });
-  await reportCwd("/a");
-  await emitOutput("old output\r\n".repeat(7) + "./old.md\r\n");
-  await reportCwd("/b");
-  await emitOutput("./fresh.md");
-  const cached = await linkAt(term, 1, cursorRow(term));
-  expect(cached).toBeDefined();
-  const before = term.buffer.active.length;
-  expect(before).toBeGreaterThan(term.rows);
-  expect(cursorRow(term)).toBe(8);
-  if (split) { await emitOutput("\x1b[3"); await emitOutput("J"); }
-  else await emitOutput("\x1b[3J");
-  expect(term.buffer.active.length).toBe(term.rows);
-  expect(cursorRow(term)).toBe(4);
-  expect(findBufferRow(term, "./old.md")).toBe(3);
-  expect(findBufferRow(term, "./fresh.md")).toBe(4);
-  expect(await allCandidates(term, 3)).toEqual([]);
-  await activate(cached);
-  expect(openPage).not.toHaveBeenCalled();
-  await clickAt(term, 1, { ctrlKey: true }, 4);
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/b/fresh.md" }, "backend");
-  // The repeated cwd must not strand the now-visible row behind the old B=8.
-  await reportCwd("/b");
-  await clickAt(term, 1, { ctrlKey: true }, 4);
-  expect(openPage).toHaveBeenCalledTimes(2);
-});
-
-it("does not lower the cwd boundary for a same-directory OSC report after cursor movement without clearing", async () => {
-  const { term, openPage } = await mountReal();
-  await reportCwd("/a");
-  await emitOutput("./old.md\r\nother\r\n");
-  await reportCwd("/b");
-  await emitOutput("promptB\x1b[H" + osc7("/b"));
-  expect(cursorRow(term)).toBe(0);
-  expect(bufferText(term, 0)).toBe("./old.md");
-  expect(term.buffer.active.length - term.rows).toBe(0);
-  expect(await allCandidates(term, 0)).toEqual([]);
-  await clickAt(term, 1, { ctrlKey: true });
-  expect(openPage).not.toHaveBeenCalled();
-});
-
-it("does not apply a synchronized screen clear before the terminal displays it", async () => {
-  const { term, openPage } = await mountReal();
-  await reportCwd("/a");
-  await emitOutput("./old.md");
-  const cached = await linkAt(term, 1);
-  expect(cached).toBeDefined();
-  await emitOutput("\x1b[?2026h\x1b[2J\x1b[H" + osc7("/b") + "./fresh.md");
-  expect(bufferText(term, 0)).toBe("./old.md");
-  await activate(cached);
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/a/old.md" }, "backend");
-  await emitOutput("\x1b[?2026l");
-  expect(bufferText(term, 0)).toBe("./fresh.md");
-  await activate(cached);
-  expect(openPage).toHaveBeenCalledTimes(1);
-  await clickAt(term, 1, { ctrlKey: true });
-  expect(openPage).toHaveBeenLastCalledWith({ kind: "markdown", path: "/b/fresh.md" }, "backend");
-});
-
-it.each([
-  ["OSC", "\x1b]0;title \x1b[2J title\x07"],
-  ["DCS", "\x1bPqpayload \x1b[2J payload\x1b\\"],
-  ["APC", "\x1b_payload \x1b[2J payload\x1b\\"],
-])("follows the real terminal when CSI interrupts a %s string and clears the screen", async (_label, bytes) => {
-  const { term, openPage } = await mountReal();
-  await reportCwd("/a");
-  await emitOutput("./old.md\r\n\r\n");
-  await reportCwd("/b");
-  // ESC [ cancels these strings in the actual WASM parser. Treating it as
-  // inert payload would miss the screen clear and leave the old cwd fence.
-  await emitOutput(bytes);
-  expect(bufferText(term, 0)).toBe("");
-  await emitOutput("\x1b[H./fresh.md");
-  expect(cursorRow(term)).toBe(0);
-  await clickAt(term, 1, { ctrlKey: true });
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/b/fresh.md" }, "backend");
-});
-
-it.each([false, true])("updates cwd when OSC uses the two-byte string terminator (split ST %s)", async split => {
-  const { term, openPage } = await mountReal();
-  await reportCwd("/a");
-  await emitOutput("./old.md\r\n");
-  if (split) await emitOutput("\x1b]7;file://example.com/b\x1b");
-  await activate(await linkAt(term, 1, 0));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/a/old.md" }, "backend");
-  await emitOutput(split ? "\\./fresh.md" : "\x1b]7;file://example.com/b\x1b\\./fresh.md");
-  expect(await allCandidates(term, 0)).toEqual([]);
-  await clickAt(term, 1, { ctrlKey: true }, 1);
-  expect(openPage).toHaveBeenLastCalledWith({ kind: "markdown", path: "/b/fresh.md" }, "backend");
-});
-
-it("does not lower the cwd boundary when erase-history removes no rows", async () => {
-  const { term, openPage } = await mountReal();
-  await reportCwd("/a");
-  await emitOutput("./old.md\r\n\r\n");
-  await reportCwd("/b");
-  await emitOutput("\x1b[3J\x1b[H" + osc7("/b"));
-  expect(term.buffer.active.length - term.rows).toBe(0);
-  expect(bufferText(term, 0)).toBe("./old.md");
-  expect(await allCandidates(term, 0)).toEqual([]);
-  await clickAt(term, 1, { ctrlKey: true });
-  expect(openPage).not.toHaveBeenCalled();
-});
-
-it("does not mistake a paged history trim for a screen clear or move old paths into the current cwd", async () => {
-  const { term, openPage } = await mountReal({ cols: 20, rows: 5, scrollbackLimit: 10000 });
-  await reportCwd("/a");
-  await emitOutput("output\r\n".repeat(4543));
-  await emitOutput("./old.md /tmp/a.md\r\n");
-  const oldRow = findBufferRow(term, "./old.md /tmp/a.md");
-  const cached = await linkAt(term, 1, oldRow);
-  expect(cached).toBeDefined();
-  await reportCwd("/b");
-  // A supported absolute link obtained after cd isolates generation from the
-  // relative cwd fence when a later history page is dropped.
-  const cachedAbsolute = await linkAt(term, 10, oldRow);
-  expect(cachedAbsolute).toBeDefined();
-  const before = term.buffer.active.length;
-  await emitOutput("promptB\r\n\r\n");
-  const after = term.buffer.active.length;
-  expect(after).toBeLessThan(before);
-  const movedRow = findBufferRow(term, "./old.md /tmp/a.md");
-  expect(movedRow).toBeGreaterThanOrEqual(after - term.rows);
-  expect(term.buffer.active.getLine(movedRow).isWrapped).toBe(false);
-  expect(term.buffer.active.getLine(movedRow + 1).isWrapped).toBe(false);
-  expect((await allCandidates(term, movedRow)).map(link => link.text)).toEqual(["/tmp/a.md"]);
-  await activate(cached);
-  await activate(cachedAbsolute);
-  expect(openPage).not.toHaveBeenCalled();
-  // Current paths may be withheld after an untracked trim, but no old /a row
-  // may ever be opened relative to /b.
-  await emitOutput("./fresh.md");
-  const fresh = await linkAt(term, 1, cursorRow(term));
-  if (fresh) await activate(fresh);
-  expect(openPage.mock.calls.every(([page]) => page.path === "/b/fresh.md")).toBe(true);
+  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/tmp/fresh.md" }, "backend");
 });
 
 it("does not link an absolute history token ending at the last terminal column", async () => {
   const { term, openPage } = await mountReal({ cols: 10, rows: 5, scrollbackLimit: 10000 });
-  await reportCwd("/workspace");
+  await finishInitialization();
   await emitOutput("/tmp/a.png\r\n" + "\r\n".repeat(5));
   expect(bufferText(term, 0)).toBe("/tmp/a.png");
   expect(term.buffer.active.length - term.rows).toBeGreaterThan(0);
@@ -1010,28 +662,9 @@ it("does not link an absolute history token ending at the last terminal column",
   expect(openPage).not.toHaveBeenCalled();
 });
 
-it("invalidates cached links when a history page is dropped inside output whose net length grows", async () => {
-  const { term, openPage } = await mountReal({ cols: 20, rows: 5, scrollbackLimit: 10000 });
-  await reportCwd("/workspace");
-  await emitOutput("first\r\n" + "output\r\n".repeat(4542) + "/tmp/old.md\r\n");
-  const cached = await linkAt(term, 1, findBufferRow(term, "/tmp/old.md"));
-  expect(cached).toBeDefined();
-  const before = term.buffer.active.length;
-  expect(bufferText(term, 0)).toBe("first");
-  // Ghostty drops a page at line 4546. The rest of this single write grows the
-  // buffer past its former length, hiding the trim from a before/after test.
-  await emitOutput("output\r\n".repeat(2274));
-  expect(term.buffer.active.length).toBeGreaterThan(before);
-  expect(bufferText(term, 0)).toBe("output");
-  await activate(cached);
-  expect(openPage).not.toHaveBeenCalled();
-  await activate(await linkAt(term, 1, findBufferRow(term, "/tmp/old.md")));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/tmp/old.md" }, "backend");
-});
-
 it("does not turn a historical wrapped slash fragment into an absolute path", async () => {
   const { term, openPage } = await mountReal({ cols: 12, rows: 5, scrollbackLimit: 10000 });
-  await reportCwd("/workspace");
+  await finishInitialization();
   await emitOutput("/home/u/proj/docs/a.md");
   expect(bufferText(term, 0)).toBe("/home/u/proj");
   expect(bufferText(term, 1)).toBe("/docs/a.md");
@@ -1048,7 +681,7 @@ it("does not turn a historical wrapped slash fragment into an absolute path", as
 
 it("keeps a complete absolute history path away from both ambiguous wrap boundaries clickable", async () => {
   const { term, openPage } = await mountReal({ cols: 20, rows: 5, scrollbackLimit: 10000 });
-  await reportCwd("/workspace");
+  await finishInitialization();
   await emitOutput("\r\n/tmp/complete.md\r\n" + "\r\n".repeat(6));
   expect(term.buffer.active.length - term.rows).toBeGreaterThan(1);
   expect(term.buffer.active.getLine(0).getCell(term.cols - 1).getCodepoint()).toBe(0);
@@ -1057,26 +690,13 @@ it("keeps a complete absolute history path away from both ambiguous wrap boundar
   expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/tmp/complete.md" }, "backend");
 });
 
-it("waits for the first real cwd report even when it matches restoreCwd", async () => {
-  const { term, openPage } = await mountReal(undefined, { session: { ...props.session, restoreCwd: "/restored" } });
-  await finishInitialization();
-  await emitOutput("./login.md\r\n");
-  expect(await allCandidates(term, 0)).toEqual([]);
-  await reportCwd("/restored");
-  expect(cursorRow(term)).toBe(1);
-  expect(await allCandidates(term, 0)).toEqual([]);
-  await emitOutput("./fresh.md");
-  await clickAt(term, 1, { ctrlKey: true }, 1);
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/restored/fresh.md" }, "backend");
-});
-
-it("requires a fresh cwd report after reconnect and invalidates old connection links", async () => {
+it("invalidates old absolute links after reconnect and opens new links against the new backend", async () => {
   const previousInvoke = mocks.invoke.getMockImplementation()!;
   let connects = 0;
   mocks.invoke.mockImplementation((command: string, args: any) => command === "ssh_connect"
     ? Promise.resolve(++connects === 1 ? "backend" : "backend-next") : previousInvoke(command, args));
-  const { term, openPage, onStateChange } = await mountReal(undefined, { session: { ...props.session, restoreCwd: "/restored" } });
-  await reportCwd("/restored");
+  const { term, openPage, onStateChange } = await mountReal();
+  await finishInitialization();
   await emitOutput("/tmp/old.md\r\n");
   const cached = await linkAt(term, 1, 0);
   expect(cached).toBeDefined();
@@ -1087,96 +707,9 @@ it("requires a fresh cwd report after reconnect and invalidates old connection l
   await activate(cached);
   expect(openPage).not.toHaveBeenCalled();
   await finishInitialization("backend-next");
-  const loginRow = cursorRow(term);
-  await emitOutput("./login.md\r\n", "backend-next");
-  expect(await allCandidates(term, loginRow)).toEqual([]);
-  await reportCwd("/restored", "backend-next");
-  expect(await allCandidates(term, loginRow)).toEqual([]);
-  await emitOutput("./fresh.md", "backend-next");
+  await emitOutput("/tmp/fresh.md", "backend-next");
   await clickAt(term, 1, { ctrlKey: true }, cursorRow(term));
-  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/restored/fresh.md" }, "backend-next");
-});
-
-it("cancels an old initialization timer before it can flush the new connection's pending echo", async () => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  let view: Awaited<ReturnType<typeof mountWithFakeClock>> | undefined;
-  try {
-    const previousInvoke = mocks.invoke.getMockImplementation()!;
-    let connects = 0;
-    mocks.invoke.mockImplementation((command: string, args: any) => command === "ssh_connect"
-      ? Promise.resolve(++connects === 1 ? "backend" : "backend-next") : previousInvoke(command, args));
-    view = await mountWithFakeClock();
-    const { term, openPage, onStateChange, onCwdChange } = view;
-    await emitOutput("__dssh_osc7 " + osc7("/stale") + "./old.md");
-    expect(bufferText(term, 0)).toBe("");
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-    await act(async () => { mocks.listeners.get("ssh://backend/exit")!({ payload: 0 }); });
-    fireEvent.click(screen.getByRole("button", { name: "[已断开] 点此重连" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(onStateChange.mock.calls.filter(([, state]) => state === "connected")).toHaveLength(2);
-    const pendingRow = cursorRow(term);
-    await emitOutput("__dssh_osc7 " + osc7("/new-pending") + "./pending.md", "backend-next");
-    expect(bufferText(term, pendingRow)).toBe("");
-    // The old timer would fire now; the new timer is still 1000 ms away.
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(onStateChange).toHaveBeenLastCalledWith("pane", "connected");
-    expect(onCwdChange).not.toHaveBeenCalled();
-    expect(bufferText(term, pendingRow)).toBe("");
-    expect(await allCandidates(term, pendingRow)).toEqual([]);
-    await reportCwd("/current", "backend-next");
-    await emitOutput("./fresh.md", "backend-next");
-    await clickAt(term, 1, { ctrlKey: true }, cursorRow(term));
-    expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/current/fresh.md" }, "backend-next");
-  } finally {
-    view?.unmount();
-    vi.useRealTimers();
-  }
-});
-
-it("drops the old echo suppressor before new backend data arrives during SSH start", async () => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  let view: Awaited<ReturnType<typeof mountWithFakeClock>> | undefined;
-  let finishStart!: () => void;
-  const starting = new Promise<void>(resolve => { finishStart = resolve; });
-  try {
-    const previousInvoke = mocks.invoke.getMockImplementation()!;
-    let connects = 0;
-    mocks.invoke.mockImplementation((command: string, args: any) => {
-      if (command === "ssh_connect") return Promise.resolve(++connects === 1 ? "backend" : "backend-next");
-      if (command === "ssh_start" && args.sessionId === "backend-next") return starting;
-      return previousInvoke(command, args);
-    });
-    view = await mountWithFakeClock();
-    const { term, openPage, onStateChange, onCwdChange, backendReady } = view;
-    const oldDataListener = mocks.listeners.get("ssh://backend/data")!;
-    await emitOutput("__dssh_osc7 " + osc7("/stale") + "./old.md");
-    expect(bufferText(term, 0)).toBe("");
-    await act(async () => { mocks.listeners.get("ssh://backend/exit")!({ payload: 0 }); });
-    fireEvent.click(screen.getByRole("button", { name: "[已断开] 点此重连" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(backendReady).toHaveBeenLastCalledWith("pane", "backend-next");
-    expect(onStateChange).toHaveBeenLastCalledWith("pane", "connecting");
-    const bannerRow = cursorRow(term);
-    await emitOutput("./during-start.md\r\n", "backend-next");
-    expect(bufferText(term, bannerRow)).toBe("./during-start.md");
-    await act(async () => { finishStart(); await vi.advanceTimersByTimeAsync(0); });
-    expect(onStateChange).toHaveBeenLastCalledWith("pane", "connected");
-    expect(onCwdChange).not.toHaveBeenCalled();
-    expect(await allCandidates(term, bannerRow)).toEqual([]);
-    // A queued callback from the replaced backend cannot reinstate its cwd.
-    await act(async () => { oldDataListener({ payload: osc7("/stale") + "./late.md" }); });
-    expect(onCwdChange).not.toHaveBeenCalled();
-    expect(await allCandidates(term, bannerRow)).toEqual([]);
-    expect(openPage).not.toHaveBeenCalled();
-    await reportCwd("/current", "backend-next");
-    await emitOutput("./fresh.md", "backend-next");
-    await clickAt(term, 1, { ctrlKey: true }, cursorRow(term));
-    expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/current/fresh.md" }, "backend-next");
-  } finally {
-    finishStart();
-    view?.unmount();
-    vi.useRealTimers();
-  }
+  expect(openPage).toHaveBeenCalledExactlyOnceWith({ kind: "markdown", path: "/tmp/fresh.md" }, "backend-next");
 });
 
 it("does not activate an old disposed provider after the same view connects a different session", async () => {

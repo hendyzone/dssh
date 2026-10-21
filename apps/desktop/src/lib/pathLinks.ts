@@ -27,14 +27,9 @@ function rowText(line: Line): { text: string; columns: number[] } {
   return { text, columns };
 }
 
-/** Resolve POSIX paths on the SSH host, without interpreting shell syntax or URL schemes. */
-function pathTarget(value: string, cwd: string | undefined): PageTarget | null {
-  if (!value || /[:\\|&$*?\x00-\x1f\x7f]/.test(value) || value.startsWith("~") || value.startsWith("//")) return null;
-  if (!value.startsWith("/")) {
-    if (!value.includes("/")) return null; // A bare filename in prose or ls output is not a path link.
-    if (!cwd?.startsWith("/") || cwd.startsWith("//") || /[\x00-\x1f\x7f]/.test(cwd)) return null;
-    value = `${cwd}/${value}`;
-  }
+/** Accept absolute POSIX paths without interpreting shell syntax or URL schemes. */
+function pathTarget(value: string): PageTarget | null {
+  if (!value.startsWith("/") || value.startsWith("//") || /[:\\|&$*?\x00-\x1f\x7f]/.test(value)) return null;
   const parts: string[] = [];
   for (const part of value.split("/")) {
     if (part === "..") parts.pop();
@@ -45,7 +40,6 @@ function pathTarget(value: string, cwd: string | undefined): PageTarget | null {
 
 /** Like task links, paths are scanned lazily only for the requested buffer row. */
 export function createPathLinkProvider(term: PathLinkTerminal, options: {
-  cwd: (y: number) => string | undefined;
   generation: () => number;
   enabled: () => boolean;
   onActivate: (target: PageTarget, event: MouseEvent) => void;
@@ -70,13 +64,13 @@ export function createPathLinkProvider(term: PathLinkTerminal, options: {
         if (history && (columns[match.index + match[0].length] === line.length ||
           (columns[match.index] === 0 && fillsLastCell(term.buffer.active.getLine(y - 1))))) continue;
         const value = match[0].replace(/[.,;!?:…—]+$/, "").replace(/:\d+(?::\d+)?$/, "");
-        const target = pathTarget(value, options.cwd(y));
+        const target = pathTarget(value);
         if (!target) continue;
         links.push({
           text: value,
           range: { start: { x: columns[match.index], y }, end: { x: columns[match.index + value.length] - 1, y } },
           activate: event => {
-            // Output or reflow invalidates the captured row and cwd together.
+            // Reflow and reconnects invalidate links captured by the old terminal state.
             if (!options.enabled() || generation !== options.generation()) return;
             options.onActivate(target, event);
           },
