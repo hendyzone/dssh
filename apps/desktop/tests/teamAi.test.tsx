@@ -24,7 +24,7 @@ it("uses live panes despite duplicate connection entries and normalized host spe
 
 it("finds the live worker on another IP instead of a stale mapped address",()=>{
   const old={...server,host:"192.168.30.108"};
-  const current={...server,id:"vpn-route",host:"100.66.1.8",port:2222};
+  const current={...server,id:"vpn-route",host:"192.0.2.8",port:2222};
   const worker={...member,host:old.host};
   const pane={server:current,tmux:worker.tmux,tmuxWorkdir:worker.workdir};
   const mappings={[JSON.stringify([worker.project,worker.email,worker.host,worker.port,worker.username])]:old.id};

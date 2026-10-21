@@ -43,7 +43,7 @@ export function parseAgentSessions(raw: unknown): SessionsSnapshot {
 }
 
 // ---------- member ↔ session ----------
-/** 「deng@Cowork1.lan:22」→「cowork1」: drop user, port and domain so aliases written differently still compare. */
+/** 「dev@host-a.test:22」→「host-a」: drop user, port and domain so aliases written differently still compare. */
 export function normalizeHost(host: string): string {
   let h = host.trim().toLowerCase().replace(/^.*@/, "");
   if (/^\[.*\](:\d+)?$/.test(h)) return h.replace(/^\[|\](:\d+)?$/g, "");

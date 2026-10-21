@@ -18,7 +18,7 @@ export const board: Record<string, { name: string; tasks: Record<string, unknown
     name: "智能台球桌",
     tasks: [
       task("T1090", {
-        title: "击球辅助线样式统一：实线改虚线并补齐全部入口", assignee: "smart-table-cw3d-pi@motern-agent.com",
+        title: "击球辅助线样式统一：实线改虚线并补齐全部入口", assignee: "smart-table-cw3d-pi@example.com",
         summary: "等：设备验收", status_key: "review", acceptance: "9191 实机核对通过", detail: "## 详细记录\n第一步……",
       }),
       task("T1091", { title: "被阻塞的任务", status_key: "blocked", blocked_reason: "等硬件到货", assignee: "Claude Code" }),
@@ -29,7 +29,7 @@ export const board: Record<string, { name: string; tasks: Record<string, unknown
     deps: { T1090: [{ code: "T1091", title: "被阻塞的任务", status_key: "blocked", completed: false }, { code: "T1092", title: "依赖示例", status_key: "done", completed: true }] },
   },
   amail: { name: "amail", tasks: [task("AM-42", { title: "邮件投递适配" }), task("AM-7", { title: "四工具投递" }), task("T1090", { title: "amail 里同号的任务" })] },
-  nanoclaw: { name: "AgentDock (nanoclaw)", tasks: [task("DD-RETRY-403-GAP", { title: "钉钉 403 重试缺口" })] },
+  "example-project": { name: "AgentDock (example-project)", tasks: [task("DD-RETRY-403-GAP", { title: "钉钉 403 重试缺口" })] },
 };
 
 export function respond(path: string, index = false): { status: number; body: string } {

@@ -8,10 +8,10 @@ import WebPageView from "../src/components/WebPageView";
 beforeEach(() => mocks.invoke.mockReset());
 
 it("recognizes the screenshot's remote HTML path and encoded Chinese filenames", () => {
-  expect(selectedPage("file:///home/deng/.answer-me-with-html/pages/datrix-中枢-v2-核心机制-20261009-131637.html"))
-    .toEqual({ kind: "html", path: "/home/deng/.answer-me-with-html/pages/datrix-中枢-v2-核心机制-20261009-131637.html" });
-  expect(selectedPage(' "file:///home/deng/%E4%B8%AD%20%E6%96%87.htm" '))
-    .toEqual({ kind: "html", path: "/home/deng/中 文.htm" });
+  expect(selectedPage("file:///home/example/.answer-me-with-html/pages/datrix-中枢-v2-核心机制-20261009-131637.html"))
+    .toEqual({ kind: "html", path: "/home/example/.answer-me-with-html/pages/datrix-中枢-v2-核心机制-20261009-131637.html" });
+  expect(selectedPage(' "file:///home/example/%E4%B8%AD%20%E6%96%87.htm" '))
+    .toEqual({ kind: "html", path: "/home/example/中 文.htm" });
   expect(selectedPage("/tmp/a.HTML")).toEqual({ kind: "html", path: "/tmp/a.HTML" });
   expect(selectedPage("https://example.com/page")).toEqual({ kind: "url", url: "https://example.com/page" });
 });
@@ -25,7 +25,7 @@ it("rejects executable schemes, foreign file hosts and ambiguous selections", ()
 const page: WebPage = { id: "page", title: "图.html", sessionId: "ssh-original", target: { kind: "html", path: "/tmp/图.html" } };
 
 it("recognizes Markdown and image paths and resolves document images remotely", () => {
-  expect(selectedPage("file:///home/deng/说明.MD")).toEqual({ kind: "markdown", path: "/home/deng/说明.MD" });
+  expect(selectedPage("file:///home/example/说明.MD")).toEqual({ kind: "markdown", path: "/home/example/说明.MD" });
   for (const ext of ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif"])
     expect(selectedPage(`/tmp/图片.${ext}`)?.kind).toBe("image");
   expect(markdownImagePath("../assets/%E5%9B%BE.png", "/home/docs/readme.md")).toBe("/home/assets/图.png");

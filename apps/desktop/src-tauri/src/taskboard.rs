@@ -219,7 +219,7 @@ mod tests {
             "/api/v1/projects",
             "/api/v1/projects/smart-table/statuses",
             "/api/v1/projects/smart-table/tasks",
-            "/api/v1/projects/nanoclaw/tasks/DD-RETRY-403-GAP",
+            "/api/v1/projects/example-project/tasks/DD-RETRY-403-GAP",
             "/api/v1/projects/amail/tasks/AM-42/dependencies",
             "/api/v1/agent-sessions",
         ] {
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn board_urls_reject_credentials_and_queries() {
-        assert!(board_url("http://100.66.1.3:8091").is_ok());
+        assert!(board_url("http://192.0.2.3:8091").is_ok());
         assert!(board_url("https://board.example.test/base/").is_ok());
         assert!(board_url("ftp://board").is_err());
         assert!(board_url("http://u:p@board").is_err());

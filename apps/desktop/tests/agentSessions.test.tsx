@@ -15,7 +15,7 @@ import type { ServerEntry } from "../src/types";
 /** Shape of `GET /api/v1/agent-sessions` (taskboard collector), values made up. */
 const NOW = 1_792_245_334;
 const row = (session: string, extra: Record<string, unknown> = {}) => ({
-  host: "cowork1", session, box: session.replace(/^worker-/, ""), tool: "codex", project: "demo",
+  host: "host-a", session, box: session.replace(/^worker-/, ""), tool: "codex", project: "demo",
   task_code: "", bind_via: "", state: "idle", state_detail: "", state_since: NOW - 3600, host_ok: true, stale: false,
   first_seen: NOW - 86400, seen_at: NOW - 24, worktree: `/work/.worktrees/${session.replace(/^worker-/, "")}`, branch: "main",
   commit_hash: "a279fa74", commit_time: NOW - 7200, commit_subject: "chore: something", dirty: 0, last_line: "", activity_at: NOW - 3600,
@@ -24,7 +24,7 @@ const row = (session: string, extra: Record<string, unknown> = {}) => ({
 const payload = (sessions: unknown[]) => ({ sessions, now: NOW, ttl_seconds: 180, alert_after_seconds: 600, last_collected_at: NOW - 24 });
 
 const member = (name: string, extra: Partial<TeamMember> = {}): TeamMember => ({
-  project: "demo", email: `${name.replace(/^worker-/, "")}@agents.test`, role: name.replace(/^worker-demo-/, ""), host: "100.66.1.6", port: 22,
+  project: "demo", email: `${name.replace(/^worker-/, "")}@agents.test`, role: name.replace(/^worker-demo-/, ""), host: "192.0.2.6", port: 22,
   username: "dev", workdir: `/work/.worktrees/${name.replace(/^worker-/, "")}`, tmux: { id: "$1", created: 1, name }, ...extra,
 });
 const session = (name: string, extra: Record<string, unknown> = {}) => parseAgentSessions(payload([row(name, extra)])).sessions[0];
@@ -32,15 +32,15 @@ const session = (name: string, extra: Record<string, unknown> = {}) => parseAgen
 describe("parseAgentSessions (data mapping)", () => {
   it("maps collector fields and fills neutral defaults", () => {
     const snap = parseAgentSessions(payload([
-      row("worker-demo-cw3-agy", { host: "cowork3", tool: "agy", task_code: "T0504", task_status: "doing", state: "running", dirty: 35, model: "Gemini", context_pct: 54, commit_subject: "fix: x" }),
+      row("worker-demo-cw3-agy", { host: "host-b", tool: "agy", task_code: "T0504", task_status: "doing", state: "running", dirty: 35, model: "Gemini", context_pct: 54, commit_subject: "fix: x" }),
       row("worker-demo-cw1-codex"),
-      { host: "cowork1", state: "idle" },
+      { host: "host-a", state: "idle" },
       null,
     ]));
     expect(snap).toMatchObject({ now: NOW, ttlSeconds: 180, alertAfterSeconds: 600, collectedAt: NOW - 24 });
     expect(snap.sessions).toHaveLength(2);
     expect(snap.sessions[0]).toMatchObject({
-      host: "cowork3", session: "worker-demo-cw3-agy", box: "demo-cw3-agy", tool: "agy", state: "running", stateSince: NOW - 3600,
+      host: "host-b", session: "worker-demo-cw3-agy", box: "demo-cw3-agy", tool: "agy", state: "running", stateSince: NOW - 3600,
       hostOk: true, stale: false, taskCode: "T0504", taskStatus: "doing", commitHash: "a279fa74", commitTime: NOW - 7200,
       commitSubject: "fix: x", dirty: 35, model: "Gemini", contextPct: 54, worktree: "/work/.worktrees/demo-cw3-agy",
     });
@@ -198,40 +198,40 @@ describe("matchSession (member ↔ session)", () => {
   const two = (a: Record<string, unknown>, b: Record<string, unknown>) => parseAgentSessions(payload([row("worker-demo-x", a), row("worker-demo-x", b)])).sessions;
 
   it("matches by tmux session name even when the roster stores an IP and the collector an ssh alias", () => {
-    const sessions = parseAgentSessions(payload([row("worker-demo-cw3-agy", { host: "cowork3" }), row("worker-demo-cw1-pi")])).sessions;
-    expect(matchSession(member("worker-demo-cw3-agy", { host: "100.66.1.9" }), sessions)?.host).toBe("cowork3");
+    const sessions = parseAgentSessions(payload([row("worker-demo-cw3-agy", { host: "host-b" }), row("worker-demo-cw1-pi")])).sessions;
+    expect(matchSession(member("worker-demo-cw3-agy", { host: "192.0.2.9" }), sessions)?.host).toBe("host-b");
     expect(matchSession(member("worker-demo-nobody"), sessions)).toBeUndefined();
   });
   it("disambiguates a shared session name by host, tolerating user@, port, case and domain", () => {
-    const sessions = two({ host: "cowork1", state: "idle" }, { host: "cowork3", state: "running" });
-    expect(matchSession(member("worker-demo-x", { host: "deng@Cowork3.lan:22" }), sessions)?.state).toBe("running");
-    expect(matchSession(member("worker-demo-x", { host: "COWORK1" }), sessions)?.state).toBe("idle");
+    const sessions = two({ host: "host-a", state: "idle" }, { host: "host-b", state: "running" });
+    expect(matchSession(member("worker-demo-x", { host: "dev@host-b.test:22" }), sessions)?.state).toBe("running");
+    expect(matchSession(member("worker-demo-x", { host: "HOST-A" }), sessions)?.state).toBe("idle");
   });
   it("falls back to the worktree, then the mailbox, when hosts are written differently", () => {
-    const byWorktree = two({ host: "cowork1", worktree: "/a" }, { host: "cowork3", worktree: "/b", state: "running" });
-    expect(matchSession(member("worker-demo-x", { host: "100.66.1.9", workdir: "/b" }), byWorktree)?.state).toBe("running");
-    const byBox = two({ host: "cowork1", box: "demo-other" }, { host: "cowork3", box: "demo-x", state: "running" });
-    expect(matchSession(member("worker-demo-x", { host: "100.66.1.9", workdir: "/none", email: "Demo-X@agents.test" }), byBox)?.state).toBe("running");
+    const byWorktree = two({ host: "host-a", worktree: "/a" }, { host: "host-b", worktree: "/b", state: "running" });
+    expect(matchSession(member("worker-demo-x", { host: "192.0.2.9", workdir: "/b" }), byWorktree)?.state).toBe("running");
+    const byBox = two({ host: "host-a", box: "demo-other" }, { host: "host-b", box: "demo-x", state: "running" });
+    expect(matchSession(member("worker-demo-x", { host: "192.0.2.9", workdir: "/none", email: "Demo-X@agents.test" }), byBox)?.state).toBe("running");
   });
   it("uses the mailbox when the session was renamed, and prefers a live session over a gone one", () => {
     const renamed = parseAgentSessions(payload([row("demo-x-new", { box: "demo-x", state: "running" })])).sessions;
     expect(matchSession(member("worker-demo-x"), renamed)?.session).toBe("demo-x-new");
     const sessions = two({ state: "gone", seen_at: NOW }, { state: "idle", seen_at: NOW - 30 });
-    expect(matchSession(member("worker-demo-x", { host: "cowork1" }), sessions)?.state).toBe("idle");
+    expect(matchSession(member("worker-demo-x", { host: "host-a" }), sessions)?.state).toBe("idle");
   });
   it("normalizes host spellings", () => {
-    expect(normalizeHost(" deng@Cowork1.local:2222 ")).toBe("cowork1");
-    expect(normalizeHost("100.66.1.6:22")).toBe("100.66.1.6");
+    expect(normalizeHost(" dev@host-a.test:2222 ")).toBe("host-a");
+    expect(normalizeHost("192.0.2.6:22")).toBe("192.0.2.6");
     expect(normalizeHost("[fe80::1]:22")).toBe("fe80::1");
   });
 });
 
 // ---------- component: live data, offline fallback, refresh timer ----------
-const server: ServerEntry = { id: "lead", name: "Lead", host: "100.66.1.6", port: 22, username: "dev", authMethod: "password" };
+const server: ServerEntry = { id: "lead", name: "Lead", host: "192.0.2.6", port: 22, username: "dev", authMethod: "password" };
 const profile = { ...emptyProfile(), enabled: true, project: "demo", workdir: "/lead", tmuxId: "$9", tmuxCreated: 9, tmuxName: "lead" };
 const navigation = { server, servers: [server], onOpen: vi.fn() };
 const board = boardSource({ ...defaultLookupSettings(), boardUrl: "http://board.test:8091" })!;
-const roster = [member("worker-demo-cw1-codex"), member("worker-demo-cw3-agy", { host: "100.66.1.9" }), member("worker-demo-cw1-pi")];
+const roster = [member("worker-demo-cw1-codex"), member("worker-demo-cw3-agy", { host: "192.0.2.9" }), member("worker-demo-cw1-pi")];
 const state: { sessions: unknown; offline: boolean; paths: string[] } = { sessions: undefined, offline: false, paths: [] };
 
 function fakeBoard(command: string, args: { path: string }) {
@@ -251,7 +251,7 @@ beforeEach(() => {
   state.offline = false; state.paths = [];
   state.sessions = payload([
     row("worker-demo-cw1-codex"),
-    row("worker-demo-cw3-agy", { host: "cowork3", state: "running", task_code: "T0504", task_status: "doing", dirty: 35, model: "Gemini 4", commit_subject: "chore(s4): apply review" }),
+    row("worker-demo-cw3-agy", { host: "host-b", state: "running", task_code: "T0504", task_status: "doing", dirty: 35, model: "Gemini 4", commit_subject: "chore(s4): apply review" }),
     row("worker-demo-cw1-pi", { state: "waiting_input", state_detail: "确认框/菜单", task_code: "T0503", task_status: "review", state_since: NOW - 900 }),
     // Another project's session in the global list: never shown, its card never fetched.
     row("worker-other-cw1-codex", { project: "other", state: "stuck", task_code: "X1", task_status: "doing" }),

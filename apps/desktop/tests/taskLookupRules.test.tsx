@@ -72,7 +72,7 @@ describe("findTaskCodes", () => {
 describe("display rules", () => {
   it("shortens assignees like the web board", () => {
     const slugs = ["smart-table", "smart", "amail"];
-    expect(shortName("smart-table-cw3d-pi@motern-agent.com", slugs)).toBe("cw3d-pi");
+    expect(shortName("smart-table-cw3d-pi@example.com", slugs)).toBe("cw3d-pi");
     expect(shortName("Claude Code", slugs)).toBe("Claude Code");
     // Same as the board: the longest slug that fits is stripped.
     expect(shortName("smart-table", slugs)).toBe("table");
@@ -153,7 +153,7 @@ describe("lookupTask", () => {
     expect(result.kind).toBe("choices");
     if (result.kind === "choices") expect(result.choices.map(c => c.project).sort()).toEqual(["amail", "smart-table"]);
     const single = await lookupTask(source, "DD-RETRY-403-GAP");
-    expect(single.kind === "task" && single.card.project).toBe("nanoclaw");
+    expect(single.kind === "task" && single.card.project).toBe("example-project");
   });
   it("distinguishes missing project, missing code and unreachable board", async () => {
     await expect(lookupTask(source, "nope T1")).rejects.toMatchObject({ kind: "project" });

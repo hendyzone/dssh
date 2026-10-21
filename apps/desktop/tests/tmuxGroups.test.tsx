@@ -36,7 +36,7 @@ test("classifies *-lead and lead-* sessions as Leads, labelled by project slug",
   expect(classifyTmuxSession("smart-table-lead")).toEqual({ group: LEAD_GROUP, subgroup: "", display: "smart-table" });
   expect(classifyTmuxSession("datrix-lead")).toEqual({ group: LEAD_GROUP, subgroup: "", display: "datrix" });
   expect(classifyTmuxSession("dnotes-lead")).toEqual({ group: LEAD_GROUP, subgroup: "", display: "dnotes" });
-  expect(classifyTmuxSession("nanoclaw-lead")).toEqual({ group: LEAD_GROUP, subgroup: "", display: "nanoclaw" });
+  expect(classifyTmuxSession("example-project-lead")).toEqual({ group: LEAD_GROUP, subgroup: "", display: "example-project" });
   expect(classifyTmuxSession("lead-datrix")).toEqual({ group: LEAD_GROUP, subgroup: "", display: "datrix" });
   expect(classifyTmuxSession("nst-lead").display).toBe("nst");
 });
@@ -49,7 +49,7 @@ test("a Lead's project slug matches its workers' sub-folder", () => {
     ["datrix-lead", "worker-datrix-cw1-codex"],
     ["datrix-lead", "worker-datrix-cw3b-cursor"],
     ["dnotes-lead", "worker-dnotes-cw1-claude"],
-    ["nanoclaw-lead", "worker-nanoclaw-dev-codex"],
+    ["example-project-lead", "worker-example-project-dev-codex"],
   ];
   for (const [lead, worker] of pairs) {
     expect(leadProject(lead)).toBe(classifyTmuxSession(worker).subgroup);

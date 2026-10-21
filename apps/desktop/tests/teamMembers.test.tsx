@@ -262,7 +262,7 @@ it("keeps failed membership discovery distinct from a new team",async()=>{
 });
 
 it.each(["same","different-root","recreated","missing-roster"])("recovers an alternate-IP Lead only from its verified remote roster: %s",async mode=>{
-  const original={...server,id:"old-route",host:"100.66.1.7"};
+  const original={...server,id:"old-route",host:"192.0.2.7"};
   const alternate={...server,id:"new-route",host:"192.168.1.7",port:2222};
   saveCollaboration(original.id,profile);
   const target={id:profile.tmuxId,created:mode==="recreated"?999:profile.tmuxCreated,name:"lead"};

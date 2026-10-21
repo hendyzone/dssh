@@ -306,22 +306,22 @@ test("dragging onto a sibling swaps remote positions and a fresh connection read
 });
 
 test("right-click termination targets the clicked session and refreshes the list", async () => {
-  const other = { ...snapshot.sessions[0], id: "$1", name: "nanoclaw", created: 456 };
+  const other = { ...snapshot.sessions[0], id: "$1", name: "example-project", created: 456 };
   let current = { ...snapshot, sessions: [...snapshot.sessions, other] };
   mocks.invoke.mockImplementation(async (command) => {
     if (command === "tmux_snapshot") return current;
     if (command === "tmux_action") current = snapshot;
   });
   render(<TmuxPanel sessionId="ssh" onAttach={() => {}} onClose={() => {}} />);
-  const card = await screen.findByText("nanoclaw");
+  const card = await screen.findByText("example-project");
   fireEvent.contextMenu(card, { clientX: 80, clientY: 140 });
   fireEvent.click(await screen.findByRole("menuitem", { name: "结束会话" }));
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("tmux_action", {
     sessionId: "ssh",
     request: { action: "kill-session", target: null, name: null, session: { id: "$1", created: 456 } },
   }));
-  expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("nanoclaw"), expect.anything());
-  await waitFor(() => expect(screen.queryByText("nanoclaw")).toBeNull());
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("example-project"), expect.anything());
+  await waitFor(() => expect(screen.queryByText("example-project")).toBeNull());
   expect(screen.getByText("work")).toBeTruthy();
 });
 
@@ -379,7 +379,7 @@ test("splits Workers into project sub-folders and lists Leads in their own folde
   const names = [
     "worker-datrix-cw1-codex", "worker-smart-table-devc-pi", "worker-datrix-cw3b-cursor", "smart-table-lead",
     "worker-smart-table-camera-claude", "worker-datrix-cw1b-pi", "datrix-lead", "worker-smart-table-cw1c-pi",
-    "dnotes-lead", "nanoclaw-lead", "notes",
+    "dnotes-lead", "example-project-lead", "notes",
   ];
   let current = { ...snapshot, sessions: [
     ...names.map((name, index) => ({ ...snapshot.sessions[0], id: `$${index}`, name, created: 100 + index })),
@@ -402,7 +402,7 @@ test("splits Workers into project sub-folders and lists Leads in their own folde
     .toEqual(["手动分组", "Leads", "Workers", ""]);
   const leadFolder = document.querySelector('[data-tmux-group="Leads"]')!;
   expect([...leadFolder.querySelectorAll(".tmux-session-card strong")].map((el) => el.textContent))
-    .toEqual(["smart-table", "datrix", "dnotes", "nanoclaw"]);
+    .toEqual(["smart-table", "datrix", "dnotes", "example-project"]);
   expect(screen.getByText("dnotes").closest("button")!.getAttribute("title")).toContain("dnotes-lead");
   expect(screen.getByText("worker-dnote-cw2-pi")).toBeTruthy();
   expect(screen.queryByText("cw1-codex")).toBeNull();
