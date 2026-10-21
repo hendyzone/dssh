@@ -50,9 +50,10 @@ const OSC7_RE =
 function scanOsc7(
   carry: string,
   chunk: string,
-): { path: string | null; carry: string } {
+): { path: string | null; carry: string; positions: Array<{ path: string; end: number }> } {
   const text = carry + chunk;
   let path: string | null = null;
+  const positions: Array<{ path: string; end: number }> = [];
   let lastEnd = 0;
   OSC7_RE.lastIndex = 0;
   for (let m = OSC7_RE.exec(text); m; m = OSC7_RE.exec(text)) {
@@ -62,11 +63,12 @@ function scanOsc7(
       path = m[1];
     }
     lastEnd = m.index + m[0].length;
+    positions.push({ path, end: lastEnd - carry.length });
   }
   const tailStart = text.lastIndexOf("\x1b]7;");
   const nextCarry =
     tailStart >= lastEnd ? text.slice(tailStart, tailStart + 512) : "";
-  return { path, carry: nextCarry };
+  return { path, carry: nextCarry, positions };
 }
 
 interface Props {
@@ -453,6 +455,13 @@ export default function TerminalView({
         }
       };
       t.open(containerRef.current);
+      // Link cwd follows rendered output, which may lag SSH input during a
+      // synchronized update. Keep its row boundary in absolute buffer coordinates.
+      const trackPathCwd = !local && !!onOpenPageRef.current;
+      let linkCwd = lastCwd;
+      let linkCwdFromRow = 0;
+      let linkCwdBufferType = trackPathCwd ? t.buffer.active.type : undefined;
+      let linkOscCarry = "";
       {
         const root = containerRef.current;
         const track = (event: MouseEvent) => {
@@ -463,14 +472,21 @@ export default function TerminalView({
         cleanups.push(() => root.removeEventListener("mousemove", track));
         // ghostty checks providers in registration order: a path wins over a
         // task code inside it; built-in OSC 8 and URL links keep their priority.
-        if (!local && onOpenPageRef.current) {
+        if (trackPathCwd) {
           t.registerLinkProvider?.(createPathLinkProvider(t, {
-            cwd: () => lastCwd,
+            cwd: y => {
+              const buffer = t.buffer.active;
+              // Scrollback lacks wrap metadata; leave its relative fragments
+              // unlinked. Visible old-cwd rows are excluded separately.
+              if (y < Math.max(0, buffer.length - t.rows)) return undefined;
+              return buffer.type === linkCwdBufferType && y >= linkCwdFromRow ? linkCwd : undefined;
+            },
             enabled: () => !disposed && connectionStateRef === "connected" && !!backendRef.current && !!onOpenPageRef.current,
             onActivate: (target, event) => {
               const backend = backendRef.current;
-              // Like task links, ordinary left-click works; Ctrl is optional.
-              if (disposed || local || connectionStateRef !== "connected" || !backend || event.button !== 0 || t.getSelection()) return;
+              // Match built-in URL links: Ctrl/Cmd is required even in mouse
+              // tracking mode. Plain focus clicks and double-click selection stay local.
+              if (!backend || event.button !== 0 || !(event.ctrlKey || event.metaKey) || event.detail > 1 || t.getSelection()) return;
               setTaskHover(null);
               onOpenPageRef.current?.(target, backend);
             },
@@ -495,7 +511,26 @@ export default function TerminalView({
       cleanups.push(attachTerminalWheel(t, containerRef.current, () => settingsRef.current));
       cleanups.push(trackTerminalInputScroll(t, containerRef.current, () =>
         !disposed && activeRef.current && inputEnabledRef.current && connectionStateRef === "connected"));
-      output = createTerminalOutput((data) => t.write(data));
+      output = createTerminalOutput((data) => {
+        if (!trackPathCwd) return t.write(data);
+        const scanned = scanOsc7(linkOscCarry, data);
+        linkOscCarry = scanned.carry;
+        let start = 0;
+        for (const position of scanned.positions) {
+          // Each write is synchronous; no synchronized frame is released early.
+          // Write through OSC 7 before reading the cursor, then render its suffix.
+          t.write(data.slice(start, position.end));
+          start = position.end;
+          const buffer = t.buffer.active;
+          if (position.path !== linkCwd || buffer.type !== linkCwdBufferType) {
+            linkCwd = position.path;
+            linkCwdBufferType = buffer.type;
+            // ghostty's baseY is always 0; length includes scrollback plus rows.
+            linkCwdFromRow = Math.max(0, buffer.length - t.rows) + buffer.cursorY;
+          }
+        }
+        if (start < data.length) t.write(data.slice(start));
+      });
       cleanups.push(() => output?.dispose());
       cleanups.push(trackTerminalIme(t, containerRef.current, () =>
         !disposed && activeRef.current && inputEnabledRef.current));
