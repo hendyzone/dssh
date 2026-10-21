@@ -13,17 +13,18 @@
 .collaboration-error{color:var(--ui-danger,#e06c75)}
 .team-members{display:flex;flex-direction:column;gap:6px}
 .team-members details{display:block}
-.team-members summary{cursor:pointer;margin:0}
+.team-members summary{cursor:pointer;font-size:11px;margin:0}
 .team-members details[open]>summary{margin-bottom:6px}
 .team-members select{max-width:100%;min-width:0}
-.team-toolbar{display:flex;align-items:center;gap:6px;min-width:0}
-.team-toolbar{flex-wrap:wrap;gap:6px 10px}
+/* 共享工具栏：TeamMembership 也用它，保持既有「标题左、动作右」的行为。 */
+.team-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 10px;min-width:0}
 .team-toolbar-title{display:flex;align-items:baseline;gap:6px;min-width:0}
 .team-toolbar-title strong{font-size:13px;white-space:nowrap}
 .team-toolbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin-left:auto}
 .team-toolbar-details{margin:0}
 .team-more-body{display:flex;flex-direction:column;gap:6px;padding:6px 0}
 .team-dynamics{padding:8px;border:1px solid var(--ui-border);border-radius:6px;display:flex;flex-direction:column;gap:6px}
+.team-dynamics{border:0;padding:4px 0}          /* 旧行为：面板里不再套第二层边框 */
 .team-dynamics small{font-size:10px;color:var(--ui-muted);font-weight:normal}
 .team-ai-selection{display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;margin:8px 0}
 .team-ai-selection label{font-size:11px;display:flex;align-items:center;gap:5px}
@@ -34,87 +35,95 @@
 .team-empty{align-items:center;text-align:center;padding:24px 12px}
 .team-empty h4,.team-setup h3{margin:0;font-size:15px}
 .team-add{display:flex;flex-direction:column;gap:12px;padding:12px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-panel)}
-/* ── 概览计数（可点击筛选） ───────────────────────────────────────────── */
-.team-live-counts{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
-.team-count{display:inline-flex;flex-direction:column;align-items:flex-start;gap:0;min-width:58px;
+/* 以下都是合并列表自己的样式，统一挂在 .team-dynamics 下，避免外溢到其它团队视图。 */
+.team-dynamics .team-live-counts{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
+.team-dynamics .team-count{display:inline-flex;flex-direction:column;align-items:flex-start;gap:0;min-width:58px;
  padding:3px 9px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-panel);
  color:var(--ui-fg);cursor:pointer;line-height:1.15;transition:border-color .15s,opacity .15s}
-.team-count b{font-size:16px;font-variant-numeric:tabular-nums}
-.team-count span{font-size:10px;color:var(--ui-muted)}
-.team-count:hover{border-color:var(--ui-accent)}
-.team-count.is-zero{opacity:.5}
-.team-count.is-on{border-color:var(--ui-accent);box-shadow:inset 0 0 0 1px var(--ui-accent)}
-.team-count.is-bad b{color:var(--ui-danger,#e06c75)}
-.team-count.is-wait b{color:#d19a66}
-.team-count.is-idle b{color:var(--ui-fg)}
-/* ── 分组 ────────────────────────────────────────────────────────────── */
-.team-live-group{display:flex;flex-direction:column}
-.team-live-group>details>summary.team-activity-heading{display:flex;align-items:center;gap:6px;font-size:11px;
- padding:4px 0 2px;color:var(--ui-muted)}
-.team-live-group>details[open]>summary.team-activity-heading{margin-bottom:2px}
-.team-activity-heading span{font-variant-numeric:tabular-nums;opacity:.7}
-.team-live-group-attention>details>summary.team-activity-heading{color:var(--ui-danger,#e06c75)}
-.team-live-group-waitLead>details>summary.team-activity-heading{color:#d19a66}
-.team-live-group-running>details>summary.team-activity-heading{color:var(--ui-accent)}
-.team-live-group-body{display:flex;flex-direction:column}
-.team-live-empty{margin:2px 0 4px;font-size:11px;color:var(--ui-muted)}
-/* ── 卡片行（需要处理 / 等 Lead / 运行中 / 待验收） ───────────────────── */
-.team-live-card{border-bottom:1px solid var(--ui-border)}
-.team-live-card:last-child{border-bottom:0}
-.team-live-card>summary.team-card-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;
+.team-dynamics .team-count b{font-size:16px;font-variant-numeric:tabular-nums}
+.team-dynamics .team-count span{font-size:10px;color:var(--ui-muted)}
+.team-dynamics .team-count:hover{border-color:var(--ui-accent)}
+.team-dynamics .team-count.is-zero{opacity:.5}
+.team-dynamics .team-count.is-on{border-color:var(--ui-accent);box-shadow:inset 0 0 0 1px var(--ui-accent)}
+.team-dynamics .team-count.is-bad b{color:var(--ui-danger,#e06c75)}
+.team-dynamics .team-count.is-wait b{color:#d19a66}
+.team-dynamics .team-count.is-idle b{color:var(--ui-fg)}
+/* 分组 */
+.team-dynamics .team-live-group{display:flex;flex-direction:column}
+.team-dynamics .team-live-group>details>summary.team-activity-heading{display:flex;align-items:center;gap:6px;
+ font-size:11px;padding:4px 0 2px;color:var(--ui-muted)}
+.team-dynamics .team-live-group>details[open]>summary.team-activity-heading{margin-bottom:2px}
+.team-dynamics .team-activity-heading span{font-variant-numeric:tabular-nums;opacity:.7}
+.team-dynamics .team-live-group-attention>details>summary.team-activity-heading{color:var(--ui-danger,#e06c75)}
+.team-dynamics .team-live-group-waitLead>details>summary.team-activity-heading{color:#d19a66}
+.team-dynamics .team-live-group-running>details>summary.team-activity-heading{color:var(--ui-accent)}
+.team-dynamics .team-live-group-body{display:flex;flex-direction:column}
+.team-dynamics .team-live-empty{margin:2px 0 4px;font-size:11px;color:var(--ui-muted)}
+/* 卡片行（需要处理 / 等 Lead / 运行中 / 待验收） */
+.team-dynamics .team-live-card{border-bottom:1px solid var(--ui-border)}
+.team-dynamics .team-live-card:last-child{border-bottom:0}
+.team-dynamics .team-live-card>summary.team-card-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;
  align-items:center;gap:2px 8px;padding:6px 2px;min-width:0}
-.team-live-dot{width:7px;height:7px;border-radius:50%;background:var(--ui-muted);flex:none}
-.team-live-dot.is-bad{background:var(--ui-danger,#e06c75);box-shadow:0 0 0 2px color-mix(in srgb,var(--ui-danger,#e06c75) 25%,transparent)}
-.team-live-dot.is-warn,.team-live-dot.is-wait,.team-live-dot.is-lead{background:#d19a66}
-.team-live-dot.is-run{background:var(--ui-accent)}
-.team-live-dot.is-review{background:var(--ui-accent)}
-.team-live-dot.is-idle,.team-live-dot.is-gone,.team-live-dot.is-offline,.team-live-dot.is-none{background:var(--ui-muted)}
-.team-ai-identity{font-size:13px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.team-live-suffix{font-size:11px;font-weight:400;color:var(--ui-muted)}
-.team-live-status{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
-.team-live-status small{font-variant-numeric:tabular-nums;white-space:nowrap}
-.team-live-badge{font-size:11px;border:1px solid currentColor;border-radius:3px;padding:0 4px;line-height:16px;white-space:nowrap}
-.team-live-badge.is-bad{color:var(--ui-danger,#e06c75);font-weight:600}
-.team-live-badge.is-warn,.team-live-badge.is-wait{color:#d19a66;font-weight:600}
-.team-live-badge.is-run{color:var(--ui-accent)}
-.team-live-badge.is-lead{color:#d19a66;font-weight:600}
-.team-live-badge.is-review{color:var(--ui-accent)}
-.team-live-badge.is-idle,.team-live-badge.is-gone,.team-live-badge.is-offline,.team-live-badge.is-none{color:var(--ui-muted)}
-.team-ai-row-actions{display:flex;align-items:center;gap:2px;flex:none}
-.team-ai-row-actions .team-ai-single{color:var(--ui-accent)}
-.team-ai-busy-dot{display:inline-block;width:5px;height:5px;margin-left:3px;border-radius:50%;
- background:var(--ui-accent);animation:team-pulse 1s ease-in-out infinite}
-@keyframes team-pulse{50%{opacity:.25}}
+.team-dynamics .team-live-dot{width:7px;height:7px;border-radius:50%;background:var(--ui-muted);flex:none}
+.team-dynamics .team-live-dot.is-bad{background:var(--ui-danger,#e06c75);
+ box-shadow:0 0 0 2px color-mix(in srgb,var(--ui-danger,#e06c75) 25%,transparent)}
+.team-dynamics .team-live-dot.is-warn,.team-dynamics .team-live-dot.is-wait,
+.team-dynamics .team-live-dot.is-lead{background:#d19a66}
+.team-dynamics .team-live-dot.is-run,.team-dynamics .team-live-dot.is-review{background:var(--ui-accent)}
+.team-dynamics .team-live-dot.is-idle,.team-dynamics .team-live-dot.is-gone,
+.team-dynamics .team-live-dot.is-offline,.team-dynamics .team-live-dot.is-none{background:var(--ui-muted)}
+.team-dynamics .team-ai-identity{font-size:13px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.team-dynamics .team-live-suffix{font-size:11px;font-weight:400;color:var(--ui-muted)}
+.team-dynamics .team-live-status{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+.team-dynamics .team-live-status small{font-variant-numeric:tabular-nums;white-space:nowrap}
+.team-dynamics .team-live-badge{font-size:11px;border:1px solid currentColor;border-radius:3px;
+ padding:0 4px;line-height:16px;white-space:nowrap}
+.team-dynamics .team-live-badge.is-bad{color:var(--ui-danger,#e06c75);font-weight:600}
+.team-dynamics .team-live-badge.is-warn,.team-dynamics .team-live-badge.is-wait{color:#d19a66;font-weight:600}
+.team-dynamics .team-live-badge.is-run,.team-dynamics .team-live-badge.is-review{color:var(--ui-accent)}
+.team-dynamics .team-live-badge.is-lead{color:#d19a66;font-weight:600}
+.team-dynamics .team-live-badge.is-idle,.team-dynamics .team-live-badge.is-gone,
+.team-dynamics .team-live-badge.is-offline,.team-dynamics .team-live-badge.is-none{color:var(--ui-muted)}
+.team-dynamics .team-ai-chip{font-size:10px;border:1px solid currentColor;border-radius:3px;padding:0 3px;
+ line-height:14px;color:var(--ui-accent)}
+.team-dynamics .team-ai-row-actions{display:flex;align-items:center;gap:2px;flex:none}
+.team-dynamics .team-ai-row-actions .team-ai-single{color:var(--ui-accent)}
+.team-dynamics .team-ai-busy-text{font-size:10px;color:var(--ui-accent);white-space:nowrap}
 /* 第二行：卡号 + 卡状态 + 一句话；第三行：提交 / 模型 / 主机 */
-.team-card-line2{grid-column:1/-1;display:flex;align-items:baseline;gap:6px;min-width:0;font-size:12px}
-.team-card-line2 b{font-weight:600;flex:none}
-.team-card-line2 em{font-style:normal;font-size:11px;color:var(--ui-muted);flex:none}
-.team-card-brief{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.4}
-.team-card-line2.is-roster b{font-weight:500;color:var(--ui-muted);font-size:10px;flex:none}
-.team-card-line2.is-roster .team-card-brief{-webkit-line-clamp:1;color:var(--ui-muted);font-size:11px}
-.team-card-line3{grid-column:1/-1;display:flex;gap:6px;align-items:baseline;min-width:0;font-size:11px;
+.team-dynamics .team-card-line2{grid-column:1/-1;display:flex;align-items:baseline;gap:6px;min-width:0;font-size:12px}
+.team-dynamics .team-card-line2 b{font-weight:600;flex:none}
+.team-dynamics .team-card-line2 em{font-style:normal;font-size:11px;color:var(--ui-muted);flex:none}
+.team-dynamics .team-card-brief{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;
+ -webkit-box-orient:vertical;line-height:1.4}
+.team-dynamics .team-card-line2.is-roster b{font-weight:500;color:var(--ui-muted);font-size:10px;flex:none}
+.team-dynamics .team-card-line2.is-roster .team-card-brief{-webkit-line-clamp:1;color:var(--ui-muted);font-size:11px}
+.team-dynamics .team-card-line2.is-ai{color:var(--ui-muted);font-size:11px}
+.team-dynamics .team-ai-inline{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;
+ -webkit-box-orient:vertical}
+.team-dynamics .team-card-line3{grid-column:1/-1;display:flex;gap:6px;align-items:baseline;min-width:0;font-size:11px;
  color:var(--ui-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.team-card-line3>span{overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
-.team-card-line3>span:first-child{flex:1 1 auto}
-.team-live-dirty{color:#d19a66;flex:none}
-.team-card-expanded{display:flex;flex-direction:column;gap:6px;padding:2px 4px 8px 16px;border-top:1px solid var(--ui-border);margin-top:2px}
-.team-card-expanded>p{margin:2px 0}
-.team-ai-note{font-size:11px;color:var(--ui-muted)}
-.team-ai-summary{font-size:11px;color:var(--ui-muted);white-space:normal;line-height:1.5}
-.team-live-detail{font-size:11px;color:var(--ui-muted);overflow-wrap:anywhere}
-/* ── 紧凑行（空闲·可派活 / 离开 / Lead 手写回退） ─────────────────────── */
-.team-compact-row{border-bottom:1px solid var(--ui-border)}
-.team-compact-row:last-child{border-bottom:0}
-.team-compact-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;align-items:center;
- gap:2px 8px;padding:3px 2px;min-width:0}
-.team-compact-state{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ui-muted);white-space:nowrap}
-.team-compact-card{font-size:11px;color:var(--ui-muted);white-space:nowrap}
-.team-compact-card.is-empty{opacity:.55}
-.team-compact-row>summary span{flex:none}
-.team-compact-row>summary .team-ai-identity{flex:1 1 auto}
-.team-live-alert{border-left:3px solid var(--ui-danger,#e06c75);padding-left:7px;
+.team-dynamics .team-card-line3>span{overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.team-dynamics .team-card-line3>span:first-child{flex:1 1 auto}
+.team-dynamics .team-live-dirty{color:#d19a66;flex:none}
+.team-dynamics .team-card-expanded{display:flex;flex-direction:column;gap:6px;padding:2px 4px 8px 16px;
+ border-top:1px solid var(--ui-border);margin-top:2px}
+.team-dynamics .team-card-expanded>p{margin:2px 0}
+.team-dynamics .team-ai-note{font-size:11px;color:var(--ui-muted)}
+.team-dynamics .team-ai-summary{font-size:11px;color:var(--ui-muted);white-space:normal;line-height:1.5}
+.team-dynamics .team-live-detail{font-size:11px;color:var(--ui-muted);overflow-wrap:anywhere}
+/* 紧凑行（Lead / 空闲·可派活 / 离开 / Lead 手写回退） */
+.team-dynamics .team-compact-row{border-bottom:1px solid var(--ui-border)}
+.team-dynamics .team-compact-row:last-child{border-bottom:0}
+.team-dynamics .team-compact-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;
+ align-items:center;gap:2px 8px;padding:3px 2px;min-width:0}
+.team-dynamics .team-compact-state{display:flex;align-items:center;gap:5px;font-size:11px;
+ color:var(--ui-muted);white-space:nowrap}
+.team-dynamics .team-compact-card{font-size:11px;color:var(--ui-muted);white-space:nowrap}
+.team-dynamics .team-compact-card.is-roster{max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.team-dynamics .team-compact-row>summary .team-ai-identity{flex:1 1 auto}
+.team-dynamics .team-live-alert{border-left:3px solid var(--ui-danger,#e06c75);padding-left:7px;
  background:color-mix(in srgb,var(--ui-danger,#e06c75) 7%,transparent)}
-.team-live-wait-lead{border-left:3px solid #d19a66;padding-left:7px;
+.team-dynamics .team-live-wait-lead{border-left:3px solid #d19a66;padding-left:7px;
  background:color-mix(in srgb,#d19a66 8%,transparent)}
 /* ── 成员管理（展开详情内） ─────────────────────────────────────────── */
 .team-manage-content{border-top:1px solid var(--ui-border);padding-top:5px}

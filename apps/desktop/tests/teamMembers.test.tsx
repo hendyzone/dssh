@@ -112,7 +112,9 @@ it("shows Lead notes and edits them without sending a stale terminal location",a
   const annotated={...member,responsibilities:"后端",quota:"未知",currentTask:"T12 测试中",notes:"等待审查"};
   vi.mocked(invoke).mockResolvedValue(JSON.stringify([annotated]));
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
-  await screen.findByText("后端",{exact:false});
+  await expand(await screen.findByText("工作中（Lead 手写）"));
+  await expand(await screen.findByRole("button",{name:"打开 · cw2 · worker"}));
+  await screen.findByLabelText("成员摘要");
   expect(screen.getByLabelText("成员摘要").textContent).toContain("T12 测试中");
   expect(screen.getByText("详细信息").closest("details")?.open).toBe(false);
   fireEvent.click(screen.getByRole("button",{name:"编辑备注 · cw2"}));
@@ -153,7 +155,7 @@ it("reads the shared remote roster and opens the member with this device's conne
 });
 
 it("requires an explicit alias mapping when no endpoint matches and remembers it locally", async () => {
-  const alias = {...server, host:"100.66.1.5"};
+  const alias = {...server, host:"192.0.2.5"};
   // 本窗口的服务器也不是这位成员（否则实时连接会自动解析出可用终端）
   const leadOnly = {...server, id:"lead-device", host:"lead-remote"};
   const onOpen = vi.fn().mockResolvedValue(undefined);
@@ -168,6 +170,8 @@ it("requires an explicit alias mapping when no endpoint matches and remembers it
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(member, alias));
   view.unmount();
   render(<TeamMembers {...props}/>);
+  await expand(await screen.findByText("待确认（Lead 手写）"));
+  await expand(await screen.findByRole("button", {name:"打开 · cw2 · worker"}));
   expect((await screen.findByLabelText("本机连接 · cw2") as HTMLSelectElement).value).toBe(alias.id);
 });
 
@@ -424,4 +428,81 @@ it("does not render a 无当前卡 line for idle members without a card", async 
   const {container} = renderMerged([idle], liveOf([asSession({session:"worker-demo-c", state:"idle"})]));
   expect(screen.queryByText("无当前卡")).toBeNull();
   expect(container.querySelectorAll(".team-card-line2")).toHaveLength(0);
+});
+
+it("drops the filter when the live summary disappears instead of trapping an empty list", async () => {
+  const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}, currentTask:"空闲116h"});
+  const busy = worker({email:"busy@example.test", role:"w", tmux:{...member.tmux, name:"worker-demo-w"}, currentTask:"T1 进行中"});
+  const live = liveOf([
+    asSession({session:"worker-demo-c", state:"idle"}),
+    asSession({session:"worker-demo-w", state:"running"}),
+  ]);
+  const ui = (value: LiveSessions) => <TeamDynamics sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}} members={[idle, busy]} onUpdated={async()=>{}} board={board} live={value}/>;
+  const view = render(ui(live));
+  // 计数块的可读名带数字与空格
+  fireEvent.click(screen.getByRole("button", {name:"1 可派活"}));
+  expect(screen.getByRole("button", {name:"1 可派活"}).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("region", {name:"空闲·可派活成员"})).toBeTruthy();
+  // 看板掉线：没有计数块了，筛选必须一起消失，不能把列表锁在空结果上
+  view.rerender(ui({...live, snapshot:undefined, offline:true}));
+  await waitFor(() => expect(screen.queryByRole("button", {name:"1 可派活"})).toBeNull());
+  expect(screen.queryByText("没有符合的成员")).toBeNull();
+  expect(screen.getByRole("region", {name:"工作中（Lead 手写）成员"})).toBeTruthy();
+  expect(screen.getByRole("region", {name:"空闲（Lead 手写）成员"})).toBeTruthy();
+});
+
+it("keeps the Lead as a compact row whose details still manage the roster", async () => {
+  const lead = {...member, email:"lead@example.test", role:"Lead", tmux:{id:"$1", created:100, name:"lead"}, currentTask:"协调团队"};
+  const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}});
+  vi.mocked(invoke).mockResolvedValue(JSON.stringify([lead, idle]));
+  render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
+  expect(await screen.findByRole("region", {name:"Lead成员"})).toBeTruthy();
+  expect(document.querySelector(".team-live-group-lead .team-compact-row")).toBeTruthy();
+  await expand(await screen.findByRole("button", {name:"打开 · Lead · lead"}));
+  expect(screen.getByRole("button", {name:"编辑备注 · Lead"})).toBeTruthy();
+  expect(screen.getByRole("button", {name:"更新终端"})).toBeTruthy();
+  expect(screen.getByRole("button", {name:"从团队移除"})).toBeTruthy();
+});
+
+it("keeps a member's details open when it moves to another group", async () => {
+  const mover = worker({email:"mover@example.test", role:"m", tmux:{...member.tmux, name:"worker-demo-m"}});
+  const ui = (session: AgentSession) => <TeamDynamics sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}} members={[mover]} onUpdated={async()=>{}} board={board} live={liveOf([session])}
+    renderMemberAdmin={(m) => <div className="admin-stub">管理 {m.role}</div>}/>;
+  const view = render(ui(asSession({session:"worker-demo-m", state:"running", taskCode:"DS-13", taskStatus:"doing"})));
+  const row = (await screen.findByRole("button", {name:"打开 · m · worker-demo-m"})).closest(".team-live-row") as HTMLElement;
+  await expand(row);
+  expect(row.querySelector(".admin-stub")).toBeTruthy();
+  // 同一个成员（key 不变）从运行中变成空闲：展开状态保留，管理区仍在
+  view.rerender(ui(asSession({session:"worker-demo-m", state:"idle"})));
+  const compact = document.querySelector(".team-compact-row") as HTMLDetailsElement;
+  await waitFor(() => expect(compact.open).toBe(true));
+  expect(compact.querySelector(".admin-stub")).toBeTruthy();
+});
+
+it("does not render the empty-card line on a card row without a task", async () => {
+  const running = worker({email:"run@example.test", role:"b", tmux:{...member.tmux, name:"worker-demo-b"}});
+  const {container} = renderMerged([running], liveOf([asSession({session:"worker-demo-b", state:"running"})]));
+  expect(container.querySelector(".team-live-card")).toBeTruthy();
+  expect(screen.queryByText("无当前卡")).toBeNull();
+  expect(container.querySelectorAll(".team-card-line2")).toHaveLength(0);
+});
+
+it("shows the AI summary on the second line when there is no card, and an AI marker when there is one", async () => {
+  const note = {aiSummary:"上次修好了 DS-10 的终端输出", aiSource:"s", aiUpdatedAt:new Date().toISOString()};
+  const plain = worker({email:"plain@example.test", role:"p", tmux:{...member.tmux, name:"worker-demo-p"}, currentTask:"", ...note, aiSource:JSON.stringify(["remote",22,"dev","/repo","$2",123])});
+  const carded = worker({email:"card@example.test", role:"q", tmux:{...member.tmux, name:"worker-demo-q"}, ...note, aiSource:JSON.stringify(["remote",22,"dev","/repo","$2",123])});
+  const {container} = renderMerged([plain, carded], liveOf([
+    asSession({session:"worker-demo-p", state:"running"}),
+    asSession({session:"worker-demo-q", state:"running", taskCode:"DS-13", taskStatus:"doing"}),
+  ]));
+  expect(container.querySelector(".team-card-line2.is-ai")?.textContent).toContain("上次修好了 DS-10");
+  expect(container.querySelectorAll(".team-ai-chip")).toHaveLength(1);
+});
+
+it("shows the empty state when the roster only contains the Lead", async () => {
+  const lead = {...member, email:"lead@example.test", role:"Lead", tmux:{...member.tmux, name:"lead"}};
+  vi.mocked(invoke).mockResolvedValue(JSON.stringify([lead]));
+  render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
+  await screen.findByRole("region", {name:"Lead成员"});
+  expect(screen.getByText("把成员终端放在一起")).toBeTruthy();
 });

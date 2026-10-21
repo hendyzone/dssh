@@ -28,6 +28,7 @@ export default function TeamLiveSummary({ board, live, summary, filter, onFilter
     {chips.map(chip => <button type="button" key={chip.key}
       className={`team-count is-${chip.tone}${chip.count ? "" : " is-zero"}${filter === chip.key ? " is-on" : ""}`}
       aria-pressed={filter === chip.key}
+      aria-label={`${chip.count} ${chip.label}`}
       title={`${chip.title}（点击筛选，再点取消）`}
       onClick={() => onFilter?.(chip.key)}>
       <b>{chip.count}</b><span>{chip.label}</span>

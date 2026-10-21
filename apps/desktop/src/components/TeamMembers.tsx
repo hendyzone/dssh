@@ -9,7 +9,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import TeamMemberNotes from "./TeamMemberNotes";
 import TeamDynamics from "./TeamDynamics";
-import { liveSnapshot, useAgentSessions } from "../lib/agentSessions";
+import { isLeadMember, liveSnapshot, useAgentSessions } from "../lib/agentSessions";
 
 export interface TeamNavigation {
   server: ServerEntry;
@@ -39,6 +39,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
   const [busy, setBusy] = useState(false);
   const [mapping, setMapping] = useState(loadTeamMappings);
   const [noteMember, setNoteMember] = useState<string>();
+  const addRef = useRef<HTMLDivElement>(null);
 
   const [noteDraft, setNoteDraft] = useState<Partial<Record<MemberNoteField,string>>>({});
   const leadPrompt = teamLeadPrompt(profile,navigation.server);
@@ -69,7 +70,15 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
     return () => { generation.current++; pending.current = false; };
   }, [sessionId, profile]);
   const disabled = busy || !sessionId || !profile.enabled;
+  // The merged list also renders the Lead; the empty state is about Workers only.
+  const workers = members.filter(m=>!isLeadMember(m,{...profile,username:navigation.server.username}));
   const startAdd = (member?:TeamMember) => {setAdding(true);setEditing(member);setRole(member?.role??"");setSelected("");setError("");};
+  // 「更新终端 / 添加成员」表单出现时把它带到视野里，并把焦点放到第一个输入控件。
+  useEffect(()=>{
+    if(!adding)return;
+    addRef.current?.scrollIntoView?.({block:"center", behavior:"smooth"});
+    (addRef.current?.querySelector("select, input, textarea") as HTMLElement|undefined)?.focus?.();
+  },[adding]);
   const setConnection = (member:TeamMember, id:string) => {
     try {
       const next = {...loadTeamMappings(), [memberMappingKey(member)]:id};
@@ -113,7 +122,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
       </div>
     </>;
   };
-  const addForm = adding ? <div className="team-add" aria-label="添加成员表单">
+  const addForm = adding ? <div className="team-add" aria-label="添加成员表单" ref={addRef}>
     <strong>{editing ? `更新 ${editing.role} 的终端` : "选择一个成员终端"}</strong>
     <label className="collaboration-field">成员终端<select value={selected} disabled={busy} onChange={e=>{
       setSelected(e.target.value); const next=choices.find(s=>s.pane.id===e.target.value); if(!editing)setRole(next?.pane.tmux?.name??"");
@@ -159,7 +168,8 @@ export default function TeamMembers({ sessionId, profile, navigation, board }: {
     {busy && <p role="status">正在处理…</p>}
     {!sessionId && <p role="status">连接 Lead 终端后即可读取团队。</p>}
     <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} board={board} live={live} onUpdated={()=>request("members")}
+      pinnedKeys={[noteMember, editing?memberKey(editing):undefined].filter((key):key is string=>!!key)}
       onRefresh={()=>void run(()=>request("members"))} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>
-    {!members.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>点击「添加成员」，从已打开的终端中选择。成员可以在不同服务器上。</p></div>}
+    {!workers.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>点击「添加成员」，从已打开的终端中选择。成员可以在不同服务器上。</p></div>}
   </section>;
 }

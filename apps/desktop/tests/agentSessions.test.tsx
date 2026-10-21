@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -358,21 +358,21 @@ const statusByMember = (scope: ParentNode, rowSelector: string, nameOf: (row: El
 const rosterNavigation = { server, servers: [server], onOpen: vi.fn() };
 const rosterProfile = { ...profile, membersEnabled: true };
 
-it("the merged list shows live status, groups and the clickable summary; Lead is not a row", async () => {
+it("the merged list shows live status, groups and the clickable summary; Lead is a compact row with no counts", async () => {
   state.sessions = teamSessions();
   mocks.invoke.mockImplementation(fakeTeam);
   render(<TeamMembers sessionId="ssh" profile={rosterProfile} navigation={rosterNavigation} board={board}/>);
-  await waitFor(() => expect(document.querySelectorAll(".team-live-row")).toHaveLength(5));
+  await waitFor(() => expect(document.querySelectorAll(".team-live-row")).toHaveLength(6));
   await screen.findAllByText("告警带设备标识时主动去查");
   const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
   const expected = {
-    stuck: ["attention", "卡住：429"], wait: ["waitLead", "等 Lead"], review: ["review", "已交付·待验收"],
-    run: ["running", "运行中"], free: ["available", "空闲·可派活"],
+    Lead: ["lead", "空闲"], stuck: ["attention", "卡住：429"], wait: ["waitLead", "等 Lead"],
+    review: ["review", "已交付·待验收"], run: ["running", "运行中"], free: ["available", "空闲·可派活"],
   };
   expect(dynamics).toEqual(expected);
-  // 紧急度排序仍是 需要处理 → 等 Lead → 待验收 → 运行中 → 空闲
+  // Lead 组在最前（紧凑行），之后按紧急度排序
   expect([...document.querySelectorAll(".team-live-group")].map(g => g.getAttribute("aria-label")))
-    .toEqual(["需要处理成员", "等 Lead成员", "已交付·待验收成员", "运行中成员", "空闲·可派活成员"]);
+    .toEqual(["Lead成员", "需要处理成员", "等 Lead成员", "已交付·待验收成员", "运行中成员", "空闲·可派活成员"]);
   // 概览是三个可点的计数块（Lead 不计入）
   const chips = [...document.querySelectorAll(".team-live-counts button")].map(b => [b.querySelector("span")?.textContent, b.querySelector("b")?.textContent]);
   expect(chips).toEqual([["需要处理", "1"], ["等 Lead", "1"], ["可派活", "1"]]);
@@ -380,15 +380,20 @@ it("the merged list shows live status, groups and the clickable summary; Lead is
   expect(document.querySelector(".team-live-group-review .team-activity-heading")?.textContent).toContain("已交付·待验收");
   // 等 Lead 仍带黄色左边框标记
   expect(document.querySelectorAll(".team-live-wait-lead").length).toBeGreaterThan(0);
-  // Lead 不再是列表行
-  expect([...document.querySelectorAll(".team-live-row .team-ai-identity")].map(e => e.textContent)).not.toContain("Lead");
+  // Lead 是紧凑行（管理入口在它的展开详情里），但不计入三个计数
+  expect(document.querySelector(".team-live-group-lead .team-compact-row")).toBeTruthy();
+  expect(document.querySelector(".team-live-group-lead")?.textContent).toContain("Lead");
   const rowOf = (name: string) => [...document.querySelectorAll(".team-dynamics .team-live-row")]
     .find(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent === name) as HTMLElement;
+  const openRow = (row: HTMLElement) => { row.open = true; fireEvent(row, new Event("toggle")); };
   expect(within(rowOf("run")).getByText("T0504")).toBeTruthy();
   expect(within(rowOf("run")).getByText("告警带设备标识时主动去查")).toBeTruthy();
   expect(within(rowOf("wait")).getByText("T7")).toBeTruthy();
+  // 管理/备注区只在展开时渲染
+  openRow(rowOf("wait"));
   expect(within(rowOf("wait")).getByText("Lead 备注")).toBeTruthy();
   expect(within(rowOf("wait")).getByText(/2 天前 · 可能过期/)).toBeTruthy();
+  openRow(rowOf("free"));
   expect(within(rowOf("free")).getByText("1 小时前").classList.contains("is-stale")).toBe(false);
   // 合并后只有一份采集
   expect(state.paths.filter(p => p.endsWith("/agent-sessions"))).toHaveLength(1);
@@ -402,12 +407,12 @@ it("the merged list falls back to the hand-written state and says 「看板离�
   expect(screen.queryByRole("alert")).toBeNull();
   const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
   expect(dynamics).toEqual({
-    run: ["rosterUnknown", "待确认（手写）"], wait: ["rosterWorking", "工作中（手写）"], review: ["rosterUnknown", "待确认（手写）"],
-    free: ["rosterWorking", "工作中（手写）"], stuck: ["rosterUnknown", "待确认（手写）"],
+    Lead: ["lead", "工作中（手写）"], run: ["rosterUnknown", "待确认（手写）"], wait: ["rosterWorking", "工作中（手写）"],
+    review: ["rosterUnknown", "待确认（手写）"], free: ["rosterWorking", "工作中（手写）"], stuck: ["rosterUnknown", "待确认（手写）"],
   });
   // 看板离线时不显示实时计数块
   expect(document.querySelectorAll(".team-live-counts")).toHaveLength(0);
   // 看板离线时用 Lead 备注顶替实时信息
   expect([...document.querySelectorAll(".team-dynamics .team-compact-card.is-roster")].map(e => e.textContent))
-    .toEqual(["工作中·T7 等合入", "工作中·T5"]);
+    .toEqual(["工作中·协调", "工作中·T7 等合入", "工作中·T5"]);
 });

@@ -20,7 +20,7 @@ type Clip={member:TeamMember;text:string;digest:string;source:string};
 const sourceOf=(m:TeamMember)=>JSON.stringify([m.host,m.port,m.username,m.workdir,m.tmux.id,m.tmux.created]);
 
 /** Groups rendered as one compact row per member; everything else gets a full card. */
-const COMPACT_GROUPS:ReadonlySet<StatusGroup>=new Set(["available","other","rosterWorking","rosterIdle","rosterUnknown"]);
+const COMPACT_GROUPS:ReadonlySet<StatusGroup>=new Set(["lead","available","other","rosterWorking","rosterIdle","rosterUnknown"]);
 const FILTER_KEYS:readonly StatusGroup[]=["attention","waitLead","available"];
 
 /** `worker-<project>-<short>` → `<short>`; names that do not follow the convention stay whole. */
@@ -37,18 +37,26 @@ function displayName(member:TeamMember,members:TeamMember[]){
 
 /** `live`: the panel's shared collector data (so the merged view shows one snapshot); polled here when omitted. */
 export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,onUpdated,board,live:shared,
-  onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin}:{
+  onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys}:{
   sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource;live?:LiveSessions;
   /** Shell actions owned by TeamMembers: the merged view keeps one toolbar row. */
   onRefresh?:()=>void;onAddMember?:()=>void;disabled?:boolean;more?:ReactNode;addForm?:ReactNode;
   /** Management block (notes, connection, edit/update/remove) owned by TeamMembers, placed in each member's details. */
   renderMemberAdmin?:(member:TeamMember)=>ReactNode;
+  /** Rows that must stay expanded while the shell is editing them (notes editor / terminal update). */
+  pinnedKeys?:string[];
 }){
-  const members=rosterMembers.filter(m=>!isLeadMember(m,{...profile,username:navigation.server.username}));
+  const self={...profile,username:navigation.server.username};
+  const isLead=(m:TeamMember)=>isLeadMember(m,self);
+  const members=rosterMembers.filter(m=>!isLead(m));      // Worker rows feed AI selection/summaries
   const own=useAgentSessions(shared?undefined:board,members);
   const live=shared??own;
   const snapshot=liveSnapshot(live);
-  const ranked=rankMembers(members,snapshot);
+  // Rows include the Lead: its details carry the same note/connection/update/remove actions.
+  const ranked=rankMembers(rosterMembers,snapshot,isLead);
+  // Display names only depend on the roster, so compute them once (was O(n²) per row).
+  const names=new Map(rosterMembers.map(m=>[memberKey(m),displayName(m,rosterMembers)]));
+  const pinned=new Set(pinnedKeys??[]);
   const [config,setConfig]=useState(loadTeamAi);
   const [selection,setSelection]=useState<string[]|null>(null);
   const selected=selection?.filter(id=>members.some(m=>memberKey(m)===id))??members.slice(0,10).map(memberKey);
@@ -65,6 +73,8 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   // Filter and group folding are view state only: never persisted, reset on a new session/panel.
   const [filter,setFilter]=useState<StatusGroup>();
   const [openGroups,setOpenGroups]=useState<Record<string,boolean>>({});
+  // Per-member expansion, keyed by memberKey: a member moving to another group keeps its state.
+  const [openMembers,setOpenMembers]=useState<Record<string,boolean>>({});
   const running=useRef(false);
   const revision=useRef(0);
   const alive=useRef(true);
@@ -198,27 +208,39 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     const changed=previousConnection.current!==connectionKey;previousConnection.current=connectionKey;
     if(changed&&auto&&Object.keys(issues).length)tick.current();
   },[connectionKey,auto]);
+  // Board offline / still loading: there are no count chips, so a leftover filter would trap the
+  // list on "没有符合的成员" with no way to clear it. Drop the filter with the summary.
+  const liveReady=!!snapshot;
+  useEffect(()=>{if(!liveReady)setFilter(undefined);},[liveReady]);
 
   const toggleFilter=(key:StatusGroup)=>setFilter(old=>old===key?undefined:key);
+  const activeFilter=liveReady?filter:undefined;                   // never filter without live counts
   const groupOpen=(key:StatusGroup)=>{
-    if(filter===key)return true;                                   // a filtered group must be visible
+    if(activeFilter===key)return true;                             // a filtered group must be visible
     return openGroups[key]??!COMPACT_GROUPS.has(key);              // idle rows start folded
   };
-  const filtered=!!filter;
+  const filtered=!!activeFilter;
+  const memberOpen=(key:string)=>pinned.has(key)||!!openMembers[key];
+  const toggleMember=(key:string,open:boolean)=>{
+    if(pinned.has(key))return;                                     // forced open while the shell edits it
+    setOpenMembers(old=>old[key]===open?old:{...old,[key]:open});
+  };
   const renderMember=(row:{member:TeamMember;session?:ReturnType<typeof rankMembers>[number]["session"];status:LiveStatus})=>{
     const {member:m,session,status}=row;
     const compact=COMPACT_GROUPS.has(status.group);
     const key=memberKey(m);
-    const {role,suffix}=displayName(m,members);
-    const valid=m.aiSource===sourceOf(m)&&m.aiSummary;
+    const {role,suffix}=names.get(key)!;
+    const valid=!!(m.aiSource===sourceOf(m)&&m.aiSummary);
     const expired=valid&&!(Date.now()-Date.parse(m.aiUpdatedAt??"")<300000);
+    const aiText=valid?`AI：${expired?"摘要已过期 · ":""}${m.aiSummary}`:"";
+    const open=memberOpen(key);
     const {server}=connection(m);
     const brief=session?.taskCode?live.briefs[briefKey(session.project,session.taskCode)]:undefined;
     const now=snapshot?.now??Math.floor(Date.now()/1000);
     const identity=<strong className="team-ai-identity" title={`${m.role} · ${m.tmux.name}`}>{role}{suffix&&<span className="team-live-suffix"> · {suffix}</span>}</strong>;
     const actions=<span className="team-ai-row-actions">
       <Button size="icon-sm" variant="ghost" disabled={!server||busy} aria-label={`打开 · ${m.role} · ${m.tmux.name}`} title={server?"打开终端":"未找到对应连接"} onClick={e=>{e.preventDefault();e.stopPropagation();if(server)void perform(()=>navigation.onOpen(m,server));}}><ExternalLink size={14}/></Button>
-      <Button className="team-ai-single" size="icon-sm" variant="ghost" aria-label={`总结 · ${m.role}`} title={`使用 ${configName(config)} 发送并总结此成员的终端输出`} disabled={busy||!config.endpoint||!config.model} onClick={e=>{e.preventDefault();e.stopPropagation();summarizeMember(m);}}><Sparkles size={14}/>{singleBusy===key&&<span className="team-ai-busy-dot" aria-hidden="true"/>}</Button>
+      <Button className="team-ai-single" size="icon-sm" variant="ghost" aria-label={singleBusy===key?`总结中 · ${m.role}`:`总结 · ${m.role}`} aria-busy={singleBusy===key} title={`使用 ${configName(config)} 发送并总结此成员的终端输出`} disabled={busy||!config.endpoint||!config.model} onClick={e=>{e.preventDefault();e.stopPropagation();summarizeMember(m);}}>{singleBusy===key?<span className="team-ai-busy-text">总结中…</span>:<Sparkles size={14}/>}</Button>
     </span>;
     // 只有确实有上一张卡时才占一格；没有就不放空信息（同「无当前卡」不渲染的理由）。
     const rosterNote=!session&&m.currentTask?.trim()?m.currentTask.trim().split(/\r?\n/)[0]:"";
@@ -231,11 +253,11 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       <p className="team-ai-note">AI 总结为推测，按需手动触发。更新时间：{valid&&m.aiUpdatedAt?new Date(m.aiUpdatedAt).toLocaleString():"暂无"}</p>
       {issues[key]&&<p role="alert" style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{issues[key]}</p>}
       {valid&&m.aiEvidence&&<details><summary>上次成功采集的片段</summary><pre>{m.aiEvidence}</pre></details>}
-      {renderMemberAdmin?.(m)}
+      {open&&renderMemberAdmin?.(m)}
       <Button size="sm" aria-label={`打开终端 · ${m.role}`} disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(m,server))}>打开终端</Button>
     </div>;
     if(compact){
-      return <details className={`team-compact-row team-live-row${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={key} data-state={session?.state??"none"} data-group={status.group}>
+      return <details className={`team-compact-row team-live-row${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={key} open={open} onToggle={e=>toggleMember(key,(e.currentTarget as HTMLDetailsElement).open)} data-state={session?.state??"none"} data-group={status.group}>
         <summary className="team-compact-head">
           <span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>
           {identity}
@@ -246,17 +268,19 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
         {details}
       </details>;
     }
-    return <details className={`team-ai-row team-live-row team-live-card${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={key} data-state={session?.state??"none"} data-group={status.group}>
+    return <details className={`team-ai-row team-live-row team-live-card${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={key} open={open} onToggle={e=>toggleMember(key,(e.currentTarget as HTMLDetailsElement).open)} data-state={session?.state??"none"} data-group={status.group}>
       <summary className="team-card-head">
         <span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>
         {identity}
-        <span className="team-live-status"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}</span>
+        <span className="team-live-status"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}{valid&&session?.taskCode&&<span className="team-ai-chip" title={aiText}>AI</span>}</span>
         {actions}
         {session?.taskCode
           ?<div className="team-card-line2"><b>{session.taskCode}</b>{session.taskStatus&&<em>{live.statusNames[briefKey(session.project,session.taskStatus)]??session.taskStatus}</em>}{(brief?.brief||brief?.title)&&<span className="team-card-brief">{brief.brief||brief.title}</span>}</div>
           :!session&&m.currentTask?.trim()
             ?<div className="team-card-line2 is-roster" title={m.currentTask}><b>Lead 备注</b><span className="team-card-brief">{m.currentTask.trim().split(/\r?\n/)[0]}</span></div>
-            :null}
+            :aiText
+              ?<div className="team-card-line2 is-ai" title={aiText}><span className="team-ai-inline">{aiText}</span></div>
+              :null}
         {(session?.commitTime||session?.model||session?.host||session?.dirty||(!session&&m.host))
           ?<div className="team-card-line3" title={[session?.commitHash,session?.branch].filter(Boolean).join(" · ")}>
             {session&&session.commitTime>0&&<span>提交 {ago(session.commitTime,now)}前 · {session.commitSubject}</span>}
@@ -271,8 +295,9 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   };
   return <section className="team-dynamics" aria-label="团队动态">
     <div className="team-toolbar">
-      <div className="team-toolbar-title"><strong>团队 · {members.length} 人</strong><small>看板实时 · 每分钟刷新{auto?" · AI 自动总结中":""}</small></div>
-      <TeamLiveSummary board={board} live={live} summary={summarizeTeam(ranked,snapshot)} filter={filter} onFilter={toggleFilter}/>
+      <div className="team-toolbar-title"><strong>团队 · {rosterMembers.length} 人</strong><small>看板实时 · 每分钟刷新{auto?" · AI 自动总结中":""}</small></div>
+      <TeamLiveSummary board={board} live={live} summary={summarizeTeam(ranked,snapshot)} filter={activeFilter} onFilter={toggleFilter}/>
+      {activeFilter&&<Button size="sm" variant="ghost" onClick={()=>setFilter(undefined)}>清除筛选</Button>}
       <div className="team-toolbar-actions">
         <Button size="icon-sm" variant="ghost" aria-label="刷新成员" title="刷新成员" disabled={!!disabled||busy} onClick={()=>onRefresh?.()}><RefreshCw size={15}/></Button>
         <Button size="sm" disabled={!!disabled||busy} onClick={()=>onAddMember?.()}><Plus size={14}/> 添加成员</Button>
@@ -302,13 +327,15 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     {(busy||notice)&&<small role="status">{busy?"正在更新…":notice}</small>}
     {addForm}
     {STATUS_GROUPS.map(group=>{
-      if(group.key==="lead")return null;                         // the Lead is not a Worker row
-      if(filtered&&group.key!==filter)return null;
+      if(filtered&&group.key!==activeFilter)return null;
       const rows=ranked.filter(r=>r.status.group===group.key);
       if(!rows.length&&!filtered)return null;
       const open=groupOpen(group.key);
       return <section className={`team-live-group team-live-group-${group.key}${COMPACT_GROUPS.has(group.key)?" is-compact":""}`} key={group.key} aria-label={`${group.label}成员`}>
-        <details open={open} onToggle={e=>{const next=(e.currentTarget as HTMLDetailsElement).open;setOpenGroups(old=>old[group.key]===next?old:{...old,[group.key]:next});}}>
+        <details open={open} onToggle={e=>{
+          if(activeFilter===group.key){e.currentTarget.open=true;return;}   // 筛选强制展开，不记作用户状态
+          const next=(e.currentTarget as HTMLDetailsElement).open;setOpenGroups(old=>old[group.key]===next?old:{...old,[group.key]:next});
+        }}>
           <summary className="team-activity-heading" title={group.title}><strong>{group.label}</strong><span>{rows.length}</span></summary>
           <div className="team-live-group-body">
             {rows.length?rows.map(renderMember):<p className="team-live-empty" role="status">没有符合的成员</p>}

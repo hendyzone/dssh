@@ -182,8 +182,8 @@ it("excludes named and renamed Leads from summary rows, selection and capture",a
     return JSON.stringify([lead,renamed,member]);
   });
   render(<TeamDynamics sessionId="ssh" profile={profile} members={[lead,renamed,member]} navigation={{server,servers:[server],onOpen:vi.fn()}} onUpdated={vi.fn().mockResolvedValue(undefined)}/>);
-  expect(screen.queryByText("Lead")).toBeNull();
-  expect(screen.queryByText("项目负责人")).toBeNull();
+  // Lead 行仍显示（否则没有管理入口），但 AI 选择与采集只含 worker
+  expect(screen.getByRole("region", {name:"Lead成员"})).toBeTruthy();
   expect(screen.getByText("设置与详情 · 1 人")).toBeTruthy();
   fireEvent.click(screen.getByText("开启自动总结"));fireEvent.click(screen.getByText("确认开启"));
   await screen.findByText("已更新 1 人");
