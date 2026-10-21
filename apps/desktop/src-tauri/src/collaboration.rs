@@ -269,7 +269,7 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
                     return Err("throughUid 不得小于 afterUid".into());
                 }
                 args.extend([
-                    "inbox".into(), "--json".into(), "--headers-only".into(),
+                    "inbox".into(), "--json".into(), "--headers-only".into(), "--no-ping".into(),
                     "--limit".into(), "100".into(), "--after-uid".into(), after.to_string(),
                 ]);
                 if let Some(through) = request.through_uid {
@@ -489,7 +489,7 @@ mod tests {
         let mut r = request(Operation::InboxHeaders);
         r.after_uid = Some(0);
         let command = build_command(&p, &r, "ssh").unwrap();
-        assert!(command.ends_with("inbox --json --headers-only --limit 100 --after-uid 0"));
+        assert!(command.ends_with("inbox --json --headers-only --no-ping --limit 100 --after-uid 0"));
         assert!(command.contains("#{session_created}"));
         assert!(command.contains("[ \"$dssh_collab_actual\" = '/repo with space' ]"));
         assert!(command.contains("[ -f '/repo with space/.dssh/agents/tmux-1-123/.agent-mail/env' ]"));
@@ -497,7 +497,7 @@ mod tests {
         r.after_uid = Some(25);
         r.through_uid = Some(4_294_967_295);
         assert!(build_command(&p, &r, "ssh").unwrap().ends_with(
-            "inbox --json --headers-only --limit 100 --after-uid 25 --through-uid 4294967295"));
+            "inbox --json --headers-only --no-ping --limit 100 --after-uid 25 --through-uid 4294967295"));
         assert!(build_command(&p, &request(Operation::Inbox), "ssh").unwrap().ends_with("inbox --limit 20"));
         let mut disabled = p.clone();
         disabled.mail_enabled = false;

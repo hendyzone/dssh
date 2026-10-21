@@ -91,8 +91,8 @@ export default function TeamOffice({snapshot, visible = true, onPopOut}: {
           </div>
         </section>;
       })}
-      <OfficeMail mail={snapshot.mail} paused={paused} motion={snapshot.animationEnabled} container={mailContainer} layoutKey={[scale,collapsed,snapshot.projects]}/>
+      <OfficeMail scale={scale} mail={snapshot.mail} paused={paused} motion={snapshot.animationEnabled} container={mailContainer} layoutKey={[scale,collapsed,snapshot.projects]}/>
     </div>
-    <footer className="office-mailbox"><span aria-hidden="true">✉</span> {snapshot.mail?.availability==="ready"?"邮件动态已连接":snapshot.mail?.availability==="loading"?"正在连接邮件动态…":snapshot.mail?.availability==="error"?"邮件动态暂时失败":"邮件动态不可用"}</footer>
+    <footer className="office-mailbox"><span aria-hidden="true">✉</span> {snapshot.mail?.availability==="ready"?"显示已绑定邮箱收到的信":snapshot.mail?.availability==="loading"?"正在连接邮件动态…":snapshot.mail?.availability==="error"?"邮件动态暂时失败":"邮件动态不可用"}</footer>
   </section>;
 }

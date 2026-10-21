@@ -2,6 +2,14 @@ import type { CSSProperties } from "react";
 import type { TeamAvatarStatus } from "../lib/teamAvatar";
 import "./TeamMemberAvatar.css";
 
+/** Presentation anchor owned by the avatar, above its full status-symbol area. */
+export function readTeamAvatarMailAnchor(station:Element) {
+  const anchors=station.querySelectorAll('[data-avatar-mail-anchor]');
+  if(anchors.length!==1)return null;
+  const rect=anchors[0].getBoundingClientRect();
+  return rect.width && rect.height ? {x:rect.left+rect.width/2,y:rect.top} : null;
+}
+
 /** Original integer-grid artwork. Palette is a visual hint, not an identity. */
 export default function TeamMemberAvatar({ memberId, status, motionEnabled = true, paused = false, scale = 1 }: {
   memberId: string;
@@ -18,6 +26,7 @@ export default function TeamMemberAvatar({ memberId, status, motionEnabled = tru
     data-paused={String(paused)} style={{"--avatar-shirt": shirt, width:28 * scale, height:32 * scale, flexBasis:28 * scale} as CSSProperties}>
     <svg width={28 * scale} height={32 * scale} viewBox="0 0 28 32" shapeRendering="crispEdges" role="img" aria-label={status.label}>
       <title>{status.label}</title>
+      <rect data-avatar-mail-anchor="true" x="13" y="-3" width="2" height="1" fill="none" pointerEvents="none"/>
       <path className="team-avatar-ground" d="M3 29h22v1H3z"/>
       <g className={state === "working" ? undefined : "team-avatar-motion"}>
         <path className="team-avatar-outline" d="M9 10h10v2h2v8h-2v3h2v5h-5v-4h-4v4H7v-5h2v-3H7v-8h2z"/>

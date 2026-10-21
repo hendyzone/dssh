@@ -14,7 +14,7 @@ beforeEach(()=>{
  vi.spyOn(SVGElement.prototype,"getBoundingClientRect").mockImplementation(function(this:SVGElement){
   const second=this.closest('[data-office-station]')?.getAttribute('data-office-station')?.includes('"two"');
   const scale=Number(this.closest('svg')?.getAttribute('width'))/28;
-  const x=(second?330:30)+7*scale,y=(second?250:50)+10*scale,width=14*scale,height=5*scale;
+  const x=(second?330:30)+13*scale,y=(second?250:50)-3*scale,width=2*scale,height=scale;
   return {x,y,left:x,top:y,width,height,right:x+width,bottom:y+height,toJSON:()=>({})};
  });
  vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this:HTMLElement){
@@ -51,9 +51,9 @@ it("caps active deliveries at five, merges bounded overflow and keeps no replay 
 it("uses source plus member anchors across rows and recomputes scrolling and scale layout",()=>{
  const view=render(<TeamOffice snapshot={snapshot()}/>);view.rerender(<TeamOffice snapshot={snapshot(mail(2))}/>);
  const letter=screen.getByLabelText("确认邮件");expect(letter.getAttribute("data-from-edge")).toBe("false");expect(letter.getAttribute("data-to-edge")).toBe("false");
- expect(letter.style.getPropertyValue("--mail-from-x")).toBe("33px");expect(letter.style.getPropertyValue("--mail-to-y")).toBe("202px");
- const scroller=view.container.querySelector('.office-projects')!;Object.defineProperty(scroller,"scrollTop",{configurable:true,value:120});fireEvent.scroll(scroller);expect(letter.style.getPropertyValue("--mail-to-y")).toBe("322px");
- fireEvent.change(screen.getByRole("combobox",{name:"房间像素缩放"}),{target:{value:"3"}});expect(letter.getAttribute("data-to-edge")).toBe("false");expect(letter.style.getPropertyValue("--mail-from-x")).toBe("47px");
+ expect(letter.style.getPropertyValue("--mail-from-x")).toBe("33px");expect(letter.style.getPropertyValue("--mail-to-y")).toBe("196px");
+ const scroller=view.container.querySelector('.office-projects')!;Object.defineProperty(scroller,"scrollTop",{configurable:true,value:120});fireEvent.scroll(scroller);expect(letter.style.getPropertyValue("--mail-to-y")).toBe("316px");
+ fireEvent.change(screen.getByRole("combobox",{name:"房间像素缩放"}),{target:{value:"3"}});expect(letter.getAttribute("data-to-edge")).toBe("false");expect(letter.style.getPropertyValue("--mail-from-x")).toBe("39.5px");
 });
 it("falls back to the mailbox edge after a destination is collapsed or removed",()=>{
  const view=render(<TeamOffice snapshot={snapshot()}/>);view.rerender(<TeamOffice snapshot={snapshot(mail(2))}/>);fireEvent.click(screen.getByRole("button",{name:"折叠项目 Two"}));expect(screen.getByLabelText("确认邮件").getAttribute("data-to-edge")).toBe("true");
@@ -69,12 +69,22 @@ it("clears on document visibility and leaves no running timers after unmount",()
  hidden.mockReturnValue(true);fireEvent(document,new Event("visibilitychange"));expect(screen.queryByLabelText("确认邮件")).toBeNull();expect(vi.getTimerCount()).toBe(0);view.unmount();expect(vi.getTimerCount()).toBe(0);
 });
 
-it("does not replay retained IDs after a marker expires or count cumulative overflow twice",()=>{
- const view=render(<TeamOffice snapshot={snapshot()}/>);view.rerender(<TeamOffice snapshot={snapshot(mail(2,[event("old")],{overflow:2}))}/>);expect(screen.getByText("另有 +2 次投递")).toBeTruthy();
- act(()=>vi.advanceTimersByTime(4000));view.rerender(<TeamOffice snapshot={snapshot(mail(3,[event("old"),event("fresh","result")],{overflow:2}))}/>);expect(screen.queryByLabelText("确认邮件")).toBeNull();expect(screen.getByLabelText("结果邮件")).toBeTruthy();expect(screen.queryByText(/另有/)).toBeNull();
+it("uses each new batch overflow directly and does not replay ordinary rerenders",()=>{
+ const view=render(<TeamOffice snapshot={snapshot()}/>);view.rerender(<TeamOffice snapshot={snapshot(mail(2,[event("old")],{overflow:2}))}/>);expect(screen.queryByText("另有 +2 次投递")).not.toBeNull();
+ view.rerender(<TeamOffice snapshot={snapshot(mail(3,[event("fresh","result")],{overflow:2}))}/>);expect(screen.getByLabelText("确认邮件")).toBeTruthy();expect(screen.getByLabelText("结果邮件")).toBeTruthy();expect(screen.queryByText("另有 +2 次投递")).not.toBeNull();
+ view.rerender(<TeamOffice snapshot={snapshot(mail(3,[event("fresh","result")],{overflow:2}))}/>);expect(screen.getAllByLabelText("结果邮件")).toHaveLength(1);
+ view.rerender(<TeamOffice snapshot={snapshot(mail(4,[event("next")],{overflow:0}))}/>);expect(screen.queryByText(/另有/)).toBeNull();
+ act(()=>vi.advanceTimersByTime(6000));view.rerender(<TeamOffice snapshot={snapshot(mail(5,[event("after-window")],{overflow:2}))}/>);expect(screen.queryByText("另有 +2 次投递")).not.toBeNull();
+});
+it("does not attach geometry listeners without deliveries and removes them after expiry",()=>{
+ const add=vi.spyOn(EventTarget.prototype,"addEventListener"),remove=vi.spyOn(EventTarget.prototype,"removeEventListener");
+ const view=render(<TeamOffice snapshot={snapshot()}/>);const root=view.container.querySelector('.office-projects');
+ const geometry=()=>add.mock.calls.filter((args,i)=>(args[0]==='resize'&&add.mock.contexts[i]===window)||(args[0]==='scroll'&&add.mock.contexts[i]===root));
+ expect(geometry()).toHaveLength(0);view.rerender(<TeamOffice snapshot={snapshot(mail(2))}/>);expect(geometry().length).toBeGreaterThan(0);
+ act(()=>vi.advanceTimersByTime(4000));const count=geometry().length;view.rerender(<TeamOffice snapshot={snapshot(mail(2))}/>);expect(geometry()).toHaveLength(count);expect(remove.mock.calls.some(args=>args[0]==='scroll')).toBe(true);
 });
 it("falls back when an anchor is horizontally outside the scrolling viewport",()=>{
- const view=render(<TeamOffice snapshot={snapshot()}/>);const target=view.container.querySelectorAll('.team-avatar-hair')[1]!;
+ const view=render(<TeamOffice snapshot={snapshot()}/>);const target=view.container.querySelectorAll('[data-avatar-mail-anchor]')[1]!;
  vi.spyOn(target,"getBoundingClientRect").mockReturnValue({x:900,y:50,left:900,top:50,width:100,height:100,right:1000,bottom:150,toJSON:()=>({})});
  view.rerender(<TeamOffice snapshot={snapshot(mail(2))}/>);expect(screen.getByLabelText("确认邮件").getAttribute("data-to-edge")).toBe("true");
 });

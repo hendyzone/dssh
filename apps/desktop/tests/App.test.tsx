@@ -9,7 +9,8 @@ import { focusTask, ingestTaskOutput, programTaskId, removeTask, taskSnapshot, t
 import { LOCAL_SHELL } from "../src/lib/localShell";
 
 const terminalMock = vi.hoisted(() => ({ connected: false }));
-const officeMock=vi.hoisted(()=>({exists:false,visible:true,collect:vi.fn(),publish:vi.fn(),snapshot:{version:1,themeId:"one-light",animationEnabled:true,mailAvailability:"unavailable",projects:[]}}));
+const officeMock=vi.hoisted(()=>({exists:false,visible:true,collect:vi.fn(),mail:vi.fn(),publish:vi.fn(),snapshot:{version:1,themeId:"one-light",animationEnabled:true,mailAvailability:"unavailable",projects:[]}}));
+vi.mock("../src/lib/useOfficeMail",()=>({useOfficeMail:(options:unknown)=>{officeMock.mail(options);return undefined}}));
 vi.mock("../src/lib/useTeamOffice",()=>({useTeamOffice:(options:unknown)=>{officeMock.collect(options);return officeMock.snapshot}}));
 vi.mock("../src/lib/officeWindowSync",()=>({useOfficePresence:()=>officeMock.exists,useMainWindowVisibility:()=>officeMock.visible,useOfficePublisher:(...args:unknown[])=>officeMock.publish(...args),openOfficeWindow:vi.fn()}));
 
@@ -81,7 +82,7 @@ vi.mock("../src/components/ForwardPanel", () => ({ default: () => null }));
 
 beforeEach(() => {
   terminalMock.connected = false;
-  officeMock.exists=false;officeMock.visible=true;officeMock.collect.mockClear();officeMock.publish.mockClear();
+  officeMock.exists=false;officeMock.visible=true;officeMock.collect.mockClear();officeMock.mail.mockClear();officeMock.publish.mockClear();
   vi.mocked(invoke).mockReset().mockResolvedValue([]);
   vi.mocked(deleteServer).mockReset().mockResolvedValue(undefined);
   vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -553,4 +554,18 @@ it("collects for an existing office only while main is visible and passes presen
  officeMock.exists=true;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(true);expect(officeMock.publish.mock.lastCall?.[1]).toBe(true);expect(officeMock.collect.mock.lastCall?.[0].officeExists).toBe(true);
  officeMock.visible=false;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);
  officeMock.exists=false;officeMock.visible=true;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);view.unmount();
+});
+it("gates the actual mail hook on inline room or popup presence and main visibility",async()=>{
+ localStorage.clear();terminalMock.connected=true;
+ const servers=await loadServers();saveWorkspace({tabs:[{id:"mail-tab",activePane:0,panes:[{id:"mail-pane",server:servers[0],tmux:{id:"$1",created:10,name:"agent"}}]}],activeTabId:"mail-tab",groups:[],cwds:{}});
+ const view=render(<App/>);await act(async()=>{});
+ const enabled=()=>officeMock.mail.mock.lastCall?.[0].enabled;
+ expect(enabled()).toBe(false);
+ fireEvent.click(screen.getByRole("button",{name:"团队 · 打开成员终端"}));await act(async()=>{});
+ fireEvent.click(screen.getByRole("button",{name:"房间"}));expect(enabled()).toBe(true);
+ officeMock.visible=false;view.rerender(<App/>);expect(enabled()).toBe(false);
+ officeMock.visible=true;view.rerender(<App/>);expect(enabled()).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"房间"}));expect(enabled()).toBe(false);
+ officeMock.exists=true;view.rerender(<App/>);expect(enabled()).toBe(true);
+ officeMock.visible=false;view.rerender(<App/>);expect(enabled()).toBe(false);view.unmount();
 });

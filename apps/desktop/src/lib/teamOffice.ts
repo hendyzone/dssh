@@ -14,18 +14,32 @@ export interface OfficeMailView {
 }
 /** Main-memory only; addresses are never included in OfficeSnapshot. */
 export type OfficeMailDirectory = Map<string, OfficeMailEndpoint[]>;
+/** Exact mailbox-source binding, separate from the room's worktree grouping. */
+export function officeMailBindingKey(server: ServerEntry | undefined, profile: CollaborationProfile, fallback = ""): string {
+  return officeKey(JSON.stringify(server
+    ? [server.kind, server.host.trim().toLowerCase(), server.port, server.username, profile.workdir, profile.tmuxId, profile.tmuxCreated]
+    : [fallback]));
+}
 export function officeMailAddress(address:string):string {
   const value=address.trim();const at=value.lastIndexOf("@");
   return at>0 ? value.slice(0,at)+"@"+value.slice(at+1).toLowerCase() : value;
 }
 export function buildOfficeMailDirectory(sources:OfficeTeamSource[],rosters:Record<string,OfficeRoster>):OfficeMailDirectory {
-  const directory:OfficeMailDirectory=new Map();
-  for(const source of sources)for(const member of rosters[source.id]?.availability==="ready"?rosters[source.id].members:[]){
-    if(!member.email)continue;
-    const address=officeMailAddress(member.email);
-    const matches=directory.get(address)??[];
-    matches.push({kind:"station",sourceId:source.id,memberId:officeKey(JSON.stringify([source.id,memberKey(member)]))});
-    directory.set(address,matches);
+  const directory: OfficeMailDirectory = new Map();
+  for (const source of sources) {
+    const members = rosters[source.id]?.availability === "ready" ? rosters[source.id].members : [];
+    const endpoint = (member: TeamMember): OfficeMailEndpoint => ({
+      kind: "station", sourceId: source.id,
+      memberId: officeKey(JSON.stringify([source.id, memberKey(member)])),
+    });
+    for (const member of members) {
+      if (!member.email) continue;
+      const address = officeMailAddress(member.email);
+      const matches = directory.get(address) ?? [];
+      matches.push(endpoint(member));
+      directory.set(address, matches);
+    }
+
   }
   return directory;
 }
