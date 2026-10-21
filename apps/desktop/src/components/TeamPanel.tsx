@@ -10,7 +10,6 @@ import { Input } from "./ui/input";
 import { IconClose } from "./Icons";
 import "./Collaboration.css";
 import TaskLookup from "./TaskLookup";
-import TeamOffice from "./TeamOffice";
 import type { OfficeSnapshot } from "../lib/teamOffice";
 import type { BoardSource, ProjectReason } from "../lib/taskLookup";
 
@@ -25,9 +24,6 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
   onRoomOpenChange?: (open: boolean) => void;
   officeSnapshot?: OfficeSnapshot; officeVisible?: boolean; onPopOut?: () => Promise<void>;
 }) {
-  const [roomOpen, setRoomOpen] = useState(false);
-  useEffect(() => { onRoomOpenChange?.(roomOpen); return () => onRoomOpenChange?.(false); }, [roomOpen,onRoomOpenChange]);
-  const [officeError, setOfficeError] = useState("");
   const [created, setCreated] = useState<CollaborationProfile>();
   const [project, setProject] = useState("");
   const [busy, setBusy] = useState(false);
@@ -70,8 +66,8 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
     return()=>{live=false;};
   },[sessionId,pane.server.id,pane.tmux?.id,pane.tmux?.created,!!active,unbound,recoveryRevision]);
   return <aside className="workspace-panel collaboration-panel">
-    <header data-panel-drag-handle tabIndex={0}><strong>团队{active ? ` · ${active.project}` : ""}</strong>{officeSnapshot && <Button size="sm" variant="ghost" aria-pressed={roomOpen} onClick={()=>setRoomOpen(open=>!open)}>房间</Button>}<Button variant="ghost" size="icon-sm" aria-label="关闭团队" onClick={onClose}><IconClose/></Button></header>
-    <div className="collaboration-content" hidden={roomOpen} style={{display:roomOpen?"none":undefined}}>
+    <header data-panel-drag-handle tabIndex={0}><strong>团队{active ? ` · ${active.project}` : ""}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭团队" onClick={onClose}><IconClose/></Button></header>
+    <div className="collaboration-content">
       {taskLookup && <TaskLookup source={taskLookup.source} inferred={taskLookup.inferred}/>}
       {active ? <>
         <div className="team-binding">
@@ -85,7 +81,7 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
           }}>退出团队</Button>
         </div>
         {error && <p role="alert" className="collaboration-error">{error}</p>}
-        <TeamMembers sessionId={sessionId} profile={active} navigation={navigation} board={taskLookup?.source}/>
+        <TeamMembers sessionId={sessionId} profile={active} navigation={navigation} board={taskLookup?.source} officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}/>
       </> : recovering?<p role="status">正在核验当前工作区的已有团队…</p>:choices.length?<div><p>当前工作区存在多个团队，请选择：</p>{choices.map(next=><Button key={next.project} onClick={()=>{try{saveCollaboration(pane.server.id,next);setCreated(next);}catch(e){setError(String(e));}}}>{next.project}</Button>)}</div>:<><Button size="sm" variant="ghost" onClick={()=>setRecoveryRevision(v=>v+1)}>重新识别当前工作区</Button><TeamMembership sessionId={sessionId} pane={pane} navigation={navigation} onPromoted={next=>{setCreated(next);setUnbound(false);setError("");}}><div className="team-setup">
         {unbound && <p role="status">已退出团队。请切换到正确的 Lead 窗口后设置团队。</p>}
         <Users size={32}/><h3>从这里打开团队成员的终端</h3>
@@ -108,11 +104,5 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
         {error && <p role="alert" className="collaboration-error">{error}</p>}
       </div></TeamMembership></>}
     </div>
-    {officeSnapshot && <div className="collaboration-content" hidden={!roomOpen} style={{display:roomOpen?undefined:"none"}}>
-      {officeError && <p role="alert">{officeError}</p>}
-      <TeamOffice snapshot={officeSnapshot} visible={officeVisible && roomOpen} onPopOut={onPopOut?()=>{
-        setOfficeError(""); void onPopOut().catch(()=>setOfficeError("房间窗口未能打开，请重试。"));
-      }:undefined}/>
-    </div>}
   </aside>;
 }
