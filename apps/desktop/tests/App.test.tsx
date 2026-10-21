@@ -6,6 +6,7 @@ import { loadWorkspace, saveWorkspace } from "../src/lib/workspaceRestore";
 import { StrictMode, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { focusTask, ingestTaskOutput, programTaskId, removeTask, taskSnapshot, tmuxProgramTaskId } from "../src/lib/taskStatus";
+import { emptyProfile, saveCollaboration } from "../src/lib/collaboration";
 import { LOCAL_SHELL } from "../src/lib/localShell";
 
 const terminalMock = vi.hoisted(() => ({ connected: false }));
@@ -557,6 +558,8 @@ it("collects for an existing office only while main is visible and passes presen
 });
 it("gates the actual mail hook on inline room or popup presence and main visibility",async()=>{
  localStorage.clear();terminalMock.connected=true;
+ vi.mocked(invoke).mockImplementation(async command => command === "collaboration_worktree" ? "/repo" : command === "collaboration_request" ? "[]" : []);
+ saveCollaboration("server",{...emptyProfile(),enabled:true,membersEnabled:true,project:"office",workdir:"/repo",tmuxId:"$1",tmuxCreated:10,tmuxName:"agent"});
  const servers=await loadServers();saveWorkspace({tabs:[{id:"mail-tab",activePane:0,panes:[{id:"mail-pane",server:servers[0],tmux:{id:"$1",created:10,name:"agent"}}]}],activeTabId:"mail-tab",groups:[],cwds:{}});
  const view=render(<App/>);await act(async()=>{});
  const enabled=()=>officeMock.mail.mock.lastCall?.[0].enabled;
