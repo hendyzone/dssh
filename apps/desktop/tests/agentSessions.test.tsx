@@ -370,9 +370,9 @@ it("the merged list shows live status, groups and the clickable summary; Lead is
     review: ["review", "已交付·待验收"], run: ["running", "运行中"], free: ["available", "空闲·可派活"],
   };
   expect(dynamics).toEqual(expected);
-  // Lead 组在最前（紧凑行），之后按紧急度排序
+  // 紧急度排序不变，Lead 组挪到最后（紧凑行）
   expect([...document.querySelectorAll(".team-live-group")].map(g => g.getAttribute("aria-label")))
-    .toEqual(["Lead成员", "需要处理成员", "等 Lead成员", "已交付·待验收成员", "运行中成员", "空闲·可派活成员"]);
+    .toEqual(["需要处理成员", "等 Lead成员", "已交付·待验收成员", "运行中成员", "空闲·可派活成员", "Lead成员"]);
   // 概览是三个可点的计数块（Lead 不计入）
   const chips = [...document.querySelectorAll(".team-live-counts button")].map(b => [b.querySelector("span")?.textContent, b.querySelector("b")?.textContent]);
   expect(chips).toEqual([["需要处理", "1"], ["等 Lead", "1"], ["可派活", "1"]]);
@@ -414,5 +414,5 @@ it("the merged list falls back to the hand-written state and says 「看板离�
   expect(document.querySelectorAll(".team-live-counts")).toHaveLength(0);
   // 看板离线时用 Lead 备注顶替实时信息
   expect([...document.querySelectorAll(".team-dynamics .team-compact-card.is-roster")].map(e => e.textContent))
-    .toEqual(["工作中·协调", "工作中·T7 等合入", "工作中·T5"]);
+    .toEqual(["工作中·T7 等合入", "工作中·T5", "工作中·协调"]);
 });

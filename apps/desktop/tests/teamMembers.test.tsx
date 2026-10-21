@@ -507,3 +507,53 @@ it("shows the empty state when the roster only contains the Lead", async () => {
   await screen.findByRole("region", {name:"Lead成员"});
   expect(screen.getByText("把成员终端放在一起")).toBeTruthy();
 });
+
+it("counts only workers in the title and still lists the Lead last", async () => {
+  const lead = {...member, email:"lead@example.test", role:"Lead", tmux:{id:"$1", created:100, name:"lead"}};
+  const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}});
+  vi.mocked(invoke).mockResolvedValue(JSON.stringify([lead, idle]));
+  render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
+  await screen.findByRole("region", {name:"Lead成员"});
+  expect(screen.getByText("团队 · 1 人")).toBeTruthy();          // 口径 = worker 数，不含 Lead
+  const groups = [...document.querySelectorAll(".team-live-group")].map(g => g.getAttribute("aria-label"));
+  expect(groups[groups.length - 1]).toBe("Lead成员");
+});
+
+it("shows and honours the 清除筛选 button", async () => {
+  const running = worker({email:"run@example.test", role:"b", tmux:{...member.tmux, name:"worker-demo-b"}});
+  const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}});
+  renderMerged([running, idle], liveOf([
+    asSession({session:"worker-demo-b", state:"running"}),
+    asSession({session:"worker-demo-c", state:"idle"}),
+  ]));
+  const chip = screen.getByRole("button", {name:"1 可派活"});
+  expect(chip.getAttribute("aria-label")).toBe("1 可派活");      // 可读名带空格，而非「1可派活」
+  fireEvent.click(chip);
+  const clear = screen.getByRole("button", {name:"清除筛选"});
+  fireEvent.click(clear);
+  expect(screen.queryByRole("button", {name:"清除筛选"})).toBeNull();
+  expect(screen.getByRole("region", {name:"运行中成员"})).toBeTruthy();
+  expect(screen.getByRole("region", {name:"空闲·可派活成员"})).toBeTruthy();
+});
+
+it("does not remember the forced expansion of a filtered group", async () => {
+  const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}});
+  renderMerged([idle], liveOf([asSession({session:"worker-demo-c", state:"idle"})]));
+  fireEvent.click(screen.getByRole("button", {name:"1 可派活"}));
+  const group = screen.getByRole("region", {name:"空闲·可派活成员"});
+  expect(group.querySelector("details")?.open).toBe(true);       // 筛选期间强制展开
+  fireEvent.click(screen.getByRole("button", {name:"清除筛选"}));
+  expect(screen.getByRole("region", {name:"空闲·可派活成员"}).querySelector("details")?.open).toBe(false); // 回到默认折叠
+});
+
+it("keeps a pinned row expanded while the shell is editing it", async () => {
+  const pinnedMember = worker({email:"pinned@example.test", role:"p", tmux:{...member.tmux, name:"worker-demo-p"}});
+  render(<TeamDynamics sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}
+    members={[pinnedMember]} onUpdated={async()=>{}} board={board}
+    live={liveOf([asSession({session:"worker-demo-p", state:"idle"})])}
+    pinnedKeys={[pinnedMember.email]}
+    renderMemberAdmin={(m) => <div className="admin-stub">管理 {m.role}</div>}/>);
+  const row = document.querySelector(".team-compact-row") as HTMLDetailsElement;
+  expect(row.open).toBe(true);
+  expect(row.querySelector(".admin-stub")).toBeTruthy();
+});

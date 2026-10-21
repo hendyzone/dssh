@@ -17,7 +17,10 @@
 .team-members details[open]>summary{margin-bottom:6px}
 .team-members select{max-width:100%;min-width:0}
 /* 共享工具栏：TeamMembership 也用它，保持既有「标题左、动作右」的行为。 */
-.team-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 10px;min-width:0}
+.team-toolbar{display:flex;align-items:center;gap:6px;min-width:0}
+.team-toolbar{justify-content:space-between}
+/* 合并列表的工具栏换行与间距只作用于本视图，TeamMembership 的工具栏保持原样 */
+.team-dynamics .team-toolbar{flex-wrap:wrap;gap:6px 10px}
 .team-toolbar-title{display:flex;align-items:baseline;gap:6px;min-width:0}
 .team-toolbar-title strong{font-size:13px;white-space:nowrap}
 .team-toolbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin-left:auto}
@@ -135,7 +138,11 @@
 .team-binding strong{font-size:12px}
 .collaboration-panel .team-binding div p{margin:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .team-binding>div{min-width:0}
-.team-lead-guide{display:flex;flex-direction:column;align-items:flex-start;gap:4px 8px;padding:2px 0 6px;border-bottom:1px solid var(--ui-border)}
+.team-lead-guide{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;padding:0 0 6px;border-bottom:1px solid var(--ui-border)}
+.team-lead-guide:has(details[open]){align-items:flex-start}
+.team-lead-guide details[open]{flex-basis:100%}
+/* 「更多」里的提示词区才是纵向排版，别改到 TeamMembership 的同名区块 */
+.team-dynamics .team-lead-guide{flex-direction:column;align-items:flex-start;padding:2px 0 6px}
 .team-lead-guide strong{font-size:13px}
 .team-lead-guide p{margin:0}
 .team-lead-guide textarea{width:100%;box-sizing:border-box;min-height:200px}

@@ -22,6 +22,10 @@ const sourceOf=(m:TeamMember)=>JSON.stringify([m.host,m.port,m.username,m.workdi
 /** Groups rendered as one compact row per member; everything else gets a full card. */
 const COMPACT_GROUPS:ReadonlySet<StatusGroup>=new Set(["lead","available","other","rosterWorking","rosterIdle","rosterUnknown"]);
 const FILTER_KEYS:readonly StatusGroup[]=["attention","waitLead","available"];
+/** Lead 排最后：「需要处理 / 等 Lead」才是第一眼要找的东西。 */
+const GROUP_ORDER:readonly {key:StatusGroup;label:string;title?:string}[]=[
+  ...STATUS_GROUPS.filter(g=>g.key!=="lead"), ...STATUS_GROUPS.filter(g=>g.key==="lead"),
+];
 
 /** `worker-<project>-<short>` → `<short>`; names that do not follow the convention stay whole. */
 function shortTmuxName(member:TeamMember){
@@ -295,7 +299,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   };
   return <section className="team-dynamics" aria-label="团队动态">
     <div className="team-toolbar">
-      <div className="team-toolbar-title"><strong>团队 · {rosterMembers.length} 人</strong><small>看板实时 · 每分钟刷新{auto?" · AI 自动总结中":""}</small></div>
+      <div className="team-toolbar-title"><strong>团队 · {members.length} 人</strong><small>看板实时 · 每分钟刷新{auto?" · AI 自动总结中":""}</small></div>
       <TeamLiveSummary board={board} live={live} summary={summarizeTeam(ranked,snapshot)} filter={activeFilter} onFilter={toggleFilter}/>
       {activeFilter&&<Button size="sm" variant="ghost" onClick={()=>setFilter(undefined)}>清除筛选</Button>}
       <div className="team-toolbar-actions">
@@ -326,7 +330,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     </div>}
     {(busy||notice)&&<small role="status">{busy?"正在更新…":notice}</small>}
     {addForm}
-    {STATUS_GROUPS.map(group=>{
+    {GROUP_ORDER.map(group=>{
       if(filtered&&group.key!==activeFilter)return null;
       const rows=ranked.filter(r=>r.status.group===group.key);
       if(!rows.length&&!filtered)return null;
