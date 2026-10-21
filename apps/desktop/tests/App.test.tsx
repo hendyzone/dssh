@@ -10,6 +10,8 @@ import { LOCAL_SHELL } from "../src/lib/localShell";
 
 const terminalMock = vi.hoisted(() => ({ connected: false }));
 
+vi.mock("@tauri-apps/api/event", () => ({listen:async()=>()=>{}}));
+
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     onCloseRequested: async () => () => {},

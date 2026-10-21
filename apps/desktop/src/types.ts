@@ -55,6 +55,8 @@ export interface TabInfo {
 }
 
 export interface AppSettings {
+  /** Keep office status avatars static when disabled (default enabled). */
+  teamAvatarAnimation?: boolean;
   reuseTmuxTabs?: boolean;
   themeId: string;
   fontSize: number;

@@ -25,6 +25,7 @@ it("defaults to activity and switches roster views without remounting summaries"
   fireEvent.click(screen.getByRole("button",{name:"成员 1"}));
   expect(screen.queryByRole("region",{name:"团队动态"})).toBeNull();
   expect(screen.getByRole("button",{name:"复制给 Lead 的提示词"})).toBeTruthy();
+  expect(document.querySelector(".team-roster-view .team-member-avatar")).toBeNull();
   fireEvent.click(screen.getByRole("button",{name:"动态"}));
   expect(screen.getByRole("region",{name:"团队动态"})).toBe(dynamics);
 });
@@ -295,4 +296,15 @@ it.each([true,false])("promotes a member only after checking the migrated roster
   }
   expect(loadCollaboration()[collaborationKey(leadServer.id,profile)]).toEqual(profile);
   expect(vi.mocked(invoke).mock.calls.every(([command,args]:any)=>command==="collaboration_worktree"||args.request?.operation==="members")).toBe(true);
+});
+
+it("opens the room without adding inline roster avatars and pauses it when the main view is hidden",async()=>{
+  const officeSnapshot={version:1 as const,themeId:"one-light",animationEnabled:true,mailAvailability:"unavailable" as const,projects:[{id:"demo",name:"demo",sources:[{id:"source",label:"Demo",availability:"ready" as const,notice:"",members:[{id:"worker",name:"Worker",isLead:false,status:{state:"working" as const,source:"activity" as const,label:"工作中（成员活动）"},taskText:"Task",taskSource:"manual" as const,paletteKey:"worker"}]}]}]};
+  const props={sessionId:"ssh",pane:{id:"lead",server,tmux:{id:"$1",created:100,name:"lead"}},profile,navigation:{server,servers:[server],onOpen:vi.fn()},onClose:vi.fn(),officeSnapshot};
+  const view=render(<TeamPanel {...props}/>);const avatar=view.container.querySelector('.team-office .team-member-avatar')!;
+  expect(avatar.getAttribute("data-paused")).toBe("true");fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(avatar.getAttribute("data-paused")).toBe("false");
+  view.rerender(<TeamPanel {...props} officeVisible={false}/>);expect(avatar.getAttribute("data-paused")).toBe("true");
+  view.rerender(<TeamPanel {...props} officeVisible/>);expect(avatar.getAttribute("data-paused")).toBe("false");
+  fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(view.container.querySelector('.team-office .team-member-avatar')).toBe(avatar);expect(avatar.getAttribute("data-paused")).toBe("true");
+  expect(view.container.querySelector('.team-roster-view .team-member-avatar')).toBeNull();
 });

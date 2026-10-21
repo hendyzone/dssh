@@ -12,6 +12,8 @@ import { useTmuxProgramStatus } from "./lib/tmuxProgramStatus";
 import ToolRail from "./components/ToolRail";
 import CollaborationPanel from "./components/CollaborationPanel";
 import TeamPanel from "./components/TeamPanel";
+import { useTeamOffice } from "./lib/useTeamOffice";
+import { useOfficePublisher, openOfficeWindow, useMainWindowVisibility } from "./lib/officeWindowSync";
 import QuotaPanel, { type QuotaServer } from "./components/QuotaPanel";
 import { collaborationKey, useActiveCollaboration, useCollaboration } from "./lib/collaboration";
 import { boardSource, inferProject, paneProfiles, useLookupSettings } from "./lib/taskLookup";
@@ -389,6 +391,12 @@ export default function App() {
   const collaborationPane=tabs.find(t=>t.id===activeTabId)?.panes[tabs.find(t=>t.id===activeTabId)?.activePane??0];
   const activeCollaboration=useActiveCollaboration(collaborationProfiles,collaborationPane,backendIds[collaborationPane?.id??""],paneCwds[collaborationPane?.id??""]);
   const lookupSettings = useLookupSettings();
+  const officeSnapshot = useTeamOffice({profiles:collaborationProfiles, servers,
+    sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))),
+    programSnapshots:tmuxProgramSnapshots, lookupSettings, themeId:settings.themeId,
+    animationEnabled:settings.teamAvatarAnimation !== false});
+  useOfficePublisher(officeSnapshot);
+  const officeMainVisible = useMainWindowVisibility();
   /** Board route and project for one pane: lock > collaboration binding > manual choice. */
   const paneTaskContext = (pane: SessionInfo) => {
     const verified = pane.id === collaborationPane?.id ? activeCollaboration : undefined;
@@ -1127,7 +1135,7 @@ export default function App() {
                     </PanelDock>
                   )}
                   {panel === "team" && t.id === activeTabId && t.panes[t.activePane]?.tmux && <PanelDock kind="team">
-                    <TeamPanel key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                    <TeamPanel officeSnapshot={officeSnapshot} officeVisible={officeMainVisible && t.id===activeTabId} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))), onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
                     <PanelDock kind="collaboration">

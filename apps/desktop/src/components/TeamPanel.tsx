@@ -10,6 +10,8 @@ import { Input } from "./ui/input";
 import { IconClose } from "./Icons";
 import "./Collaboration.css";
 import TaskLookup from "./TaskLookup";
+import TeamOffice from "./TeamOffice";
+import type { OfficeSnapshot } from "../lib/teamOffice";
 import type { BoardSource, ProjectReason } from "../lib/taskLookup";
 
 const DETACHED="dssh.team-detached.v1";
@@ -17,10 +19,13 @@ function detachedBindings():string[]{
   try{const value=JSON.parse(localStorage.getItem(DETACHED)??"[]");return Array.isArray(value)?value.filter(v=>typeof v==="string"):[];}catch{return [];}
 }
 
-export default function TeamPanel({sessionId, pane, profile, navigation, onClose, taskLookup}: {
+export default function TeamPanel({sessionId, pane, profile, navigation, onClose, taskLookup, officeSnapshot, officeVisible = true, onPopOut}: {
   sessionId: string; pane: SessionInfo; profile?: CollaborationProfile; navigation: TeamNavigation; onClose: () => void;
   taskLookup?: { source?: BoardSource; inferred?: { project: string; reason: ProjectReason } };
+  officeSnapshot?: OfficeSnapshot; officeVisible?: boolean; onPopOut?: () => Promise<void>;
 }) {
+  const [roomOpen, setRoomOpen] = useState(false);
+  const [officeError, setOfficeError] = useState("");
   const [created, setCreated] = useState<CollaborationProfile>();
   const [project, setProject] = useState("");
   const [busy, setBusy] = useState(false);
@@ -63,8 +68,8 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
     return()=>{live=false;};
   },[sessionId,pane.server.id,pane.tmux?.id,pane.tmux?.created,!!active,unbound,recoveryRevision]);
   return <aside className="workspace-panel collaboration-panel">
-    <header data-panel-drag-handle tabIndex={0}><strong>团队{active ? ` · ${active.project}` : ""}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭团队" onClick={onClose}><IconClose/></Button></header>
-    <div className="collaboration-content">
+    <header data-panel-drag-handle tabIndex={0}><strong>团队{active ? ` · ${active.project}` : ""}</strong>{officeSnapshot && <Button size="sm" variant="ghost" aria-pressed={roomOpen} onClick={()=>setRoomOpen(open=>!open)}>房间</Button>}<Button variant="ghost" size="icon-sm" aria-label="关闭团队" onClick={onClose}><IconClose/></Button></header>
+    <div className="collaboration-content" hidden={roomOpen} style={{display:roomOpen?"none":undefined}}>
       {taskLookup && <TaskLookup source={taskLookup.source} inferred={taskLookup.inferred}/>}
       {active ? <>
         <div className="team-binding">
@@ -101,5 +106,11 @@ export default function TeamPanel({sessionId, pane, profile, navigation, onClose
         {error && <p role="alert" className="collaboration-error">{error}</p>}
       </div></TeamMembership></>}
     </div>
+    {officeSnapshot && <div className="collaboration-content" hidden={!roomOpen} style={{display:roomOpen?undefined:"none"}}>
+      {officeError && <p role="alert">{officeError}</p>}
+      <TeamOffice snapshot={officeSnapshot} visible={officeVisible && roomOpen} onPopOut={onPopOut?()=>{
+        setOfficeError(""); void onPopOut().catch(()=>setOfficeError("房间窗口未能打开，请重试。"));
+      }:undefined}/>
+    </div>}
   </aside>;
 }

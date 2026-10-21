@@ -322,6 +322,14 @@ export default function SettingsModal({
                 />
                 触摸板惯性过滤（松手后的低速滑行不再继续滚动）
               </label>
+              <label style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" aria-describedby="team-avatar-animation-help"
+                  style={{ width: 16, height: 16, padding: 0, margin: 0, flex: "none" }}
+                  checked={settings.teamAvatarAnimation !== false}
+                  onChange={e => onChange({...settings, teamAvatarAnimation: e.target.checked})}/>
+                房间像素动画
+              </label>
+              <p id="team-avatar-animation-help">关闭后房间保留静态状态小人；系统减少动态效果时自动静止。</p>
             </TabsContent>
             <TabsContent
               forceMount

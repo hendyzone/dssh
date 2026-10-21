@@ -9,6 +9,7 @@ mod diagnostics;
 mod forward;
 mod monitor;
 mod preview;
+mod office;
 mod servers;
 mod sftp;
 mod sftp_tree;
@@ -34,6 +35,7 @@ pub fn run() {
             app.manage(ssh::SshState::default());
             app.manage(local_shell::LocalState::default());
             app.manage(preview::PreviewState::default());
+            app.manage(office::OfficeState::default());
             app.manage(monitor::MonitorState::default());
             app.manage(forward::ForwardState::default());
             use tauri::menu::{Menu, MenuItem, Submenu};
@@ -55,6 +57,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            office::window_event(window, event);
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 window.state::<local_shell::LocalState>().shutdown();
             }
@@ -75,7 +78,16 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(|invoke| {
+            if !office::command_allowed(invoke.message.webview_ref().label(), invoke.message.command()) {
+                invoke.resolver.reject("Command is not available in the office window");
+                return true;
+            }
+            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+            office::open_office_window,
+            office::office_publish_snapshot,
+            office::office_request_snapshot,
+            office::office_main_visibility,
             local_shell::local_connect,
             local_shell::local_start,
             local_shell::local_write,
@@ -152,7 +164,9 @@ pub fn run() {
             forward::forward_rules_list,
             forward::forward_rules_save,
             forward::forward_stop_session,
-        ])
+        ];
+            handler(invoke)
+        })
         .run(tauri::generate_context!())
         .expect("error while running dssh");
 }
