@@ -326,6 +326,79 @@ const finishShellInitialization = (data: (event: { payload: string }) => void) =
   if (marker) act(() => data({ payload: `\x1b]1337;${marker}\x07` }));
 };
 
+it.each([false, true])("shows suppressed hook errors when SSH exits before the echo timeout (synchronized output: %s)", async synchronized => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const callbacks = listenToTerminal();
+  const onStateChange = vi.fn();
+  const onCwdChange = vi.fn();
+  const view = render(<TerminalView {...props} onStateChange={onStateChange} onCwdChange={onCwdChange}/>);
+  try {
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(onStateChange).toHaveBeenLastCalledWith("pane", "connected");
+    const write = mocks.instances[0].write;
+    const error = "sh: directory hook rejected: syntax error";
+    const pending = "__dssh_osc7\r\n" + (synchronized ? "\x1b[?2026h" : "") +
+      "\x1b]7;file://example.com/stale\x07" + error + "\r\n";
+    act(() => callbacks.get("ssh://backend/data")!({ payload: pending }));
+    // No completion marker arrives. The echoed command and its error remain
+    // held by the real suppressor until exit, before its six-second fallback.
+    expect(write).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(write).not.toHaveBeenCalled();
+    act(() => callbacks.get("ssh://backend/exit")!({ payload: 2 }));
+    const writes = write.mock.calls.map(([text]: [string]) => text);
+    expect(writes.join("")).toContain(error);
+    expect(writes.findIndex((text: string) => text.includes(error))).toBeLessThan(
+      writes.findIndex((text: string) => text.includes("进程退出")),
+    );
+    expect(onStateChange).toHaveBeenLastCalledWith("pane", "disconnected");
+    // Cleanup renders the pending bytes directly; it must not publish a stale
+    // directory report from a connection that has already ended.
+    expect(onCwdChange).not.toHaveBeenCalled();
+    const renderedCount = writes.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(write).toHaveBeenCalledTimes(renderedCount);
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("cancels the old initialization timer without prematurely flushing the new connection's echo", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const callbacks = listenToTerminal();
+  let connects = 0;
+  mocks.invoke.mockImplementation(async command => command === "ssh_connect" ? `backend-${++connects}` : undefined);
+  const onStateChange = vi.fn();
+  const view = render(<TerminalView {...props} onStateChange={onStateChange}/>);
+  try {
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(onStateChange).toHaveBeenLastCalledWith("pane", "connected");
+    const write = mocks.instances[0].write;
+    act(() => callbacks.get("ssh://backend-1/data")!({ payload: "__dssh_osc7\r\nold pending output" }));
+    expect(write).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    act(() => callbacks.get("ssh://backend-1/exit")!({ payload: 0 }));
+    expect(write.mock.calls.flat().join("")).toContain("old pending output");
+    fireEvent.click(screen.getByRole("button", { name: /点此重连/ }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(onStateChange.mock.calls.filter(([, state]) => state === "connected")).toHaveLength(2);
+    write.mockClear();
+    const newPending = "__dssh_osc7\r\nnew pending output";
+    act(() => callbacks.get("ssh://backend-2/data")!({ payload: newPending }));
+    expect(write).not.toHaveBeenCalled();
+    // The old timer's deadline is t=6000, but this new timer ends at t=7000.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(onStateChange).toHaveBeenLastCalledWith("pane", "connected");
+    expect(write).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(write).toHaveBeenCalledExactlyOnceWith(newPending);
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
 it.each(["ssh", "local"] as const)("answers OSC 7501 before renderer DA replies in a background, dialog-covered %s terminal", async (protocol) => {
   const callbacks = listenToTerminal();
   const sessionId = protocol === "ssh" ? "backend" : "local-test";

@@ -422,6 +422,12 @@ export default function TerminalView({
 
     const detachBackendListeners = () => {
       backendListeners.splice(0).forEach((unlisten) => unlisten());
+      if (echoFlushTimer) clearTimeout(echoFlushTimer);
+      echoFlushTimer = null;
+      // Preserve pending output before retiring this connection's echo filter.
+      const pending = echoSuppressor?.flush();
+      echoSuppressor = null;
+      if (pending) output?.push(pending);
       output?.flush();
     };
 
@@ -847,10 +853,6 @@ export default function TerminalView({
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectRef.current = null;
-      if (echoFlushTimer) {
-        clearTimeout(echoFlushTimer);
-        echoFlushTimer = null;
-      }
       window.removeEventListener("resize", onWindowResize);
       detachBackendListeners();
       cleanups.forEach((fn) => fn());
