@@ -337,6 +337,7 @@ it("opens the room without adding inline roster avatars and pauses it when the m
   fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(view.container.querySelector('.team-office .team-member-avatar')).toBe(avatar);expect(avatar.getAttribute("data-paused")).toBe("true");
   expect(view.container.querySelector('.team-members .team-member-avatar')).toBeNull();
   expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(true);view.unmount();expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);
+});
 
 // ── DS-13：合并后的单列表（概览筛选 / 空闲紧凑行 / 名字去重 / 无当前卡） ──────────
 
