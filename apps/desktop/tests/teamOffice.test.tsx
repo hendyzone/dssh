@@ -66,15 +66,15 @@ it("renders multiple project areas and six states with a static unavailable-mail
  for(const state of ["working","idle","unknown","done","blocked","error"])expect(view.container.querySelector(`[data-state="${state}"]`)).toBeTruthy();
 });
 it("collapses project without unmounting its avatars and resumes only when visible",()=>{
- const value=room();const view=render(<TeamOffice snapshot={value}/>);const avatar=view.container.querySelector('[data-state="working"]')!;
+ const value=room();const view=render(<TeamOffice snapshot={value}/>);const avatar=view.container.querySelector('.team-member-avatar[data-state="working"]')!;
  expect(avatar.getAttribute("data-paused")).toBe("false");fireEvent.click(screen.getByRole("button",{name:"折叠项目 Alpha"}));
- expect(view.container.querySelector('[data-state="working"]')).toBe(avatar);expect(avatar.getAttribute("data-paused")).toBe("true");
+ expect(view.container.querySelector('.team-member-avatar[data-state="working"]')).toBe(avatar);expect(avatar.getAttribute("data-paused")).toBe("true");
  fireEvent.click(screen.getByRole("button",{name:"展开项目 Alpha"}));expect(avatar.getAttribute("data-paused")).toBe("false");
  view.rerender(<TeamOffice snapshot={value} visible={false}/>);expect(avatar.getAttribute("data-paused")).toBe("true");
  view.rerender(<TeamOffice snapshot={value} visible/>);expect(avatar.getAttribute("data-paused")).toBe("false");
 });
 it("pauses on document visibility and keeps static state artwork when animation is disabled",()=>{
- const hidden=vi.spyOn(document,"hidden","get").mockReturnValue(false);const value=room();const view=render(<TeamOffice snapshot={value}/>);const avatar=view.container.querySelector('[data-state="working"]')!;
+ const hidden=vi.spyOn(document,"hidden","get").mockReturnValue(false);const value=room();const view=render(<TeamOffice snapshot={value}/>);const avatar=view.container.querySelector('.team-member-avatar[data-state="working"]')!;
  hidden.mockReturnValue(true);act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(avatar.getAttribute("data-paused")).toBe("true");
  hidden.mockReturnValue(false);act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(avatar.getAttribute("data-paused")).toBe("false");
  view.rerender(<TeamOffice snapshot={{...value,animationEnabled:false}}/>);expect(avatar.getAttribute("data-motion")).toBe("off");expect(avatar.querySelector("svg")).toBeTruthy();
@@ -87,8 +87,9 @@ it("updates members without losing other project sections and offers pop-out thr
 });
 it("uses only integer scale choices and scales SVG coordinates without changing the pixel viewBox",()=>{
  const view=render(<TeamOffice snapshot={room()}/>);const svg=view.container.querySelector('.team-member-avatar svg')!;
- expect(svg.getAttribute("width")).toBe("28");expect(svg.getAttribute("height")).toBe("32");
+ expect(svg.getAttribute("width")).toBe("56");expect(svg.getAttribute("height")).toBe("64");
  const select=screen.getByRole("combobox",{name:"房间像素缩放"});expect(within(select).getAllByRole("option").map(option=>option.getAttribute("value"))).toEqual(["1","2","3"]);
+ fireEvent.change(select,{target:{value:"1"}});expect(svg.getAttribute("width")).toBe("28");expect(svg.getAttribute("height")).toBe("32");
  fireEvent.change(select,{target:{value:"3"}});expect(svg.getAttribute("width")).toBe("84");expect(svg.getAttribute("height")).toBe("96");expect(svg.getAttribute("viewBox")).toBe("0 0 28 32");
 });
 it("starts paused when document is already hidden and shares one listener with complete cleanup",()=>{
@@ -99,4 +100,17 @@ it("starts paused when document is already hidden and shares one listener with c
 it("prefers a currently opened exact tmux incarnation when duplicate bindings share one roster",()=>{
  const newer={...profile,tmuxId:"$9",tmuxCreated:900};const found=officeTeamSources({...profiles(),[collaborationKey(server.id,newer)]:newer},[server],[{pane:{id:"active",server,tmux:{id:"$9",created:900,name:"new-lead"}},backendId:"ssh-new"}]);
  expect(found).toHaveLength(1);expect(found[0].profile).toEqual(newer);expect(found[0].backendId).toBe("ssh-new");
+});
+
+it("renders decorative empty desks without inventing members or member counts",()=>{
+ const value=room();value.projects[1].sources[0]={id:"empty",label:"Empty team",availability:"ready",notice:"",members:[]};const view=render(<TeamOffice snapshot={value}/>);
+ const empty=screen.getByRole("region",{name:"项目 Beta"});expect(empty.querySelectorAll(".office-empty-desk")).toHaveLength(3);expect(empty.querySelectorAll("[data-member-id]")).toHaveLength(0);
+ for(const desk of empty.querySelectorAll(".office-empty-desk"))expect(desk.getAttribute("aria-hidden")).toBe("true");
+ expect(view.container.querySelectorAll("[data-member-id]")).toHaveLength(6);expect(empty.querySelector(".office-project-sign")?.textContent).toContain("0 人");
+});
+it("uses shared room scenery and compact desk labels while preserving full status hints",()=>{
+ const value=room();value.projects[0].sources[0].members[0].status.label="工作中（程序状态）";const view=render(<TeamOffice snapshot={value}/>);
+ expect(view.container.querySelector(".office-upper-wall svg")).toBeTruthy();const station=view.container.querySelector('[data-member-id="m0"]')!;
+ expect(station.querySelector(".office-desk-label .office-station-name")?.textContent).toContain("working");expect(station.querySelector(".office-member-status")?.textContent).toBe("工作中");expect(station.querySelector(".office-member-status")?.getAttribute("title")).toBe("工作中（程序状态）");
+ expect(station.querySelector(".office-screen-code.office-motion")).toBeTruthy();expect(view.container.querySelector('.team-member-avatar[data-state="idle"] .team-avatar-sleep.team-avatar-motion')).toBeTruthy();
 });

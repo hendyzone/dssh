@@ -17,9 +17,12 @@
 .team-member-avatar[data-state="done"] .team-avatar-motion{animation:team-avatar-stretch 3s steps(1,end) infinite}
 .team-member-avatar[data-state="blocked"] .team-avatar-motion{animation:team-avatar-rest 4s steps(1,end) infinite}
 .team-member-avatar[data-state="error"] .team-avatar-motion{animation:team-avatar-rest 4s steps(1,end) infinite}
+.team-member-avatar[data-state="idle"] .team-avatar-sleep{animation:team-avatar-sleep 4s steps(2,end) infinite}
 .team-member-avatar[data-motion="off"] .team-avatar-motion{animation:none}
 .team-member-avatar[data-paused="true"] .team-avatar-motion{animation-play-state:paused}
 @keyframes team-avatar-type{0%,100%{transform:translateY(0)}50%{transform:translateY(1px)}}
 @keyframes team-avatar-rest{0%,100%{transform:translateY(0)}50%{transform:translateY(1px)}}
 @keyframes team-avatar-stretch{0%,100%{transform:translateY(0)}50%{transform:translateY(-1px)}}
 @media(prefers-reduced-motion:reduce){.team-member-avatar[data-state] .team-avatar-motion{animation-name:none}}
+
+@keyframes team-avatar-sleep{0%,100%{transform:translateY(0);opacity:1}50%{transform:translateY(-2px);opacity:.7}}

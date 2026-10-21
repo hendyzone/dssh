@@ -27,12 +27,12 @@ export default function TeamMemberAvatar({ memberId, status, motionEnabled = tru
         {state === "idle" ? <path className="team-avatar-ink" d="M10 16h3v1h-3zm5 0h3v1h-3z"/>
           : <path className="team-avatar-ink" d="M11 15h1v2h-1zm5 0h1v2h-1z"/>}
         {state === "working" ? <><path className="team-avatar-face team-avatar-motion" d="M5 22h4v2H5zm14 0h4v2h-4z"/><path className="team-avatar-outline" d="M3 25h22v3H3z"/><path className="team-avatar-keyboard" d="M5 25h18v1H5z"/></>
-          : state === "done" ? <path className="team-avatar-face" d="M5 16h2v7H5zm16 0h2v7h-2z"/>
+          : state === "done" ? <path className="team-avatar-face" d="M4 11h3v12H4zm17 0h3v12h-3z"/>
           : state === "blocked" ? <path className="team-avatar-face" d="M5 19h2v4H5zm16 2h2v3h-2z"/>
           : state === "error" ? <path className="team-avatar-face" d="M5 14h2v8H5zm16 0h2v8h-2z"/>
           : <path className="team-avatar-face" d="M7 21h2v4H7zm12 0h2v4h-2z"/>}
       </g>
-      {state === "idle" && <path className="team-avatar-symbol" d="M18 3h6v1h-2v1h-2v1h4v1h-6V6h2V5h2V4h-4z"/>}
+      {state === "idle" && <path className="team-avatar-symbol team-avatar-motion team-avatar-sleep" d="M16 7h4v1h-1v1h-1v1h2v1h-4v-1h1V9h1V8h-2zm5-6h6v1h-2v1h-2v1h4v1h-6V4h2V3h2V2h-4z"/>}
       {state === "done" && <path className="team-avatar-symbol" d="M10 5h2v2h2V5h2V3h2v3h-2v2h-2v2h-2V8h-2z"/>}
       {state === "blocked" && <path className="team-avatar-symbol" d="M11 1h6v1h2v3h-2v1h-2v1h-2V5h2V4h2V3h-4v1h-2zm2 7h2v1h-2z"/>}
       {state === "error" && <path className="team-avatar-symbol" d="M13 1h2v6h-2zm0 8h2v2h-2z"/>}
