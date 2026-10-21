@@ -26,6 +26,7 @@ import { getTheme } from "../themes";
 import type { AppSettings, SessionInfo } from "../types";
 import { useTaskIndex, type BoardSource, type IndexTask } from "../lib/taskLookup";
 import { createTaskLinkProvider } from "../lib/taskLinks";
+import { createPathLinkProvider } from "../lib/pathLinks";
 import { selectedPage, type PageTarget } from "../lib/webPages";
 import TerminalTaskLayer, { type TaskHover } from "./TerminalTaskLayer";
 import TerminalContextMenu, {
@@ -108,6 +109,8 @@ export default function TerminalView({
   }, [active, session.id]);
   useEffect(() => () => removeTask(session.id), [session.id]);
   const backendRef = useRef<string | null>(null);
+  const onOpenPageRef = useRef(onOpenPage);
+  onOpenPageRef.current = onOpenPage;
   // 滚轮处理每个事件都读最新设置，灵敏度/惯性过滤改动即时生效。
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -458,6 +461,21 @@ export default function TerminalView({
         };
         root.addEventListener("mousemove", track, { passive: true });
         cleanups.push(() => root.removeEventListener("mousemove", track));
+        // ghostty checks providers in registration order: a path wins over a
+        // task code inside it; built-in OSC 8 and URL links keep their priority.
+        if (!local && onOpenPageRef.current) {
+          t.registerLinkProvider?.(createPathLinkProvider(t, {
+            cwd: () => lastCwd,
+            enabled: () => !disposed && connectionStateRef === "connected" && !!backendRef.current && !!onOpenPageRef.current,
+            onActivate: (target, event) => {
+              const backend = backendRef.current;
+              // Like task links, ordinary left-click works; Ctrl is optional.
+              if (disposed || local || connectionStateRef !== "connected" || !backend || event.button !== 0 || t.getSelection()) return;
+              setTaskHover(null);
+              onOpenPageRef.current?.(target, backend);
+            },
+          }));
+        }
         t.registerLinkProvider?.(createTaskLinkProvider(t, {
           index: () => taskIndexRef.current,
           onHover: (task) => {
