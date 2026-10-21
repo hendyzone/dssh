@@ -300,11 +300,12 @@ it.each([true,false])("promotes a member only after checking the migrated roster
 
 it("opens the room without adding inline roster avatars and pauses it when the main view is hidden",async()=>{
   const officeSnapshot={version:1 as const,themeId:"one-light",animationEnabled:true,mailAvailability:"unavailable" as const,projects:[{id:"demo",name:"demo",sources:[{id:"source",label:"Demo",availability:"ready" as const,notice:"",members:[{id:"worker",name:"Worker",isLead:false,status:{state:"working" as const,source:"activity" as const,label:"工作中（成员活动）"},taskText:"Task",taskSource:"manual" as const,paletteKey:"worker"}]}]}]};
-  const props={sessionId:"ssh",pane:{id:"lead",server,tmux:{id:"$1",created:100,name:"lead"}},profile,navigation:{server,servers:[server],onOpen:vi.fn()},onClose:vi.fn(),officeSnapshot};
+  const props={sessionId:"ssh",pane:{id:"lead",server,tmux:{id:"$1",created:100,name:"lead"}},profile,navigation:{server,servers:[server],onOpen:vi.fn()},onClose:vi.fn(),officeSnapshot,onRoomOpenChange:vi.fn()};
   const view=render(<TeamPanel {...props}/>);const avatar=view.container.querySelector('.team-office .team-member-avatar')!;
-  expect(avatar.getAttribute("data-paused")).toBe("true");fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(avatar.getAttribute("data-paused")).toBe("false");
+  expect((avatar.closest(".collaboration-content") as HTMLElement).style.display).toBe("none");expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);expect(avatar.getAttribute("data-paused")).toBe("true");fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect((avatar.closest(".collaboration-content") as HTMLElement).style.display).not.toBe("none");expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(true);expect(avatar.getAttribute("data-paused")).toBe("false");
   view.rerender(<TeamPanel {...props} officeVisible={false}/>);expect(avatar.getAttribute("data-paused")).toBe("true");
   view.rerender(<TeamPanel {...props} officeVisible/>);expect(avatar.getAttribute("data-paused")).toBe("false");
   fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(view.container.querySelector('.team-office .team-member-avatar')).toBe(avatar);expect(avatar.getAttribute("data-paused")).toBe("true");
   expect(view.container.querySelector('.team-roster-view .team-member-avatar')).toBeNull();
+  expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);fireEvent.click(screen.getByRole("button",{name:"房间",exact:true}));expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(true);view.unmount();expect(props.onRoomOpenChange).toHaveBeenLastCalledWith(false);
 });

@@ -116,7 +116,7 @@ fn emit_progress(
         error,
     };
     // 前端面板可能暂时未打开，事件发送失败不应影响实际传输结果。
-    let _ = app.emit(&progress_event_name(session_id), payload);
+    let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &progress_event_name(session_id), payload);
 }
 
 pub(crate) async fn open_sftp(state: &SshState, session_id: &str) -> Result<SftpSession, Error> {

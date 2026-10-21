@@ -4,7 +4,7 @@ import {act,render,renderHook,waitFor} from "@testing-library/react";
 import {beforeEach,afterEach,expect,it,vi} from "vitest";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
-import {useOfficeSnapshot,useOfficePublisher,useMainWindowVisibility,openOfficeWindow,type OfficeEnvelope} from "../src/lib/officeWindowSync";
+import {useOfficeSnapshot,useOfficePublisher,useMainWindowVisibility,useOfficePresence,openOfficeWindow,type OfficeEnvelope} from "../src/lib/officeWindowSync";
 import type {OfficeSnapshot} from "../src/lib/teamOffice";
 vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn()}));
 vi.mock("@tauri-apps/api/event",()=>({listen:vi.fn()}));
@@ -14,7 +14,7 @@ const deferred=<T,>()=>{let resolve!:(v:T)=>void;const promise=new Promise<T>(r=
 let handlers:Record<string,(event:{payload:any})=>void>;
 let offs:Record<string,ReturnType<typeof vi.fn>>;
 beforeEach(()=>{handlers={};offs={};vi.mocked(invoke).mockReset().mockResolvedValue({snapshot:envelope(1),visible:true});vi.mocked(listen).mockReset().mockImplementation(async(name,handler)=>{handlers[name]=handler;offs[name]=vi.fn();return offs[name]});});
-afterEach(()=>vi.restoreAllMocks());
+afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks()});
 it("registers both targeted listeners before first pull and receives cached state without polling",async()=>{
   const first=deferred<()=>void>(),second=deferred<()=>void>();
   vi.mocked(listen).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
@@ -55,29 +55,27 @@ it("reports sync failure without falling back to SSH or collaboration reads",asy
   await waitFor(()=>expect(view.result.current.error).toContain("unavailable"));
   expect(view.result.current.snapshot).toBeUndefined();expect(vi.mocked(invoke).mock.calls.map(([cmd])=>cmd)).toEqual(["office_request_snapshot"]);
 });
-it("republishes latest state on child request and serializes updates",async()=>{
-  const pending=deferred<any>();vi.mocked(invoke).mockReturnValueOnce(pending.promise).mockResolvedValue(undefined);
-  const view=renderHook(({value})=>useOfficePublisher(value),{initialProps:{value:snapshot("first")}});
-  await waitFor(()=>expect(handlers["office:request"]).toBeTruthy());
-  view.rerender({value:snapshot("latest")});
-  expect(invoke).toHaveBeenCalledTimes(1);
-  await act(async()=>pending.resolve(undefined));
-  await waitFor(()=>expect(invoke).toHaveBeenLastCalledWith("office_publish_snapshot",{snapshot:snapshot("latest")}));
-  const before=vi.mocked(invoke).mock.calls.length;
-  await act(async()=>handlers["office:request"]({payload:null}));
-  expect(invoke).toHaveBeenCalledTimes(before+1);expect(invoke).toHaveBeenLastCalledWith("office_publish_snapshot",{snapshot:snapshot("latest")});
-  view.unmount();expect(offs["office:request"]).toHaveBeenCalledTimes(1);
+it("publishes no snapshots without office presence, deduplicates content and merges changes for 250ms",async()=>{
+ vi.useFakeTimers();vi.mocked(invoke).mockResolvedValue(undefined);
+ const view=renderHook(({value,exists})=>useOfficePublisher(value,exists),{initialProps:{value:snapshot("first"),exists:false}});
+ await act(async()=>{});await act(async()=>vi.advanceTimersByTimeAsync(1000));expect(invoke).not.toHaveBeenCalled();
+ view.rerender({value:snapshot("first"),exists:true});await act(async()=>vi.advanceTimersByTimeAsync(249));expect(invoke).not.toHaveBeenCalled();await act(async()=>vi.advanceTimersByTimeAsync(1));expect(invoke).toHaveBeenCalledTimes(1);
+ for(let i=0;i<4;i++)view.rerender({value:snapshot("first"),exists:true});await act(async()=>{handlers["office:request"]({payload:null});await vi.advanceTimersByTimeAsync(1000)});expect(invoke).toHaveBeenCalledTimes(1);
+ view.rerender({value:snapshot("middle"),exists:true});await act(async()=>vi.advanceTimersByTimeAsync(100));view.rerender({value:snapshot("latest"),exists:true});await act(async()=>vi.advanceTimersByTimeAsync(150));expect(invoke).toHaveBeenCalledTimes(2);expect(invoke).toHaveBeenLastCalledWith("office_publish_snapshot",{snapshot:snapshot("latest")});
+});
+it("cancels scheduled publication when office closes and sends the current snapshot after reopening",async()=>{
+ vi.useFakeTimers();vi.mocked(invoke).mockResolvedValue(undefined);const value=snapshot();const view=renderHook(({exists})=>useOfficePublisher(value,exists),{initialProps:{exists:true}});await act(async()=>{});
+ view.rerender({exists:false});await act(async()=>vi.advanceTimersByTimeAsync(500));expect(invoke).not.toHaveBeenCalled();view.rerender({exists:true});await act(async()=>vi.advanceTimersByTimeAsync(250));expect(invoke).toHaveBeenCalledTimes(1);
+ view.rerender({exists:false});view.rerender({exists:true});await act(async()=>vi.advanceTimersByTimeAsync(250));expect(invoke).toHaveBeenCalledTimes(2);view.unmount();expect(offs["office:request"]).toHaveBeenCalledTimes(1);
 });
 it("opens through the fixed native office command",async()=>{await openOfficeWindow();expect(invoke).toHaveBeenCalledWith("open_office_window");});
 
-it("serializes publisher invocations across unmount and remount so an old pending write cannot win",async()=>{
-  const oldWrite=deferred<any>();vi.mocked(invoke).mockReturnValueOnce(oldWrite.promise).mockResolvedValue(undefined);
-  const old=renderHook(()=>useOfficePublisher(snapshot("old")));await waitFor(()=>expect(invoke).toHaveBeenCalledTimes(1));old.unmount();
-  const next=renderHook(()=>useOfficePublisher(snapshot("new")));await act(async()=>{});expect(invoke).toHaveBeenCalledTimes(1);
-  await act(async()=>oldWrite.resolve(undefined));await waitFor(()=>expect(invoke).toHaveBeenLastCalledWith("office_publish_snapshot",{snapshot:snapshot("new")}));
-  const writes=vi.mocked(invoke).mock.calls.map(([,args]:any)=>args.snapshot.themeId);expect(writes[0]).toBe("old");expect(writes.length).toBeGreaterThanOrEqual(2);expect(writes.slice(1).every(theme=>theme==="new")).toBe(true);next.unmount();
+it("serializes pending writes across publisher remounts and keeps the newest snapshot last",async()=>{
+ vi.useFakeTimers();const oldWrite=deferred<any>();vi.mocked(invoke).mockReturnValueOnce(oldWrite.promise).mockResolvedValue(undefined);
+ const old=renderHook(()=>useOfficePublisher(snapshot("old"),true));await act(async()=>vi.advanceTimersByTimeAsync(250));expect(invoke).toHaveBeenCalledTimes(1);old.unmount();
+ const next=renderHook(()=>useOfficePublisher(snapshot("new"),true));await act(async()=>vi.advanceTimersByTimeAsync(250));expect(invoke).toHaveBeenCalledTimes(1);
+ await act(async()=>oldWrite.resolve(undefined));expect(invoke).toHaveBeenLastCalledWith("office_publish_snapshot",{snapshot:snapshot("new")});expect(vi.mocked(invoke).mock.calls.map(([,args]:any)=>args.snapshot.themeId)).toEqual(["old","new"]);next.unmount();
 });
-
 it("subscribes main visibility before native query and preserves a newer minimize event",async()=>{
  const query=deferred<any>();vi.mocked(invoke).mockReturnValue(query.promise);const view=renderHook(()=>useMainWindowVisibility());await waitFor(()=>expect(invoke).toHaveBeenCalledWith("office_main_visibility"));
  expect(listen).toHaveBeenCalledWith("office:main-visibility",expect.any(Function),{target:{kind:"WebviewWindow",label:"main"}});
@@ -91,4 +89,14 @@ it("applies real child theme tokens on initial snapshot and subsequent theme bro
  expect(document.documentElement.style.getPropertyValue("--ui-panel")).toBe(getTheme("tokyo-night").ui.panel);
  expect(document.documentElement.style.colorScheme).toBe("dark");
  expect(vi.mocked(invoke).mock.calls.map(([cmd])=>cmd)).toEqual(["office_request_snapshot"]);
+});
+
+it("subscribes presence before querying and a lifecycle event wins over a stale initial response",async()=>{
+ const registration=deferred<()=>void>(),query=deferred<any>();vi.mocked(listen).mockImplementationOnce(async(name,handler)=>{handlers[name]=handler;return registration.promise});vi.mocked(invoke).mockReturnValue(query.promise);const off=vi.fn();
+ const view=renderHook(()=>useOfficePresence());expect(view.result.current).toBe(false);expect(invoke).not.toHaveBeenCalled();await act(async()=>registration.resolve(off));expect(invoke).toHaveBeenCalledWith("office_window_exists");
+ act(()=>handlers["office:presence"]({payload:true}));await act(async()=>query.resolve(false));expect(view.result.current).toBe(true);act(()=>handlers["office:presence"]({payload:false}));expect(view.result.current).toBe(false);view.unmount();expect(off).toHaveBeenCalledTimes(1);
+});
+it("main visibility remains false until native state arrives and also follows document hiding",async()=>{
+ const query=deferred<any>();vi.mocked(invoke).mockReturnValue(query.promise);const hidden=vi.spyOn(document,"hidden","get").mockReturnValue(false);const view=renderHook(()=>useMainWindowVisibility());expect(view.result.current).toBe(false);await act(async()=>query.resolve(true));expect(view.result.current).toBe(true);
+ hidden.mockReturnValue(true);act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(view.result.current).toBe(false);hidden.mockReturnValue(false);act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(view.result.current).toBe(true);
 });

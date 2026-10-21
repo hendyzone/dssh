@@ -113,16 +113,16 @@ fn start(app: tauri::AppHandle, state: &LocalState, session_id: String) -> Resul
                 Ok(0) => break,
                 Ok(n) => {
                     let text = decode(&mut pending, &buffer[..n], false);
-                    if !text.is_empty() { let _ = app.emit(&format!("local://{session_id}/data"), text); }
+                    if !text.is_empty() { let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &format!("local://{session_id}/data"), text); }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => break,
             }
         }
         let tail = decode(&mut pending, &[], true);
-        if !tail.is_empty() { let _ = app.emit(&format!("local://{session_id}/data"), tail); }
+        if !tail.is_empty() { let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &format!("local://{session_id}/data"), tail); }
         let code = status_rx.recv().unwrap_or(-1);
-        let _ = app.emit(&format!("local://{session_id}/exit"), code);
+        let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &format!("local://{session_id}/exit"), code);
     });
     Ok(())
 }

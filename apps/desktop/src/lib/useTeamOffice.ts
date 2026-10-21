@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { collaborationRequest, type CollaborationProfile, type CollaborationSession } from "./collaboration";
 import { briefKey, fetchAgentSessions, matchSession, taskBrief } from "./agentSessions";
 import { boardSource, isIdentifier, type TaskLookupSettings } from "./taskLookup";
@@ -7,75 +7,109 @@ import { buildOfficeSnapshot, officeTeamSources, type OfficeBoard, type OfficeRo
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
 import type { ServerEntry } from "../types";
 
-/** The only office collector. This hook is mounted in App, never in the popup. */
-export function useTeamOffice({ profiles, servers, sessions, programSnapshots, lookupSettings, themeId, animationEnabled }: {
+interface CachedSource { fingerprint: string; roster?: OfficeRoster; board?: OfficeBoard; fresh: boolean; }
+/** Main-only, demand-driven collection. A changed connection invalidates just its own source. */
+export function useTeamOffice({ profiles, servers, sessions, programSnapshots, lookupSettings, themeId, animationEnabled, enabled = false }: {
   profiles: Record<string, CollaborationProfile>; servers: ServerEntry[]; sessions: CollaborationSession[];
   programSnapshots: Record<string, TmuxProgramSnapshot>; lookupSettings: TaskLookupSettings;
-  themeId: string; animationEnabled: boolean;
+  themeId: string; animationEnabled: boolean; enabled?: boolean;
 }) {
-  const sources = officeTeamSources(profiles, servers, sessions);
+  const sourceInput = JSON.stringify([profiles,servers,sessions]);
+  const sources = useMemo(() => officeTeamSources(profiles,servers,sessions), [sourceInput]);
   const key = JSON.stringify([sources, lookupSettings]);
-  const [data, setData] = useState<{key: string; rosters: Record<string, OfficeRoster>; boards: Record<string, OfficeBoard>}>();
+  const cache = useRef(new Map<string,CachedSource>());
+  const wasEnabled = useRef(false);
+  const [revision, setRevision] = useState(0);
+  const [mapping, setMapping] = useState(loadTeamMappings);
+  useEffect(() => {
+    const read = () => { const next=loadTeamMappings(); setMapping(old=>JSON.stringify(old)===JSON.stringify(next)?old:next); };
+    window.addEventListener("storage",read);
+    window.addEventListener("dssh-office-refresh",read);
+    return () => {window.removeEventListener("storage",read);window.removeEventListener("dssh-office-refresh",read);};
+  }, []);
   useEffect(() => {
     let disposed = false, pending = false;
-    if (!sources.length) return;
-    const refresh = async () => {
+    const resumed = enabled && !wasEnabled.current;
+    wasEnabled.current = enabled;
+    const ids = new Set(sources.map(source=>source.id));
+    for (const id of cache.current.keys()) if (!ids.has(id)) cache.current.delete(id);
+    for (const source of sources) {
+      const fingerprint = JSON.stringify([source.backendId,source.profile,lookupSettings]);
+      if (cache.current.get(source.id)?.fingerprint !== fingerprint) {
+        cache.current.set(source.id,{fingerprint,fresh:false,roster:source.backendId?undefined:{availability:"offline",notice:"连接 Lead 所在服务器后可读取团队",members:[]}});
+      }
+    }
+    setRevision(value=>value+1);
+    if (!enabled || !sources.length) return;
+    const nextMapping=loadTeamMappings();setMapping(old=>JSON.stringify(old)===JSON.stringify(nextMapping)?old:nextMapping);
+    const refresh = async (all = true) => {
       if (pending || disposed) return;
       pending = true;
+      const nextMapping=loadTeamMappings();setMapping(old=>JSON.stringify(old)===JSON.stringify(nextMapping)?old:nextMapping);
       try {
-        const rosters: Record<string, OfficeRoster> = {};
-        await Promise.all(sources.map(async source => {
-          if (!source.backendId) { rosters[source.id] = {availability:"offline",notice:"连接 Lead 所在服务器后可读取团队",members:[]}; return; }
+        const selected = sources.filter(source=>all || !cache.current.get(source.id)?.fresh);
+        const entries = new Map(selected.map(source=>[source.id,cache.current.get(source.id)!]));
+        const current = (id:string) => !disposed && cache.current.get(id)===entries.get(id);
+        await Promise.all(selected.map(async source => {
+          const entry=entries.get(source.id)!;
+          if (!source.backendId) {entry.fresh=true;return;}
+          let roster: OfficeRoster;
           try {
-            const raw: unknown = JSON.parse(await collaborationRequest(source.backendId, source.profile, {operation:"members"}));
-            if (!Array.isArray(raw) || raw.length > 100) throw new Error("Invalid roster");
-            rosters[source.id] = {availability:"ready",notice:"",members:raw.map(member => parseMember(member, source.project))};
-          } catch {
-            rosters[source.id] = {availability:"error",notice:"团队读取失败，请检查 Lead 连接、会话及工作区",members:[]};
-          }
+            const raw:unknown=JSON.parse(await collaborationRequest(source.backendId,source.profile,{operation:"members"}));
+            if (!Array.isArray(raw) || raw.length>100) throw new Error("Invalid roster");
+            roster={availability:"ready",notice:"",members:raw.map(member=>parseMember(member,source.project))};
+          } catch { roster={availability:"error",notice:"团队读取失败，请检查 Lead 连接、会话及工作区",members:[]}; }
+          if (current(source.id)) {entry.roster=roster;setRevision(value=>value+1);}
         }));
         if (disposed) return;
-        // Render the verified rosters immediately; slow board lookups only enrich captions.
-        setData({key,rosters,boards:{}});
-        const boards: Record<string, OfficeBoard> = {};
-        const routes = new Map<string, {source: NonNullable<ReturnType<typeof boardSource>>; ids: string[]}>();
-        for (const team of sources) {
-          if (rosters[team.id].availability !== "ready") continue;
-          const source = boardSource(lookupSettings, team.profile, team.backendId);
-          if (!source) continue;
-          const group = routes.get(source.key) ?? {source, ids:[]};
-          group.ids.push(team.id); routes.set(source.key, group);
+        const routes=new Map<string,{source:NonNullable<ReturnType<typeof boardSource>>;ids:string[]}>();
+        for (const team of selected) {
+          if (entries.get(team.id)?.roster?.availability!=="ready") continue;
+          const source=boardSource(lookupSettings,team.profile,team.backendId);if(!source)continue;
+          const group=routes.get(source.key)??{source,ids:[]};group.ids.push(team.id);routes.set(source.key,group);
         }
-        await Promise.all([...routes.values()].map(async ({source,ids}) => {
-          let board: OfficeBoard;
+        await Promise.all([...routes.values()].map(async ({source,ids})=>{
+          let board:OfficeBoard;
           try {
-            const snapshot = await fetchAgentSessions(source);
-            const briefs: OfficeBoard["briefs"] = {};
-            const targets = new Map<string, {project:string;code:string}>();
-            for (const id of ids) for (const member of rosters[id].members) {
-              const session = matchSession(member, snapshot.sessions);
-              if (session?.taskCode && isIdentifier(session.taskCode) && isIdentifier(session.project) && !session.stale && session.hostOk)
-                targets.set(briefKey(session.project,session.taskCode), {project:session.project,code:session.taskCode});
+            const snapshot=await fetchAgentSessions(source);if(disposed)return;
+            const briefs:OfficeBoard["briefs"]={};
+            const targets=new Map<string,{project:string;code:string}>();
+            for(const id of ids)for(const member of entries.get(id)?.roster?.members??[]){
+              const session=matchSession(member,snapshot.sessions);
+              if(session?.taskCode&&isIdentifier(session.taskCode)&&isIdentifier(session.project)&&!session.stale&&session.hostOk)
+                targets.set(briefKey(session.project,session.taskCode),{project:session.project,code:session.taskCode});
             }
-            await Promise.all([...targets].map(async ([key,target]) => {
-              try { const brief = await taskBrief(source,target.project,target.code); if (brief) briefs[key] = brief; } catch { /* A card may disappear while its collector snapshot is still current. */ }
+            await Promise.all([...targets].map(async([key,target])=>{
+              if(disposed)return;
+              try{const brief=await taskBrief(source,target.project,target.code);if(brief)briefs[key]=brief;}catch{/* Deleted cards need no caption. */}
             }));
-            board = {snapshot,briefs,offline:false};
-          } catch { board = {briefs:{},offline:true}; }
-          for (const id of ids) boards[id] = board;
+            board={snapshot,briefs,offline:false};
+          } catch {board={briefs:{},offline:true};}
+          for(const id of ids)if(current(id))entries.get(id)!.board=board;
+          if(!disposed)setRevision(value=>value+1);
         }));
-        if (!disposed) setData({key,rosters,boards});
-      } finally { pending = false; }
+        for(const id of entries.keys())if(current(id))entries.get(id)!.fresh=true;
+      } finally {pending=false;}
     };
-    void refresh();
-    // One slow main-window refresh for every registered team, never per member.
-    const timer = window.setInterval(() => void refresh(), 60_000);
-    window.addEventListener("dssh-office-refresh", refresh);
-    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener("dssh-office-refresh", refresh); };
-  }, [key]);
-  const current = data?.key === key ? data : undefined;
-  return buildOfficeSnapshot(sources, current?.rosters ?? {}, {
-    servers,sessions,programSnapshots,mapping:loadTeamMappings(),boards:current?.boards,
-    themeId,animationEnabled,
-  });
+    void refresh(resumed);
+    const timer=window.setInterval(()=>void refresh(),60_000);
+    const requested=()=>void refresh();
+    window.addEventListener("dssh-office-refresh",requested);
+    return ()=>{disposed=true;window.clearInterval(timer);window.removeEventListener("dssh-office-refresh",requested);};
+  }, [key,enabled]);
+  const buildKey=JSON.stringify([sources,servers,sessions,programSnapshots,mapping,themeId,animationEnabled,lookupSettings,revision]);
+  const result=useMemo(()=>{
+    const rosters:Record<string,OfficeRoster>={},boards:Record<string,OfficeBoard>={};
+    for(const source of sources){
+      const entry=cache.current.get(source.id);
+      if(!entry || entry.fingerprint!==JSON.stringify([source.backendId,source.profile,lookupSettings]))continue;
+      if(entry.roster)rosters[source.id]=entry.roster;
+      if(entry.board)boards[source.id]=entry.board;
+    }
+    return buildOfficeSnapshot(sources,rosters,{servers,sessions,programSnapshots,mapping,boards,themeId,animationEnabled});
+  },[buildKey]);
+  const stable=useRef({content:"",snapshot:result});
+  const content=JSON.stringify(result);
+  if(stable.current.content!==content)stable.current={content,snapshot:result};
+  return stable.current.snapshot;
 }

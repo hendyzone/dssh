@@ -67,7 +67,7 @@ pub async fn monitor_start(
                 .await
             {
                 Ok(Some(stats)) => {
-                    let _ = app.emit(&format!("{event}/stats"), stats);
+                    let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &format!("{event}/stats"), stats);
                 }
                 result => {
                     let message = if result.is_err() {
@@ -75,7 +75,7 @@ pub async fn monitor_start(
                     } else {
                         "采集失败，请检查 SSH 连接及 Linux /proc 读取权限"
                     };
-                    let _ = app.emit(&format!("{event}/error"), message);
+                    let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &format!("{event}/error"), message);
                     break;
                 }
             }

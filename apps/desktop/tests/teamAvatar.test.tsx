@@ -139,3 +139,7 @@ it("defaults old settings to animation enabled and persists the user's checkbox 
   expect(loadSettings().teamAvatarAnimation).toBe(true);
   again.unmount();
 });
+
+it("rejects an explicitly mapped local terminal even when its fields resemble SSH",()=>{
+ const local={...server,id:"local",kind:"local" as const};expect(resolveTeamAvatar(member,{servers:[local],sessions:[session(local)],programSnapshots:{local:snapshot()},mapping:{[memberMappingKey(member)]:local.id}})).toMatchObject(fallback);
+});

@@ -19,12 +19,14 @@ function detachedBindings():string[]{
   try{const value=JSON.parse(localStorage.getItem(DETACHED)??"[]");return Array.isArray(value)?value.filter(v=>typeof v==="string"):[];}catch{return [];}
 }
 
-export default function TeamPanel({sessionId, pane, profile, navigation, onClose, taskLookup, officeSnapshot, officeVisible = true, onPopOut}: {
+export default function TeamPanel({sessionId, pane, profile, navigation, onClose, taskLookup, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange}: {
   sessionId: string; pane: SessionInfo; profile?: CollaborationProfile; navigation: TeamNavigation; onClose: () => void;
   taskLookup?: { source?: BoardSource; inferred?: { project: string; reason: ProjectReason } };
+  onRoomOpenChange?: (open: boolean) => void;
   officeSnapshot?: OfficeSnapshot; officeVisible?: boolean; onPopOut?: () => Promise<void>;
 }) {
   const [roomOpen, setRoomOpen] = useState(false);
+  useEffect(() => { onRoomOpenChange?.(roomOpen); return () => onRoomOpenChange?.(false); }, [roomOpen,onRoomOpenChange]);
   const [officeError, setOfficeError] = useState("");
   const [created, setCreated] = useState<CollaborationProfile>();
   const [project, setProject] = useState("");

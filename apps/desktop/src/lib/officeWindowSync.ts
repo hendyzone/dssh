@@ -12,38 +12,65 @@ let publicationTail: Promise<void> = Promise.resolve();
 
 export function openOfficeWindow(): Promise<void> { return invoke("open_office_window"); }
 
-/** Only the main App owns data collection. Serialize writes so older renders cannot win. */
-export function useOfficePublisher(snapshot: OfficeSnapshot) {
-  const latest = useRef(snapshot);
-  latest.current = snapshot;
-  const publish = useRef<(() => void) | undefined>();
+/** Content deduplication and one trailing update per 250ms, only while the popup exists. */
+export function useOfficePublisher(snapshot: OfficeSnapshot, officeExists = false) {
+  const content = JSON.stringify(snapshot);
+  const latest = useRef({snapshot, content, officeExists});
+  latest.current = {snapshot, content, officeExists};
+  const request = useRef<(() => void) | undefined>();
+  const lastSent = useRef<string>();
+  const cycle = useRef(0);
+  const cancelTimer = useRef<(() => void) | undefined>();
   useEffect(() => {
-    let disposed = false, running = false, pending = false;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let off: (() => void) | undefined;
-    const send = async () => {
-      pending = true;
-      if (running) return;
-      running = true;
-      try {
-        while (pending && !disposed) {
-          pending = false;
-          const next = () => disposed ? Promise.resolve() : invoke<void>("office_publish_snapshot", { snapshot: latest.current });
-          const work = publicationTail.then(next, next);
-          publicationTail = work.then(() => {}, () => {});
-          await work;
-        }
-      } catch (error) {
-        console.error("Office snapshot publish failed", error);
-      } finally { running = false; }
+    const schedule = () => {
+      if (disposed || !latest.current.officeExists || timer !== undefined) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        const send = async () => {
+          if (disposed || !latest.current.officeExists || lastSent.current === latest.current.content) return;
+          const next = latest.current;
+          const generation = cycle.current;
+          await invoke<void>("office_publish_snapshot", {snapshot:next.snapshot});
+          if (!disposed && latest.current.officeExists && generation === cycle.current) lastSent.current = next.content;
+        };
+        const work = publicationTail.then(send, send);
+        publicationTail = work.catch(error => console.error("Office snapshot publish failed", error));
+      }, 250);
     };
-    publish.current = () => { void send(); };
-    void listen("office:request", () => { void send(); }, { target: mainTarget }).then(unlisten => {
-      if (disposed) unlisten();
-      else { off = unlisten; void send(); }
+    request.current = schedule;
+    cancelTimer.current = () => { if(timer !== undefined) clearTimeout(timer); timer = undefined; };
+    void listen("office:request", () => { schedule(); }, {target:mainTarget}).then(unlisten => {
+      if (disposed) unlisten(); else { off = unlisten; schedule(); }
     }).catch(error => console.error("Office request listener failed", error));
-    return () => { disposed = true; publish.current = undefined; off?.(); };
+    schedule();
+    return () => { disposed = true; if (timer !== undefined) clearTimeout(timer); off?.(); request.current = undefined; };
   }, []);
-  useEffect(() => { publish.current?.(); }, [snapshot]);
+  useEffect(() => {
+    if (!officeExists) { cycle.current++; lastSent.current = undefined; cancelTimer.current?.(); }
+    request.current?.();
+  }, [content, officeExists]);
+}
+
+/** Presence is native lifecycle state, independent of the child React startup. */
+export function useOfficePresence() {
+  const [exists, setExists] = useState(false);
+  useEffect(() => {
+    let disposed = false, received = false;
+    let off: (() => void) | undefined;
+    void listen<boolean>("office:presence", event => {
+      if (!disposed) { received = true; setExists(event.payload); }
+    }, {target:mainTarget}).then(async unlisten => {
+      if (disposed) { unlisten(); return; }
+      off = unlisten;
+      const initial = await invoke<boolean>("office_window_exists");
+      if (!disposed && !received) setExists(initial);
+    }).catch(error => console.error("Office presence unavailable", error));
+    return () => { disposed = true; off?.(); };
+  }, []);
+  return exists;
 }
 
 /** Subscribe before pulling the cache; a newer broadcast must beat a delayed initial reply. */
@@ -87,7 +114,9 @@ export function useOfficeSnapshot() {
 
 /** Native minimize state complements WebView document visibility, without a polling clock. */
 export function useMainWindowVisibility() {
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(false);
+  const [documentHidden, setDocumentHidden] = useState(() => document.hidden);
+  useEffect(() => { const changed = () => setDocumentHidden(document.hidden); document.addEventListener("visibilitychange", changed); return () => document.removeEventListener("visibilitychange", changed); }, []);
   useEffect(() => {
     let disposed = false, received = false;
     let off: (() => void) | undefined;
@@ -101,5 +130,5 @@ export function useMainWindowVisibility() {
     }).catch(error => console.error("Main window visibility unavailable", error));
     return () => { disposed = true; off?.(); };
   }, []);
-  return visible;
+  return visible && !documentHidden;
 }

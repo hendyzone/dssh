@@ -114,3 +114,7 @@ it("uses shared room scenery and compact desk labels while preserving full statu
  expect(station.querySelector(".office-desk-label .office-station-name")?.textContent).toContain("working");expect(station.querySelector(".office-member-status")?.textContent).toBe("工作中");expect(station.querySelector(".office-member-status")?.getAttribute("title")).toBe("工作中（程序状态）");
  expect(station.querySelector(".office-screen-code.office-motion")).toBeTruthy();expect(view.container.querySelector('.team-member-avatar[data-state="idle"] .team-avatar-sleep.team-avatar-motion')).toBeTruthy();
 });
+
+it("disambiguates source labels with the workdir basename without exposing the full path",()=>{
+ const found=sources();expect(found[0].label).toContain("worktree");expect(found[0].label).not.toContain("/private/");
+});

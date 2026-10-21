@@ -33,8 +33,8 @@ export function resolveTeamAvatar(member: TeamMember, context: TeamAvatarContext
   const mappedId = context.mapping?.[memberMappingKey(member)];
   const mapped = mappedId ? context.servers.find(server => server.id === mappedId)
     ?? context.sessions.find(session => session.pane.server.id === mappedId)?.pane.server : undefined;
-  if (mappedId && !mapped) return fallback;
-  const live = context.sessions.filter(session => session.backendId && (mapped
+  if (mappedId && (!mapped || mapped.kind === "local")) return fallback;
+  const live = context.sessions.filter(session => session.backendId && session.pane.server.kind !== "local" && (mapped
     ? sameSshEndpoint(mapped, session.pane.server)
     : session.pane.server.kind !== "local" && matchingServers(member, [session.pane.server]).length > 0));
   if (!live.length) return fallback;

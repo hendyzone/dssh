@@ -27,11 +27,21 @@ pub struct OfficeState {
 }
 
 /// Core/plugin commands are separately restricted by the office capability.
+/// Event routing is NOT a confidentiality boundary: Tauri Any listeners can receive
+/// emit_to(main) traffic. This trusted, locally bundled office loads no remote content;
+/// its allowlisted snapshot contains no session IDs. UID45 accepts that limitation.
 /// App commands have no ACL manifest in this application, so explicitly isolate this route.
 pub fn command_allowed(label: &str, command: &str) -> bool {
-    label != LABEL || command == "office_request_snapshot"
+    match label {
+        "main" => true,
+        "office" => command == "office_request_snapshot",
+        label if label.starts_with("preview-") => {
+            matches!(command, "take_pending_image" | "desktop_report_error")
+        }
+        _ => false,
+    }
 }
-fn caller(window: &WebviewWindow, expected: &str) -> Result<(), String> {
+fn caller<R: tauri::Runtime>(window: &WebviewWindow<R>, expected: &str) -> Result<(), String> {
     if window.label() == expected {
         Ok(())
     } else {
@@ -39,17 +49,20 @@ fn caller(window: &WebviewWindow, expected: &str) -> Result<(), String> {
     }
 }
 fn visible(window: &WebviewWindow) -> bool {
-    window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(true)
+    window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
 }
 
 #[tauri::command]
-pub fn office_publish_snapshot(
-    window: WebviewWindow,
-    app: AppHandle,
+pub async fn office_publish_snapshot<R: tauri::Runtime>(
+    window: WebviewWindow<R>,
+    app: AppHandle<R>,
     state: State<'_, OfficeState>,
     snapshot: serde_json::Value,
 ) -> Result<(), String> {
     caller(&window, "main")?;
+    if app.get_webview_window(LABEL).is_none() {
+        return Ok(());
+    }
     if snapshot.get("version").and_then(|v| v.as_u64()) != Some(1)
         || !snapshot.get("projects").is_some_and(|v| v.is_array())
     {
@@ -62,7 +75,7 @@ pub fn office_publish_snapshot(
     {
         return Err("Office snapshot is too large".into());
     }
-    // Keep cache update and emission ordered across concurrent invocations.
+    // Serialize cache updates; receivers ignore any older emission arriving later.
     let mut latest = state.latest.lock().map_err(|e| e.to_string())?;
     let envelope = Envelope {
         epoch: latest.as_ref().map(|e| e.epoch.clone()).unwrap_or_else(|| {
@@ -78,7 +91,14 @@ pub fn office_publish_snapshot(
         sequence: latest.as_ref().map(|e| e.sequence + 1).unwrap_or(1),
         snapshot,
     };
+    if latest
+        .as_ref()
+        .is_some_and(|old| old.snapshot == envelope.snapshot)
+    {
+        return Ok(());
+    }
     *latest = Some(envelope.clone());
+    drop(latest);
     app.emit_to(
         EventTarget::webview_window(LABEL),
         "office:snapshot",
@@ -107,6 +127,12 @@ pub fn office_request_snapshot(
 pub fn office_main_visibility(window: WebviewWindow) -> Result<bool, String> {
     caller(&window, "main")?;
     Ok(visible(&window))
+}
+
+#[tauri::command]
+pub fn office_window_exists(window: WebviewWindow, app: AppHandle) -> Result<bool, String> {
+    caller(&window, "main")?;
+    Ok(app.get_webview_window(LABEL).is_some())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -189,8 +215,9 @@ fn restore(g: &Geometry, monitors: &[Display], primary: Option<&Display>) -> Opt
         ((g.outer.height as f64 * ratio).round() as u32).clamp(1, target.area.height);
     let frame_w = ((g.outer.width - g.inner_width) as f64 * ratio).round() as u32;
     let frame_h = ((g.outer.height - g.inner_height) as f64 * ratio).round() as u32;
-    let same_display =
-        target.name == g.display.name && monitors.iter().any(|m| m.name == g.display.name);
+    let same_display = target.name.is_some()
+        && target.name == g.display.name
+        && monitors.iter().any(|m| m.name == g.display.name);
     let desired_x = if same_display {
         target.area.x as i64
             + ((g.outer.x as i64 - g.display.area.x as i64) as f64 * ratio).round() as i64
@@ -232,6 +259,20 @@ fn load(app: &AppHandle) -> Option<Geometry> {
     let g: Geometry = serde_json::from_slice(&fs::read(path(app)?).ok()?).ok()?;
     valid(&g).then_some(g)
 }
+fn atomic_write(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let temporary = path.with_extension("json.tmp");
+    let result = (|| {
+        let mut file = fs::File::create(&temporary)?;
+        file.write_all(data)?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
 fn persist(app: &AppHandle) {
     let Some(path) = path(app) else {
         return;
@@ -249,7 +290,7 @@ fn persist(app: &AppHandle) {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    if let Err(error) = fs::write(path, data) {
+    if let Err(error) = atomic_write(&path, &data) {
         eprintln!("Office geometry save failed: {error}");
     }
 }
@@ -344,6 +385,7 @@ pub async fn open_office_window(
             existing.unminimize().map_err(|e| e.to_string())?;
             ensure_visible(&existing);
             existing.set_focus().map_err(|e| e.to_string())?;
+            let _ = handle.emit_to(EventTarget::webview_window("main"), "office:presence", true);
             let _ = handle.emit_to(
                 EventTarget::webview_window(LABEL),
                 "office:visibility",
@@ -388,6 +430,11 @@ pub async fn open_office_window(
         office.show().map_err(|e| e.to_string())?;
         office.set_focus().map_err(|e| e.to_string())?;
         capture(&office);
+        let _ = office.app_handle().emit_to(
+            EventTarget::webview_window("main"),
+            "office:presence",
+            true,
+        );
         Ok(())
     })
     .await
@@ -419,6 +466,13 @@ pub fn window_event(window: &tauri::Window, event: &WindowEvent) {
     if window.label() != LABEL {
         return;
     }
+    if matches!(event, WindowEvent::Destroyed) {
+        let _ = app.emit_to(
+            EventTarget::webview_window("main"),
+            "office:presence",
+            false,
+        );
+    }
     if matches!(
         event,
         WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
@@ -426,10 +480,7 @@ pub fn window_event(window: &tauri::Window, event: &WindowEvent) {
         persist(app);
     }
     if let Some(office) = app.get_webview_window(LABEL) {
-        if matches!(
-            event,
-            WindowEvent::Focused(true) | WindowEvent::ScaleFactorChanged { .. }
-        ) {
+        if matches!(event, WindowEvent::ScaleFactorChanged { .. }) {
             ensure_visible(&office);
         }
         if matches!(
@@ -454,6 +505,77 @@ pub fn window_event(window: &tauri::Window, event: &WindowEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn actual_publish_command_checks_caller_and_advances_sequence() {
+        let app = tauri::test::mock_builder()
+            .manage(OfficeState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let main = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
+            .build()
+            .unwrap();
+        let office = WebviewWindowBuilder::new(&app, "office", WebviewUrl::default())
+            .build()
+            .unwrap();
+        let first = serde_json::json!({"version":1,"projects":[],"themeId":"dark"});
+        let second = serde_json::json!({"version":1,"projects":[],"themeId":"light"});
+        let denied =
+            office_publish_snapshot(office, app.handle().clone(), app.state(), first.clone()).await;
+        assert_eq!(
+            denied,
+            Err("Window is not permitted to perform this operation".into())
+        );
+        assert!(app.state::<OfficeState>().latest.lock().unwrap().is_none());
+        office_publish_snapshot(main.clone(), app.handle().clone(), app.state(), first)
+            .await
+            .unwrap();
+        let epoch = app
+            .state::<OfficeState>()
+            .latest
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .epoch
+            .clone();
+        assert_eq!(
+            app.state::<OfficeState>()
+                .latest
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .sequence,
+            1
+        );
+        office_publish_snapshot(
+            main.clone(),
+            app.handle().clone(),
+            app.state(),
+            second.clone(),
+        )
+        .await
+        .unwrap();
+        office_publish_snapshot(main, app.handle().clone(), app.state(), second.clone())
+            .await
+            .unwrap();
+        let state = app.state::<OfficeState>();
+        let cache = state.latest.lock().unwrap();
+        let envelope = cache.as_ref().unwrap();
+        assert_eq!(envelope.sequence, 2);
+        assert_eq!(envelope.epoch, epoch);
+        assert_eq!(envelope.snapshot, second);
+    }
+    #[test]
+    fn office_capability_contains_only_listen_and_unlisten() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/office.json")).unwrap();
+        assert_eq!(capability["windows"], serde_json::json!(["office"]));
+        assert_eq!(
+            capability["permissions"],
+            serde_json::json!(["core:event:allow-listen", "core:event:allow-unlisten"])
+        );
+    }
     fn screen(name: &str, x: i32, width: u32, scale: f64) -> Display {
         Display {
             name: Some(name.into()),
@@ -495,6 +617,36 @@ mod tests {
             assert!(!command_allowed("office", command), "{command}");
         }
         assert!(command_allowed("main", "ssh_connect"));
+    }
+    #[test]
+    fn unknown_windows_and_preview_cannot_call_terminal_commands() {
+        for label in ["unknown", "preview-123", "office"] {
+            assert!(!command_allowed(label, "ssh_connect"));
+            assert!(!command_allowed(label, "collaboration_request"));
+        }
+        assert!(command_allowed("preview-123", "take_pending_image"));
+        assert!(command_allowed("preview-123", "desktop_report_error"));
+        assert!(!command_allowed("unknown", "office_request_snapshot"));
+    }
+    #[test]
+    fn unnamed_displays_use_centered_fallback_instead_of_saved_offset() {
+        let mut g = geometry();
+        g.display.name = None;
+        let mut target = screen("target", 0, 1200, 1.0);
+        target.name = None;
+        let result = restore(&g, &[target.clone()], Some(&target)).unwrap();
+        assert_eq!(result.outer.x, 200);
+    }
+    #[test]
+    fn geometry_file_is_replaced_and_temporary_file_is_removed() {
+        let dir = std::env::temp_dir().join(format!("dssh-office-write-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("geometry.json");
+        atomic_write(&path, b"old").unwrap();
+        atomic_write(&path, b"new").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        assert!(!path.with_extension("json.tmp").exists());
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn main_destroyed_only_closes_office() {

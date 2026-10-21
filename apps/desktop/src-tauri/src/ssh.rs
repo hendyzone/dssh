@@ -380,8 +380,8 @@ async fn open_terminal(app: AppHandle, state: State<'_, SshState>, params: Conne
             let data_event = format!("ssh://{sid}/data");
             let exit_event = format!("ssh://{sid}/exit");
             read_terminal_output(&mut read_half, |event| match event {
-                TerminalOutputEvent::Data(text) => { let _ = app.emit(&data_event, text); }
-                TerminalOutputEvent::Exit(code) => { let _ = app.emit(&exit_event, code); }
+                TerminalOutputEvent::Data(text) => { let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &data_event, text); }
+                TerminalOutputEvent::Exit(code) => { let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &exit_event, code); }
             }, TERMINAL_DRAIN_IDLE_TIMEOUT).await;
             tracing::info!("ssh session {sid} read loop ended");
         });

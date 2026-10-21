@@ -59,7 +59,7 @@ export function officeTeamSources(profiles: Record<string, CollaborationProfile>
     const live = attached ?? routes[0];
     const identity = JSON.stringify(server ? [server.kind ?? "ssh", server.host.trim().toLowerCase(), server.port, server.username, profile.workdir, profile.project] : [key, profile.project]);
     const id = officeKey(identity);
-    const source: OfficeTeamSource = { id, project: profile.project, label: server ? `${server.name} · ${profile.tmuxName || profile.tmuxId}` : profile.tmuxName || "未连接的团队", profile, server, backendId: live?.backendId };
+    const source: OfficeTeamSource = { id, project: profile.project, label: server ? `${server.name} · ${profile.tmuxName || profile.tmuxId} · ${profile.workdir.split("/").filter(Boolean).at(-1) || "/"}` : profile.tmuxName || "未连接的团队", profile, server, backendId: live?.backendId };
     // Prefer a reachable duplicate binding, never merge distinct worktrees by project name.
     const rank = attached ? 2 : live ? 1 : 0;
     if (!result.has(id) || rank > routeRanks.get(id)!) { result.set(id, source); routeRanks.set(id, rank); }

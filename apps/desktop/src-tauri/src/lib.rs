@@ -88,6 +88,7 @@ pub fn run() {
             office::office_publish_snapshot,
             office::office_request_snapshot,
             office::office_main_visibility,
+            office::office_window_exists,
             local_shell::local_connect,
             local_shell::local_start,
             local_shell::local_write,

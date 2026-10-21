@@ -9,6 +9,10 @@ import { focusTask, ingestTaskOutput, programTaskId, removeTask, taskSnapshot, t
 import { LOCAL_SHELL } from "../src/lib/localShell";
 
 const terminalMock = vi.hoisted(() => ({ connected: false }));
+const officeMock=vi.hoisted(()=>({exists:false,visible:true,collect:vi.fn(),publish:vi.fn(),snapshot:{version:1,themeId:"one-light",animationEnabled:true,mailAvailability:"unavailable",projects:[]}}));
+vi.mock("../src/lib/useTeamOffice",()=>({useTeamOffice:(options:unknown)=>{officeMock.collect(options);return officeMock.snapshot}}));
+vi.mock("../src/lib/officeWindowSync",()=>({useOfficePresence:()=>officeMock.exists,useMainWindowVisibility:()=>officeMock.visible,useOfficePublisher:(...args:unknown[])=>officeMock.publish(...args),openOfficeWindow:vi.fn()}));
+
 
 vi.mock("@tauri-apps/api/event", () => ({listen:async()=>()=>{}}));
 
@@ -77,6 +81,7 @@ vi.mock("../src/components/ForwardPanel", () => ({ default: () => null }));
 
 beforeEach(() => {
   terminalMock.connected = false;
+  officeMock.exists=false;officeMock.visible=true;officeMock.collect.mockClear();officeMock.publish.mockClear();
   vi.mocked(invoke).mockReset().mockResolvedValue([]);
   vi.mocked(deleteServer).mockReset().mockResolvedValue(undefined);
   vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -540,4 +545,12 @@ it("leaves normal terminal control keys to the remote encoder", async () => {
   expect(key(input, { key: "c", ctrlKey: true })).toBe(true);
   expect(key(input, { key: "d", ctrlKey: true })).toBe(true);
   expect(encodeRemote).toHaveBeenCalledTimes(2);
+});
+
+it("collects for an existing office only while main is visible and passes presence to publisher",async()=>{
+ localStorage.clear();const view=render(<App/>);await act(async()=>{});
+ expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);expect(officeMock.publish.mock.lastCall?.[1]).toBe(false);
+ officeMock.exists=true;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(true);expect(officeMock.publish.mock.lastCall?.[1]).toBe(true);
+ officeMock.visible=false;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);
+ officeMock.exists=false;officeMock.visible=true;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);view.unmount();
 });
