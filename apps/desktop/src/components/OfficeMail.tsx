@@ -72,9 +72,13 @@ export default function OfficeMail({mail,paused,motion,container,layoutKey}: {
         const key=officeStationAnchor(endpoint.sourceId,endpoint.memberId);
         const candidates=[...root.querySelectorAll<HTMLElement>("[data-office-station]")].filter(el=>el.dataset.officeStation===key);
         if(candidates.length!==1)return edge;
-        const station=candidates[0];const rect=station.getBoundingClientRect();
+        const station=candidates[0];const heads=station.querySelectorAll(".team-avatar-hair");
+        if(heads.length!==1)return edge;
+        const rect=heads[0].getBoundingClientRect();
         if(station.closest("[hidden]") || !rect.width || !rect.height || rect.top+rect.height/2<=bounds.top || rect.top+rect.height/2>=bounds.bottom || rect.left+rect.width/2<=bounds.left || rect.left+rect.width/2>=bounds.right)return edge;
-        return {x:rect.left-bounds.left+root.scrollLeft+rect.width/2,y:rect.top-bounds.top+root.scrollTop+Math.min(rect.height/2,80),edge:false};
+        // Hair is five SVG units tall; reserve the ten units above it for state symbols.
+        const gap=rect.height*2+4;
+        return {x:rect.left-bounds.left-root.clientLeft+root.scrollLeft+rect.width/2-15,y:rect.top-bounds.top-root.clientTop+root.scrollTop-24-gap,edge:false};
       };
       const next:Record<string,{from:Point;to:Point}>={};for(const item of deliveries)next[item.event.id]={from:locate(item.event.from),to:locate(item.event.to)};setPoints(next);
     };

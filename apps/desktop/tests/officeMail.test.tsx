@@ -11,6 +11,12 @@ beforeEach(()=>{
  vi.useFakeTimers();vi.spyOn(document,"hidden","get").mockReturnValue(false);
  media={matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()};vi.stubGlobal("matchMedia",()=>media);
  vi.spyOn(HTMLElement.prototype,"clientWidth","get").mockReturnValue(600);
+ vi.spyOn(SVGElement.prototype,"getBoundingClientRect").mockImplementation(function(this:SVGElement){
+  const second=this.closest('[data-office-station]')?.getAttribute('data-office-station')?.includes('"two"');
+  const scale=Number(this.closest('svg')?.getAttribute('width'))/28;
+  const x=(second?330:30)+7*scale,y=(second?250:50)+10*scale,width=14*scale,height=5*scale;
+  return {x,y,left:x,top:y,width,height,right:x+width,bottom:y+height,toJSON:()=>({})};
+ });
  vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this:HTMLElement){
   const second=this.dataset.officeStation?.includes('"two"');const station=this.hasAttribute("data-office-station");
   const x=station?(second?330:30):10,y=station?(second?250:50):20,width=station?100:600,height=station?100:400;
@@ -45,9 +51,9 @@ it("caps active deliveries at five, merges bounded overflow and keeps no replay 
 it("uses source plus member anchors across rows and recomputes scrolling and scale layout",()=>{
  const view=render(<TeamOffice snapshot={snapshot()}/>);view.rerender(<TeamOffice snapshot={snapshot(mail(2))}/>);
  const letter=screen.getByLabelText("确认邮件");expect(letter.getAttribute("data-from-edge")).toBe("false");expect(letter.getAttribute("data-to-edge")).toBe("false");
- expect(letter.style.getPropertyValue("--mail-from-x")).toBe("70px");expect(letter.style.getPropertyValue("--mail-to-y")).toBe("280px");
- const scroller=view.container.querySelector('.office-projects')!;Object.defineProperty(scroller,"scrollTop",{configurable:true,value:120});fireEvent.scroll(scroller);expect(letter.style.getPropertyValue("--mail-to-y")).toBe("400px");
- fireEvent.change(screen.getByRole("combobox",{name:"房间像素缩放"}),{target:{value:"3"}});expect(letter.getAttribute("data-to-edge")).toBe("false");
+ expect(letter.style.getPropertyValue("--mail-from-x")).toBe("33px");expect(letter.style.getPropertyValue("--mail-to-y")).toBe("202px");
+ const scroller=view.container.querySelector('.office-projects')!;Object.defineProperty(scroller,"scrollTop",{configurable:true,value:120});fireEvent.scroll(scroller);expect(letter.style.getPropertyValue("--mail-to-y")).toBe("322px");
+ fireEvent.change(screen.getByRole("combobox",{name:"房间像素缩放"}),{target:{value:"3"}});expect(letter.getAttribute("data-to-edge")).toBe("false");expect(letter.style.getPropertyValue("--mail-from-x")).toBe("47px");
 });
 it("falls back to the mailbox edge after a destination is collapsed or removed",()=>{
  const view=render(<TeamOffice snapshot={snapshot()}/>);view.rerender(<TeamOffice snapshot={snapshot(mail(2))}/>);fireEvent.click(screen.getByRole("button",{name:"折叠项目 Two"}));expect(screen.getByLabelText("确认邮件").getAttribute("data-to-edge")).toBe("true");
@@ -68,7 +74,7 @@ it("does not replay retained IDs after a marker expires or count cumulative over
  act(()=>vi.advanceTimersByTime(4000));view.rerender(<TeamOffice snapshot={snapshot(mail(3,[event("old"),event("fresh","result")],{overflow:2}))}/>);expect(screen.queryByLabelText("确认邮件")).toBeNull();expect(screen.getByLabelText("结果邮件")).toBeTruthy();expect(screen.queryByText(/另有/)).toBeNull();
 });
 it("falls back when an anchor is horizontally outside the scrolling viewport",()=>{
- const view=render(<TeamOffice snapshot={snapshot()}/>);const target=view.container.querySelectorAll('[data-office-station]')[1]!;
+ const view=render(<TeamOffice snapshot={snapshot()}/>);const target=view.container.querySelectorAll('.team-avatar-hair')[1]!;
  vi.spyOn(target,"getBoundingClientRect").mockReturnValue({x:900,y:50,left:900,top:50,width:100,height:100,right:1000,bottom:150,toJSON:()=>({})});
  view.rerender(<TeamOffice snapshot={snapshot(mail(2))}/>);expect(screen.getByLabelText("确认邮件").getAttribute("data-to-edge")).toBe("true");
 });
