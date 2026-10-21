@@ -39,7 +39,6 @@ export function buildOfficeMailDirectory(sources:OfficeTeamSource[],rosters:Reco
       matches.push(endpoint(member));
       directory.set(address, matches);
     }
-
   }
   return directory;
 }
