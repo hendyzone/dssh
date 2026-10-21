@@ -50,10 +50,9 @@ const OSC7_RE =
 function scanOsc7(
   carry: string,
   chunk: string,
-): { path: string | null; carry: string; positions: Array<{ path: string; end: number }> } {
+): { path: string | null; carry: string } {
   const text = carry + chunk;
   let path: string | null = null;
-  const positions: Array<{ path: string; end: number }> = [];
   let lastEnd = 0;
   OSC7_RE.lastIndex = 0;
   for (let m = OSC7_RE.exec(text); m; m = OSC7_RE.exec(text)) {
@@ -63,12 +62,69 @@ function scanOsc7(
       path = m[1];
     }
     lastEnd = m.index + m[0].length;
-    positions.push({ path, end: lastEnd - carry.length });
   }
   const tailStart = text.lastIndexOf("\x1b]7;");
   const nextCarry =
     tailStart >= lastEnd ? text.slice(tailStart, tailStart + 512) : "";
-  return { path, carry: nextCarry, positions };
+  return { path, carry: nextCarry };
+}
+
+type PathControl = { start: number; end: number } &
+  ({ type: "cwd"; path: string } | { type: "clear"; mode: 2 | 3 });
+
+/** Track rendered controls across chunks, including interrupted CSI and control strings. */
+function createPathControlScanner() {
+  let state: "text" | "escape" | "csi" | "osc" | "string" = "text";
+  let sequence = "";
+  let tooLong = false;
+  let stringEscape = false;
+  return (chunk: string): PathControl[] => {
+    const controls: PathControl[] = [];
+    let start = 0; // A control started in the previous chunk is already partly written.
+    let escapeStart = 0;
+    for (let i = 0; i < chunk.length; i++) {
+      const char = chunk[i];
+      if (char === "\x18" || char === "\x1a") { state = "text"; continue; }
+      if ((state === "osc" || state === "string") && stringEscape && char !== "\\") {
+        // Ghostty treats ESC followed by anything other than ST as a new control.
+        state = "escape";
+        sequence = "\x1b";
+        tooLong = false;
+        start = escapeStart;
+      }
+      if (state === "text" || ((state === "csi" || state === "escape") && char === "\x1b")) {
+        if (char === "\x1b") {
+          state = "escape";
+          sequence = char;
+          tooLong = false;
+          start = i;
+        }
+        continue;
+      }
+      if (sequence.length < 512) sequence += char;
+      else tooLong = true;
+      if (state === "escape") {
+        state = char === "[" ? "csi" : char === "]" ? "osc" : "PX^_".includes(char) ? "string" : "text";
+        stringEscape = false;
+      } else if (state === "csi") {
+        if (char >= "@" && char <= "~") {
+          if (sequence === "\x1b[2J" || sequence === "\x1b[3J") {
+            controls.push({ type: "clear", mode: sequence[2] === "2" ? 2 : 3, start, end: i + 1 });
+          }
+          state = "text";
+        }
+      } else {
+        if ((state === "osc" && char === "\x07") || (stringEscape && char === "\\")) {
+          const path = state === "osc" && !tooLong ? scanOsc7("", sequence).path : null;
+          if (path !== null) controls.push({ type: "cwd", path, start, end: i + 1 });
+          state = "text";
+        }
+        stringEscape = char === "\x1b";
+        if (stringEscape) escapeStart = i;
+      }
+    }
+    return controls;
+  };
 }
 
 interface Props {
@@ -424,6 +480,11 @@ export default function TerminalView({
 
     const detachBackendListeners = () => {
       backendListeners.splice(0).forEach((unlisten) => unlisten());
+      // Unfinished initialization echo belongs to this backend, including its
+      // delayed flush. It must not report a cwd after a new connection starts.
+      if (echoFlushTimer) clearTimeout(echoFlushTimer);
+      echoFlushTimer = null;
+      echoSuppressor = null;
       output?.flush();
     };
 
@@ -458,10 +519,11 @@ export default function TerminalView({
       // Link cwd follows rendered output, which may lag SSH input during a
       // synchronized update. Keep its row boundary in absolute buffer coordinates.
       const trackPathCwd = !local && !!onOpenPageRef.current;
-      let linkCwd = lastCwd;
+      let linkCwd: string | undefined;
       let linkCwdFromRow = 0;
       let linkCwdBufferType = trackPathCwd ? t.buffer.active.type : undefined;
-      let linkOscCarry = "";
+      let linkGeneration = 0;
+      let scanPathControls = createPathControlScanner();
       {
         const root = containerRef.current;
         const track = (event: MouseEvent) => {
@@ -481,12 +543,14 @@ export default function TerminalView({
               if (y < Math.max(0, buffer.length - t.rows)) return undefined;
               return buffer.type === linkCwdBufferType && y >= linkCwdFromRow ? linkCwd : undefined;
             },
+            generation: () => linkGeneration,
             enabled: () => !disposed && connectionStateRef === "connected" && !!backendRef.current && !!onOpenPageRef.current,
             onActivate: (target, event) => {
-              const backend = backendRef.current;
+              // The provider's synchronous enabled check guarantees a live backend.
+              const backend = backendRef.current!;
               // Match built-in URL links: Ctrl/Cmd is required even in mouse
               // tracking mode. Plain focus clicks and double-click selection stay local.
-              if (!backend || event.button !== 0 || !(event.ctrlKey || event.metaKey) || event.detail > 1 || t.getSelection()) return;
+              if (event.button !== 0 || !(event.ctrlKey || event.metaKey) || event.detail > 1 || t.getSelection()) return;
               setTaskHover(null);
               onOpenPageRef.current?.(target, backend);
             },
@@ -513,23 +577,36 @@ export default function TerminalView({
         !disposed && activeRef.current && inputEnabledRef.current && connectionStateRef === "connected"));
       output = createTerminalOutput((data) => {
         if (!trackPathCwd) return t.write(data);
-        const scanned = scanOsc7(linkOscCarry, data);
-        linkOscCarry = scanned.carry;
+        const write = (chunk: string) => {
+          if (!chunk) return;
+          t.write(chunk);
+          // Like ghostty's own cache, invalidate in-flight links on output. This
+          // also covers page trims hidden by growth in the same write. Keep the
+          // cwd fence conservative because the dropped row count is unknown.
+          linkGeneration++;
+        };
         let start = 0;
-        for (const position of scanned.positions) {
+        for (const control of scanPathControls(data)) {
+          write(data.slice(start, control.start));
+          const length = t.buffer.active.length;
           // Each write is synchronous; no synchronized frame is released early.
-          // Write through OSC 7 before reading the cursor, then render its suffix.
-          t.write(data.slice(start, position.end));
-          start = position.end;
+          // Isolate the control so a 3J length change counts only erased history.
+          write(data.slice(control.start, control.end));
+          start = control.end;
           const buffer = t.buffer.active;
-          if (position.path !== linkCwd || buffer.type !== linkCwdBufferType) {
-            linkCwd = position.path;
+          if (control.type === "clear") {
+            if (buffer.type === linkCwdBufferType) {
+              linkCwdFromRow = control.mode === 2 ? Math.max(0, buffer.length - t.rows) :
+                Math.max(0, linkCwdFromRow - Math.max(0, length - buffer.length));
+            }
+          } else if (control.path !== linkCwd || buffer.type !== linkCwdBufferType) {
+            linkCwd = control.path;
             linkCwdBufferType = buffer.type;
             // ghostty's baseY is always 0; length includes scrollback plus rows.
             linkCwdFromRow = Math.max(0, buffer.length - t.rows) + buffer.cursorY;
           }
         }
-        if (start < data.length) t.write(data.slice(start));
+        write(data.slice(start));
       });
       cleanups.push(() => output?.dispose());
       cleanups.push(trackTerminalIme(t, containerRef.current, () =>
@@ -660,6 +737,13 @@ export default function TerminalView({
       cleanups.push(() => dataSub.dispose());
       const resizeSub = t.onResize(
         ({ cols, rows }: { cols: number; rows: number }) => {
+          if (trackPathCwd) {
+            // Reflow changes absolute row coordinates and does not clear ghostty's link cache.
+            const buffer = t.buffer.active;
+            if (buffer.type !== linkCwdBufferType) linkCwd = undefined;
+            linkCwdFromRow = Math.max(0, buffer.length - rows) + buffer.cursorY;
+            linkGeneration++;
+          }
           if (backendId) {
             invoke(terminalCommand("resize"), { sessionId: backendId, cols, rows }).catch(
               () => {},
@@ -673,6 +757,10 @@ export default function TerminalView({
       const connect = async (): Promise<void> => {
         if (disposed || connecting) return;
         connecting = true;
+        // restoreCwd is a request for the new shell, not evidence for login output.
+        linkCwd = undefined;
+        linkGeneration++;
+        scanPathControls = createPathControlScanner();
         updateState("connecting");
 
         let newBackendId: string;
@@ -876,10 +964,6 @@ export default function TerminalView({
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectRef.current = null;
-      if (echoFlushTimer) {
-        clearTimeout(echoFlushTimer);
-        echoFlushTimer = null;
-      }
       window.removeEventListener("resize", onWindowResize);
       detachBackendListeners();
       cleanups.forEach((fn) => fn());

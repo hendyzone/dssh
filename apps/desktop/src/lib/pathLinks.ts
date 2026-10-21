@@ -3,7 +3,13 @@ import { selectedPage, type PageTarget } from "./webPages";
 
 interface Cell { getCodepoint(): number; getWidth?(): number }
 interface Line { length: number; isWrapped?: boolean; getCell(x: number): Cell | undefined }
-interface PathLinkTerminal { buffer: { active: { getLine(y: number): Line | undefined } } }
+interface PathLinkTerminal { rows: number; buffer: { active: { length: number; getLine(y: number): Line | undefined } } }
+
+function fillsLastCell(line: Line | undefined): boolean {
+  if (!line?.length) return false;
+  const last = line.getCell(line.length - 1);
+  return !!last?.getCodepoint() || last?.getWidth?.() === 0;
+}
 
 /** Keep Unicode filenames intact while mapping UTF-16 offsets back to terminal cells. */
 function rowText(line: Line): { text: string; columns: number[] } {
@@ -40,6 +46,7 @@ function pathTarget(value: string, cwd: string | undefined): PageTarget | null {
 /** Like task links, paths are scanned lazily only for the requested buffer row. */
 export function createPathLinkProvider(term: PathLinkTerminal, options: {
   cwd: (y: number) => string | undefined;
+  generation: () => number;
   enabled: () => boolean;
   onActivate: (target: PageTarget, event: MouseEvent) => void;
 }): ILinkProvider {
@@ -50,22 +57,28 @@ export function createPathLinkProvider(term: PathLinkTerminal, options: {
       // A partial path can itself look valid. Until wrap chains are joined, do
       // not link either the leading row or any continuation of a wrapped line.
       if (line.isWrapped || term.buffer.active.getLine(y + 1)?.isWrapped) return callback(undefined);
+      const history = y < Math.max(0, term.buffer.active.length - term.rows);
+      const generation = options.generation();
       const links: ILink[] = [];
       const { text, columns } = rowText(line);
       // Wrappers and prose punctuation are outside the path. Keep colon suffixes
       // in a token until checked, so a scheme URL cannot become a partial path.
       const tokens = /[^\s=,()[\]{}<>"'`，。；：！？、（）【】「」『』《》“”‘’]+/g;
       for (const match of text.matchAll(tokens)) {
+        // Scrollback has no wrap flags. A token at a full row's edge may be
+        // just one fragment of a longer path, including an absolute-looking tail.
+        if (history && (columns[match.index + match[0].length] === line.length ||
+          (columns[match.index] === 0 && fillsLastCell(term.buffer.active.getLine(y - 1))))) continue;
         const value = match[0].replace(/[.,;!?:…—]+$/, "").replace(/:\d+(?::\d+)?$/, "");
-        if (!pathTarget(value, options.cwd(y))) continue;
+        const target = pathTarget(value, options.cwd(y));
+        if (!target) continue;
         links.push({
           text: value,
           range: { start: { x: columns[match.index], y }, end: { x: columns[match.index + value.length] - 1, y } },
           activate: event => {
-            // Recheck cached links against the connection and this row's cwd boundary.
-            if (!options.enabled()) return;
-            const target = pathTarget(value, options.cwd(y));
-            if (target) options.onActivate(target, event);
+            // Output or reflow invalidates the captured row and cwd together.
+            if (!options.enabled() || generation !== options.generation()) return;
+            options.onActivate(target, event);
           },
         });
       }
