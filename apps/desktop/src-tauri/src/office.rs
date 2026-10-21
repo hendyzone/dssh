@@ -26,15 +26,17 @@ pub struct OfficeState {
     geometry: Mutex<Option<Geometry>>,
 }
 
-/// Core/plugin commands are separately restricted by the office capability.
-/// Event routing is NOT a confidentiality boundary: Tauri Any listeners can receive
-/// emit_to(main) traffic. This trusted, locally bundled office loads no remote content;
-/// its allowlisted snapshot contains no session IDs. UID45 accepts that limitation.
-/// App commands have no ACL manifest in this application, so explicitly isolate this route.
+// Event routing is not a confidentiality boundary: office and preview-* windows
+// have event-listen permissions, so their Any listeners can receive emit_to(main).
+// These windows load trusted local content, not remote pages; office snapshots
+// deliberately omit backend session IDs.
+
+/// Core/plugin commands are separately restricted by window capabilities.
+/// App commands have no ACL manifest, so explicitly isolate these routes.
 pub fn command_allowed(label: &str, command: &str) -> bool {
     match label {
         "main" => true,
-        "office" => command == "office_request_snapshot",
+        "office" => matches!(command, "office_request_snapshot" | "desktop_report_error"),
         label if label.starts_with("preview-") => {
             matches!(command, "take_pending_image" | "desktop_report_error")
         }
@@ -566,6 +568,36 @@ mod tests {
         assert_eq!(envelope.epoch, epoch);
         assert_eq!(envelope.snapshot, second);
     }
+    #[tokio::test]
+    async fn absent_office_publish_leaves_cache_and_events_untouched() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        use tauri::Listener;
+        let app = tauri::test::mock_builder()
+            .manage(OfficeState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let main = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
+            .build()
+            .unwrap();
+        let events = Arc::new(AtomicUsize::new(0));
+        let seen = events.clone();
+        app.listen("office:snapshot", move |_| {
+            seen.fetch_add(1, Ordering::SeqCst);
+        });
+        office_publish_snapshot(
+            main,
+            app.handle().clone(),
+            app.state(),
+            serde_json::json!({"version":1,"projects":[]}),
+        )
+        .await
+        .unwrap();
+        assert!(app.state::<OfficeState>().latest.lock().unwrap().is_none());
+        assert_eq!(events.load(Ordering::SeqCst), 0);
+    }
     #[test]
     fn office_capability_contains_only_listen_and_unlisten() {
         let capability: serde_json::Value =
@@ -605,6 +637,7 @@ mod tests {
     #[test]
     fn office_commands_cannot_access_ssh_or_collaboration() {
         assert!(command_allowed("office", "office_request_snapshot"));
+        assert!(command_allowed("office", "desktop_report_error"));
         for command in [
             "ssh_connect",
             "ssh_write",

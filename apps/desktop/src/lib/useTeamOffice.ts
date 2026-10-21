@@ -3,26 +3,32 @@ import { collaborationRequest, type CollaborationProfile, type CollaborationSess
 import { briefKey, fetchAgentSessions, matchSession, taskBrief } from "./agentSessions";
 import { boardSource, isIdentifier, type TaskLookupSettings } from "./taskLookup";
 import { loadTeamMappings, parseMember } from "./teamMembers";
-import { buildOfficeSnapshot, officeTeamSources, type OfficeBoard, type OfficeRoster } from "./teamOffice";
+import { buildOfficeSnapshot, officeTeamSources, type OfficeBoard, type OfficeRoster, type OfficeSnapshot } from "./teamOffice";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
 import type { ServerEntry } from "../types";
 
-interface CachedSource { fingerprint: string; roster?: OfficeRoster; board?: OfficeBoard; fresh: boolean; }
+interface CachedSource { fingerprint: string; identity: string; roster?: OfficeRoster; board?: OfficeBoard; fresh: boolean; }
 /** Main-only, demand-driven collection. A changed connection invalidates just its own source. */
-export function useTeamOffice({ profiles, servers, sessions, programSnapshots, lookupSettings, themeId, animationEnabled, enabled = false }: {
+export function useTeamOffice({ profiles, servers, sessions, programSnapshots, lookupSettings, themeId, animationEnabled, enabled = false, officeExists = false }: {
   profiles: Record<string, CollaborationProfile>; servers: ServerEntry[]; sessions: CollaborationSession[];
   programSnapshots: Record<string, TmuxProgramSnapshot>; lookupSettings: TaskLookupSettings;
-  themeId: string; animationEnabled: boolean; enabled?: boolean;
+  themeId: string; animationEnabled: boolean; enabled?: boolean; officeExists?: boolean;
 }) {
-  const sourceInput = JSON.stringify([profiles,servers,sessions]);
-  const sources = useMemo(() => officeTeamSources(profiles,servers,sessions), [sourceInput]);
-  const key = JSON.stringify([sources, lookupSettings]);
+  const active = enabled || officeExists;
+  const stable = useRef<{content:string;snapshot:OfficeSnapshot}>({content:"",snapshot:{version:1,themeId,animationEnabled,mailAvailability:"unavailable",projects:[]}});
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const previousSourceInput = useRef("");
+  const sourceInput = active ? JSON.stringify([profiles,servers,sessions]) : previousSourceInput.current;
+  if(active)previousSourceInput.current=sourceInput;
+  const sources = useMemo(() => active ? officeTeamSources(profiles,servers,sessions) : [], [sourceInput]);
+  const key = active ? JSON.stringify([sources, lookupSettings]) : "";
   const cache = useRef(new Map<string,CachedSource>());
   const wasEnabled = useRef(false);
   const [revision, setRevision] = useState(0);
   const [mapping, setMapping] = useState(loadTeamMappings);
   useEffect(() => {
-    const read = () => { const next=loadTeamMappings(); setMapping(old=>JSON.stringify(old)===JSON.stringify(next)?old:next); };
+    const read = () => { if(!activeRef.current)return; const next=loadTeamMappings(); setMapping(old=>JSON.stringify(old)===JSON.stringify(next)?old:next); };
     window.addEventListener("storage",read);
     window.addEventListener("dssh-office-refresh",read);
     return () => {window.removeEventListener("storage",read);window.removeEventListener("dssh-office-refresh",read);};
@@ -31,12 +37,15 @@ export function useTeamOffice({ profiles, servers, sessions, programSnapshots, l
     let disposed = false, pending = false;
     const resumed = enabled && !wasEnabled.current;
     wasEnabled.current = enabled;
+    if(!active)return;
     const ids = new Set(sources.map(source=>source.id));
     for (const id of cache.current.keys()) if (!ids.has(id)) cache.current.delete(id);
     for (const source of sources) {
       const fingerprint = JSON.stringify([source.backendId,source.profile,lookupSettings]);
+      const identity = JSON.stringify([source.id,source.profile]);
+      const previous = cache.current.get(source.id);
       if (cache.current.get(source.id)?.fingerprint !== fingerprint) {
-        cache.current.set(source.id,{fingerprint,fresh:false,roster:source.backendId?undefined:{availability:"offline",notice:"连接 Lead 所在服务器后可读取团队",members:[]}});
+        cache.current.set(source.id,{fingerprint,identity,fresh:false,roster:source.backendId?(previous?.identity===identity?previous.roster:undefined):{availability:"offline",notice:"连接 Lead 所在服务器后可读取团队",members:[]}});
       }
     }
     setRevision(value=>value+1);
@@ -96,20 +105,22 @@ export function useTeamOffice({ profiles, servers, sessions, programSnapshots, l
     const requested=()=>void refresh();
     window.addEventListener("dssh-office-refresh",requested);
     return ()=>{disposed=true;window.clearInterval(timer);window.removeEventListener("dssh-office-refresh",requested);};
-  }, [key,enabled]);
-  const buildKey=JSON.stringify([sources,servers,sessions,programSnapshots,mapping,themeId,animationEnabled,lookupSettings,revision]);
+  }, [key,enabled,active]);
+  const buildKey=active ? JSON.stringify([sources,servers,sessions,programSnapshots,mapping,themeId,animationEnabled,lookupSettings,revision]) : "";
   const result=useMemo(()=>{
+    if(!active)return stable.current.snapshot;
     const rosters:Record<string,OfficeRoster>={},boards:Record<string,OfficeBoard>={};
     for(const source of sources){
       const entry=cache.current.get(source.id);
-      if(!entry || entry.fingerprint!==JSON.stringify([source.backendId,source.profile,lookupSettings]))continue;
-      if(entry.roster)rosters[source.id]=entry.roster;
-      if(entry.board)boards[source.id]=entry.board;
+      if(!entry)continue;
+      const exact = entry.fingerprint===JSON.stringify([source.backendId,source.profile,lookupSettings]);
+      const sameSource = source.backendId && entry.identity===JSON.stringify([source.id,source.profile]);
+      if((exact || sameSource) && entry.roster)rosters[source.id]=entry.roster;
+      if(exact && entry.board)boards[source.id]=entry.board;
     }
     return buildOfficeSnapshot(sources,rosters,{servers,sessions,programSnapshots,mapping,boards,themeId,animationEnabled});
-  },[buildKey]);
-  const stable=useRef({content:"",snapshot:result});
-  const content=JSON.stringify(result);
+  },[buildKey,active]);
+  const content=active ? JSON.stringify(result) : stable.current.content;
   if(stable.current.content!==content)stable.current={content,snapshot:result};
   return stable.current.snapshot;
 }

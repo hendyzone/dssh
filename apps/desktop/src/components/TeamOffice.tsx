@@ -76,12 +76,13 @@ export default function TeamOffice({snapshot, visible = true, onPopOut}: {
               {!source.members.length && <EmptyDesks scale={scale}/>}
               <div className="office-desks" style={{"--office-station-width":`${Math.max(128,96*scale)}px`} as CSSProperties}>
                 {source.members.map(member => <article className={`office-station${member.isLead?" is-lead":""}`} key={member.id} data-member-id={member.id} data-state={member.status.state} aria-label={`工位 ${member.name}`}>
+                  <span className="office-sr-only">{member.status.label}</span>
                   <div className="office-pixels" style={{width:96*scale,height:72*scale}}>
                     <Desk scale={scale} lead={member.isLead}/>
                     <div className="office-person" style={{left:20*scale,top:14*scale}}><TeamMemberAvatar memberId={member.paletteKey} status={member.status} scale={scale} motionEnabled={snapshot.animationEnabled} paused={paused || closed}/></div>
                     <div className="office-desk-label" style={{top:51*scale,left:6*scale,right:6*scale}}><div className="office-station-name">{member.isLead && <span className="office-lead-label">Lead</span>} <strong title={member.name}>{member.name}</strong></div><span className="office-member-status" title={member.status.label}>{shortStatus[member.status.state]}</span></div>
                   </div>
-                  <p className="office-member-task" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskText}`} data-source={member.taskSource}>{member.taskText}</p>
+                  <p className="office-member-task" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.taskText}</p>
                 </article>)}
               </div>
             </section>)}

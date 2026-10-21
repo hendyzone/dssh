@@ -23,9 +23,20 @@ mod vscode;
 
 use tauri::Manager;
 
+fn install_command_handler<R: tauri::Runtime, F>(builder: tauri::Builder<R>, dispatch: F) -> tauri::Builder<R>
+where F: Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    builder.invoke_handler(move |invoke| {
+        if !office::command_allowed(invoke.message.webview_ref().label(), invoke.message.command()) {
+            invoke.resolver.reject("Command is not available in this window");
+            return true;
+        }
+        dispatch(invoke)
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
@@ -77,13 +88,8 @@ pub fn run() {
                     _ => {}
                 }
             }
-        })
-        .invoke_handler(|invoke| {
-            if !office::command_allowed(invoke.message.webview_ref().label(), invoke.message.command()) {
-                invoke.resolver.reject("Command is not available in the office window");
-                return true;
-            }
-            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+        });
+    install_command_handler(builder, tauri::generate_handler![
             office::open_office_window,
             office::office_publish_snapshot,
             office::office_request_snapshot,
@@ -165,9 +171,42 @@ pub fn run() {
             forward::forward_rules_list,
             forward::forward_rules_save,
             forward::forward_stop_session,
-        ];
-            handler(invoke)
-        })
+        ])
         .run(tauri::generate_context!())
         .expect("error while running dssh");
+}
+
+#[cfg(test)]
+mod handler_tests {
+    use super::*;
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    #[test]
+    fn actual_handler_registration_rejects_untrusted_windows_before_dispatch() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+        let app = install_command_handler(tauri::test::mock_builder(), move |invoke| {
+            observed.fetch_add(1, Ordering::SeqCst);
+            invoke.resolver.resolve("business dispatcher reached");
+            true
+        }).build(tauri::test::mock_context(tauri::test::noop_assets())).unwrap();
+        for label in ["office", "unknown", "main"] {
+            let window = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::default()).build().unwrap();
+            let response = tauri::test::get_ipc_response(&window, tauri::webview::InvokeRequest {
+                cmd: "ssh_connect".into(), callback: tauri::ipc::CallbackFn(0), error: tauri::ipc::CallbackFn(1),
+                url: window.url().unwrap(), body: tauri::ipc::InvokeBody::Json(serde_json::json!({})),
+                headers: Default::default(), invoke_key: tauri::test::INVOKE_KEY.into(),
+            });
+            if label == "main" {
+                assert!(response.is_ok());
+                assert_eq!(calls.load(Ordering::SeqCst), 1);
+            } else {
+                assert_eq!(response.unwrap_err(), serde_json::json!("Command is not available in this window"));
+                assert_eq!(calls.load(Ordering::SeqCst), 0);
+            }
+        }
+        // Structural supplement only: the native run path must use this tested installer.
+        let production = include_str!("lib.rs").split("#[cfg(test)]").next().unwrap();
+        assert!(production.contains("install_command_handler(builder, tauri::generate_handler!["));
+        assert_eq!(production.matches(".invoke_handler(").count(), 1);
+    }
 }

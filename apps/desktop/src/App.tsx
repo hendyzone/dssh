@@ -397,7 +397,7 @@ export default function App() {
   const officeSnapshot = useTeamOffice({profiles:collaborationProfiles, servers,
     sessions:tabs.flatMap(tab=>tab.panes.map(pane=>({pane,backendId:backendIds[pane.id]??""}))),
     programSnapshots:tmuxProgramSnapshots, lookupSettings, themeId:settings.themeId,
-    animationEnabled:settings.teamAvatarAnimation !== false, enabled:(inlineRoomOpen || officeExists) && officeMainVisible});
+    animationEnabled:settings.teamAvatarAnimation !== false, enabled:(inlineRoomOpen || officeExists) && officeMainVisible, officeExists});
   useOfficePublisher(officeSnapshot, officeExists);
   /** Board route and project for one pane: lock > collaboration binding > manual choice. */
   const paneTaskContext = (pane: SessionInfo) => {

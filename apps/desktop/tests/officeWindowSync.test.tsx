@@ -100,3 +100,8 @@ it("main visibility remains false until native state arrives and also follows do
  const query=deferred<any>();vi.mocked(invoke).mockReturnValue(query.promise);const hidden=vi.spyOn(document,"hidden","get").mockReturnValue(false);const view=renderHook(()=>useMainWindowVisibility());expect(view.result.current).toBe(false);await act(async()=>query.resolve(true));expect(view.result.current).toBe(true);
  hidden.mockReturnValue(true);act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(view.result.current).toBe(false);hidden.mockReturnValue(false);act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(view.result.current).toBe(true);
 });
+
+it("does not serialize snapshots on renders while office does not exist",async()=>{
+ const value=snapshot();const view=renderHook(({input})=>useOfficePublisher(input,false),{initialProps:{input:value}});await act(async()=>{});const stringify=vi.spyOn(JSON,"stringify");
+ for(let i=0;i<4;i++)view.rerender({input:{...value}});expect(stringify).not.toHaveBeenCalled();view.unmount();stringify.mockRestore();
+});

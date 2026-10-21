@@ -118,3 +118,9 @@ it("uses shared room scenery and compact desk labels while preserving full statu
 it("disambiguates source labels with the workdir basename without exposing the full path",()=>{
  const found=sources();expect(found[0].label).toContain("worktree");expect(found[0].label).not.toContain("/private/");
 });
+
+it("exposes full state meaning and handwritten provenance as readable text beyond hover titles",()=>{
+ const value=room();value.projects[0].sources[0].members[0].status.label="正在编程（程序状态）";const view=render(<TeamOffice snapshot={value}/>);const station=screen.getByRole("article",{name:"工位 working"});
+ const status=within(station).getByText("正在编程（程序状态）",{selector:"span.office-sr-only"});expect(status.closest('[aria-hidden="true"]')).toBeNull();expect(status.className).toBe("office-sr-only");
+ const note=within(station).getByText("成员手写 ·");expect(note.closest('[aria-hidden="true"]')).toBeNull();expect(note.parentElement?.textContent).toContain("成员手写 · Task 0");expect(view.container.querySelectorAll('.office-station')).toHaveLength(6);
+});

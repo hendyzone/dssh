@@ -1,5 +1,7 @@
 import {act,renderHook,waitFor} from "@testing-library/react";
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
+import {buildOfficeSnapshot} from "../src/lib/teamOffice";
+vi.mock("../src/lib/teamOffice",async original=>{const actual=await original<any>();return {...actual,buildOfficeSnapshot:vi.fn(actual.buildOfficeSnapshot)}});
 import {useTeamOffice} from "../src/lib/useTeamOffice";
 import {collaborationRequest,collaborationKey,emptyProfile} from "../src/lib/collaboration";
 import {fetchAgentSessions,parseAgentSessions,taskBrief} from "../src/lib/agentSessions";
@@ -68,4 +70,27 @@ it("changing one backend only reloads that source while other ready teams keep t
  let finish!:(s:string)=>void;vi.mocked(collaborationRequest).mockReturnValueOnce(new Promise(resolve=>{finish=resolve}));const next={...opts,sessions:[{...first.sessions[0],backendId:"ssh-reconnected"},secondSession]};view.rerender({input:next});
  await waitFor(()=>expect(collaborationRequest).toHaveBeenCalledTimes(3));expect(vi.mocked(collaborationRequest).mock.calls[2][0]).toBe("ssh-reconnected");expect(view.result.current.projects.find(p=>p.name==="beta")?.sources[0]).toMatchObject({availability:"ready",members:[{name:"Worker"}]});
  await act(async()=>finish(JSON.stringify([member])));expect(collaborationRequest).toHaveBeenCalledTimes(3);expect(view.result.current.projects.every(p=>p.sources[0].availability==="ready")).toBe(true);
+});
+
+it("skips snapshot building and source/snapshot serialization on inactive rerenders, retaining the last snapshot",async()=>{
+ const opts=options();const view=renderHook(({enabled,officeExists})=>useTeamOffice({...opts,enabled,officeExists}),{initialProps:{enabled:true,officeExists:false}});await waitFor(()=>expect(view.result.current.projects[0].sources[0].availability).toBe("ready"));
+ view.rerender({enabled:false,officeExists:false});const previous=view.result.current;vi.mocked(buildOfficeSnapshot).mockClear();const stringify=vi.spyOn(JSON,"stringify");
+ for(let i=0;i<4;i++)view.rerender({enabled:false,officeExists:false});
+ expect(buildOfficeSnapshot).not.toHaveBeenCalled();expect(stringify).not.toHaveBeenCalled();expect(view.result.current).toBe(previous);stringify.mockRestore();
+});
+it("updates cached presentation for an existing child while main is hidden without collecting",async()=>{
+ const opts=options();const view=renderHook(({enabled,themeId})=>useTeamOffice({...opts,enabled,officeExists:true,themeId}),{initialProps:{enabled:true,themeId:"one-light"}});await waitFor(()=>expect(view.result.current.projects[0].sources[0].availability).toBe("ready"));
+ const calls=vi.mocked(collaborationRequest).mock.calls.length;view.rerender({enabled:false,themeId:"tokyo-night"});expect(view.result.current.themeId).toBe("tokyo-night");expect(view.result.current.projects[0].sources[0].members[0].name).toBe("Worker");expect(collaborationRequest).toHaveBeenCalledTimes(calls);
+});
+it("retains same-source roster during backend replacement but rejects stale callbacks and distinct source reuse",async()=>{
+ const opts=options();const view=renderHook(({input})=>useTeamOffice(input),{initialProps:{input:opts}});await waitFor(()=>expect(view.result.current.projects[0].sources[0].members[0]?.name).toBe("Worker"));
+ let oldDone!:(s:string)=>void;vi.mocked(collaborationRequest).mockReturnValueOnce(new Promise(r=>{oldDone=r}));const second={...opts,sessions:[{...opts.sessions[0],backendId:"replacement"}]};view.rerender({input:second});expect(view.result.current.projects[0].sources[0]).toMatchObject({availability:"ready",members:[{name:"Worker"}]});
+ let newDone!:(s:string)=>void;vi.mocked(collaborationRequest).mockReturnValueOnce(new Promise(r=>{newDone=r}));const other={...profile,workdir:"/different",project:"other"};const third={...second,profiles:{[collaborationKey(server.id,other)]:other}};view.rerender({input:third});expect(view.result.current.projects[0].sources[0].members).toEqual([]);
+ await act(async()=>oldDone(JSON.stringify([{...member,role:"Stale worker"}])));expect(view.result.current.projects[0].sources[0].members).toEqual([]);
+ await act(async()=>newDone(JSON.stringify([{...member,project:"other",role:"New worker"}])));expect(view.result.current.projects[0].sources[0].members[0].name).toBe("New worker");
+});
+
+it("starts inactive without building or serializing office data",()=>{
+ const opts=options();vi.mocked(buildOfficeSnapshot).mockClear();const stringify=vi.spyOn(JSON,"stringify");const view=renderHook(()=>useTeamOffice({...opts,enabled:false,officeExists:false}));
+ expect(buildOfficeSnapshot).not.toHaveBeenCalled();expect(stringify).not.toHaveBeenCalled();expect(collaborationRequest).not.toHaveBeenCalled();expect(view.result.current.projects).toEqual([]);view.unmount();stringify.mockRestore();
 });

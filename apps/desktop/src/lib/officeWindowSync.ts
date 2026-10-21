@@ -14,7 +14,7 @@ export function openOfficeWindow(): Promise<void> { return invoke("open_office_w
 
 /** Content deduplication and one trailing update per 250ms, only while the popup exists. */
 export function useOfficePublisher(snapshot: OfficeSnapshot, officeExists = false) {
-  const content = JSON.stringify(snapshot);
+  const content = officeExists ? JSON.stringify(snapshot) : "";
   const latest = useRef({snapshot, content, officeExists});
   latest.current = {snapshot, content, officeExists};
   const request = useRef<(() => void) | undefined>();

@@ -550,7 +550,7 @@ it("leaves normal terminal control keys to the remote encoder", async () => {
 it("collects for an existing office only while main is visible and passes presence to publisher",async()=>{
  localStorage.clear();const view=render(<App/>);await act(async()=>{});
  expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);expect(officeMock.publish.mock.lastCall?.[1]).toBe(false);
- officeMock.exists=true;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(true);expect(officeMock.publish.mock.lastCall?.[1]).toBe(true);
+ officeMock.exists=true;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(true);expect(officeMock.publish.mock.lastCall?.[1]).toBe(true);expect(officeMock.collect.mock.lastCall?.[0].officeExists).toBe(true);
  officeMock.visible=false;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);
  officeMock.exists=false;officeMock.visible=true;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);view.unmount();
 });
