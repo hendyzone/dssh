@@ -103,7 +103,15 @@ impl TeamService {
                 .get(reqwest::header::RETRY_AFTER)
                 .and_then(|v| v.to_str().ok())
                 .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
-                .and_then(|v| v.parse::<u32>().ok())
+                .map(|v| {
+                    v.bytes()
+                        .fold(0u32, |seconds, digit| {
+                            seconds
+                                .saturating_mul(10)
+                                .saturating_add(u32::from(digit - b'0'))
+                        })
+                        .min(3600)
+                })
                 .filter(|v| *v > 0)
                 .unwrap_or(30)
         });

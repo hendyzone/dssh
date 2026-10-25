@@ -44,7 +44,7 @@ export default function TeamServiceAi({ai, enabled, target, compact = false}: {
       if (epoch !== generation.current) return;
       if (result.status === 202) setNotice("已请求，等待服务更新");
       else if (result.status === 429) {
-        const seconds = Number.isFinite(result.retry_after) && result.retry_after! > 0 ? result.retry_after! : 30;
+        const seconds = Number.isInteger(result.retry_after) && result.retry_after! > 0 ? Math.min(3600, result.retry_after!) : 30;
         setNow(Date.now()); setDeadline(Date.now() + seconds * 1000); setNotice("请求受限，请稍后重试");
       } else if (result.status === 409 && result.code === "no_live_session") setNotice("该成员当前没有在线会话");
       else if (result.status === 503 && result.code === "ai_disabled") setDisabledByService(true);

@@ -38,6 +38,23 @@ it('disables refresh through Retry-After and enables at the deadline',async()=>{
 it('uses conservative 30 seconds for a missing Retry-After',async()=>{
  vi.mocked(invoke).mockResolvedValue({status:429,code:'budget_exhausted'});render(<TeamServiceAi target={target}/>);await request();expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);expect(screen.getByRole('button').textContent).toContain('30 秒');
 });
+it.each([1, 3600, 4000000000, Number.MAX_VALUE])('bounds positive integer cooldown %s and releases at its deadline',async(value)=>{
+ vi.mocked(invoke).mockResolvedValue({status:429,code:'rate_limited',retry_after:value});
+ render(<TeamServiceAi target={target}/>);await request();
+ const seconds=Math.min(value,3600);const button=screen.getByRole('button') as HTMLButtonElement;
+ expect(button.textContent).toContain(`${seconds} 秒`);expect(button.disabled).toBe(true);
+ await act(async()=>vi.advanceTimersByTime((seconds-1)*1000));
+ expect(button.textContent).toContain('1 秒');expect(button.disabled).toBe(true);
+ await act(async()=>vi.advanceTimersByTime(1000));expect(button.disabled).toBe(false);
+});
+it.each([0,-1,1.5,NaN,Infinity,'3',null])('defaults invalid cooldown %s to 30 seconds',async(value)=>{
+ vi.mocked(invoke).mockResolvedValue({status:429,code:'rate_limited',retry_after:value});
+ render(<TeamServiceAi target={target}/>);await request();
+ const button=screen.getByRole('button') as HTMLButtonElement;
+ expect(button.textContent).toContain('30 秒');expect(button.disabled).toBe(true);
+ await act(async()=>vi.advanceTimersByTime(29000));expect(button.disabled).toBe(true);
+ await act(async()=>vi.advanceTimersByTime(1000));expect(button.disabled).toBe(false);
+});
 it('shows no-live-session and disabled messages without exposing error fields',async()=>{
  vi.mocked(invoke).mockResolvedValue({status:409,code:'no_live_session',token:'SECRET'});const view=render(<TeamServiceAi target={target}/>);await request();
  expect(screen.getByText('该成员当前没有在线会话')).toBeTruthy();expect(document.body.textContent).not.toContain('SECRET');
