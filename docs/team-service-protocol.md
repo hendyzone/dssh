@@ -80,8 +80,11 @@ Authorization failures:
 - any client attempt to write an AI field → `403 ai_fields_forbidden` (§4.10)
 
 **Auth-failure throttling:** a source address that produces more than 20 `401`/`403` responses
-in a rolling minute receives `429 rate_limited` (with `Retry-After`) on **every** request until
-the window clears, including requests with valid tokens.
+in a rolling minute receives `429 rate_limited` (with `Retry-After`) on further requests that
+carry **no token or an invalid/revoked token** until the window clears. Requests with a valid
+token are never throttled by this rule: several clients often share one source address (NAT,
+tunnels, one host running both an agent and a desktop), and one misconfigured client must not
+lock the others out. `403` for a valid token with the wrong role does not count as a failure.
 
 ---
 
@@ -739,7 +742,7 @@ Clients only display AI data (§6.5). This section is informative so clients kno
 | `workdir` | 1024 | `422` |
 | `id` | `member-` + 1–80 chars | `422` |
 | project name | 1–64 chars | `422` / `404` in path |
-| auth failures per source address | 20 / min | `429` on all requests |
+| auth failures per source address | 20 / min | `429` on unauthenticated requests only |
 | AI refresh | 1 / member / 30 s; 20 / token / h | `429` |
 | event replay window | 500 events or 24 h | `error{resync}` + `snapshot` |
 | WS connections | 64 global, 8 per token | `503` at upgrade |
