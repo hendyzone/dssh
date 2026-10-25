@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://team.example.invalid/schemas/ws-client-message.json",
+  "title": "Team service WebSocket (dssh-team.v1): client to server",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/sub"
+    },
+    {
+      "$ref": "#/$defs/unsub"
+    },
+    {
+      "$ref": "#/$defs/ping"
+    }
+  ],
+  "$defs": {
+    "ping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "ping"
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64
+        }
+      }
+    },
+    "projectName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "sub": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "projects"
+      ],
+      "properties": {
+        "type": {
+          "const": "sub"
+        },
+        "projects": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 64,
+          "propertyNames": {
+            "$ref": "#/$defs/projectName"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "unsub": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "projects"
+      ],
+      "properties": {
+        "type": {
+          "const": "unsub"
+        },
+        "projects": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/projectName"
+          }
+        }
+      }
+    }
+  }
+}

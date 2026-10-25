@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://team.example.invalid/schemas/agent-report.json",
+  "title": "Team service: POST /agent/report request (unknown fields are ignored)",
+  "type": "object",
+  "required": [
+    "agent",
+    "full",
+    "tmux",
+    "panes"
+  ],
+  "properties": {
+    "agent": {
+      "type": "object",
+      "required": [
+        "version",
+        "boot",
+        "seq"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "boot": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "full": {
+      "type": "boolean"
+    },
+    "tmux": {
+      "type": "object",
+      "required": [
+        "ok"
+      ],
+      "properties": {
+        "server_pid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "panes": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/pane"
+      }
+    },
+    "removed": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/sessionKey"
+      }
+    },
+    "content": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/content"
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "full": {
+        "const": true
+      }
+    },
+    "required": [
+      "full"
+    ]
+  },
+  "then": {
+    "properties": {
+      "removed": {
+        "type": "array",
+        "maxItems": 0
+      }
+    }
+  },
+  "$defs": {
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sid",
+        "created",
+        "digest",
+        "text"
+      ],
+      "properties": {
+        "sid": {
+          "$ref": "#/$defs/tmuxSessionId"
+        },
+        "created": {
+          "$ref": "#/$defs/unixSeconds"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 16384,
+          "description": "Redacted, at most 80 lines and 16 KiB UTF-8."
+        }
+      }
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "liveState": {
+      "enum": [
+        "running",
+        "waiting_input",
+        "input_pending",
+        "stuck",
+        "idle",
+        "unknown"
+      ]
+    },
+    "pane": {
+      "type": "object",
+      "required": [
+        "sid",
+        "created",
+        "name",
+        "activity",
+        "state"
+      ],
+      "properties": {
+        "sid": {
+          "$ref": "#/$defs/tmuxSessionId"
+        },
+        "created": {
+          "$ref": "#/$defs/unixSeconds"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "pane": {
+          "type": "string",
+          "pattern": "^%[0-9]+$"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "cmd": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "child": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "activity": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "$ref": "#/$defs/liveState"
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "ctx_pct": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "last_line": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "box": {
+          "type": "string",
+          "maxLength": 254
+        },
+        "project": {
+          "anyOf": [
+            {
+              "const": ""
+            },
+            {
+              "$ref": "#/$defs/projectName"
+            }
+          ]
+        }
+      }
+    },
+    "projectName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+    },
+    "sessionKey": {
+      "type": "string",
+      "pattern": "^\\$[0-9]+:[1-9][0-9]{0,15}$"
+    },
+    "tmuxSessionId": {
+      "type": "string",
+      "pattern": "^\\$[0-9]+$"
+    },
+    "unixSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  }
+}

@@ -1,0 +1,664 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://team.example.invalid/schemas/team-snapshot.json",
+  "title": "Team service: GET /projects/{p}/team body",
+  "$ref": "#/$defs/teamSnapshot",
+  "$defs": {
+    "ai": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "summary",
+        "evidence",
+        "digest",
+        "source",
+        "model",
+        "updatedAt"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "working",
+            "waiting",
+            "idle",
+            "unknown"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "evidence": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "machine",
+            "session"
+          ],
+          "properties": {
+            "machine": {
+              "$ref": "#/$defs/machineName"
+            },
+            "session": {
+              "$ref": "#/$defs/sessionKey"
+            }
+          }
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "email": {
+      "type": "string",
+      "maxLength": 254,
+      "anyOf": [
+        {
+          "const": ""
+        },
+        {
+          "allOf": [
+            {
+              "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+            },
+            {
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            }
+          ]
+        }
+      ]
+    },
+    "host": {
+      "allOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        },
+        {
+          "type": "string",
+          "pattern": "^[^\\s/]+$"
+        }
+      ]
+    },
+    "liveItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "machine",
+        "session",
+        "match",
+        "state",
+        "detail",
+        "since",
+        "ctx_pct",
+        "model",
+        "last_line",
+        "at",
+        "stale"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/memberKey"
+        },
+        "machine": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/machineName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sessionKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "match": {
+          "enum": [
+            "exact",
+            "replaced",
+            "gone",
+            "no_agent"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/liveState"
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "since": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ctx_pct": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "last_line": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      }
+    },
+    "liveState": {
+      "enum": [
+        "running",
+        "waiting_input",
+        "input_pending",
+        "stuck",
+        "idle",
+        "unknown"
+      ]
+    },
+    "machine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "online",
+        "seen",
+        "version"
+      ],
+      "properties": {
+        "type": {
+          "const": "machine",
+          "description": "Present only on the WebSocket."
+        },
+        "name": {
+          "$ref": "#/$defs/machineName"
+        },
+        "online": {
+          "type": "boolean"
+        },
+        "seen": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/semver"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "machineName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "member": {
+      "description": "A stored roster member as returned by the service.",
+      "type": "object",
+      "required": [
+        "project",
+        "key",
+        "email",
+        "role",
+        "host",
+        "port",
+        "username",
+        "workdir",
+        "tmux",
+        "updatedAt",
+        "rev"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/projectName"
+        },
+        "key": {
+          "$ref": "#/$defs/memberKey"
+        },
+        "email": {
+          "$ref": "#/$defs/email"
+        },
+        "id": {
+          "$ref": "#/$defs/memberId"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        },
+        "host": {
+          "$ref": "#/$defs/host"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        },
+        "workdir": {
+          "$ref": "#/$defs/workdir"
+        },
+        "tmux": {
+          "$ref": "#/$defs/tmux"
+        },
+        "responsibilities": {
+          "$ref": "#/$defs/noteText"
+        },
+        "quota": {
+          "$ref": "#/$defs/noteText"
+        },
+        "currentTask": {
+          "$ref": "#/$defs/noteText"
+        },
+        "notes": {
+          "$ref": "#/$defs/noteText"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "rev": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "email": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "id"
+          ]
+        }
+      ]
+    },
+    "memberId": {
+      "type": "string",
+      "pattern": "^member-[a-zA-Z0-9-]{1,80}$"
+    },
+    "memberInput": {
+      "description": "One PUT batch item / import entry. Unknown fields are ignored; AI field names are forbidden (403). If email is non-empty an invalid id is silently dropped; if email is empty a valid id is required.",
+      "type": "object",
+      "required": [
+        "project",
+        "email",
+        "role",
+        "host",
+        "port",
+        "username",
+        "workdir",
+        "tmux"
+      ],
+      "propertyNames": {
+        "not": {
+          "pattern": "^ai([A-Z_]|$)"
+        }
+      },
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/projectName"
+        },
+        "email": {
+          "$ref": "#/$defs/email"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        },
+        "host": {
+          "$ref": "#/$defs/host"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        },
+        "workdir": {
+          "$ref": "#/$defs/workdir"
+        },
+        "tmux": {
+          "$ref": "#/$defs/tmuxInput"
+        },
+        "responsibilities": {
+          "$ref": "#/$defs/noteText"
+        },
+        "quota": {
+          "$ref": "#/$defs/noteText"
+        },
+        "currentTask": {
+          "$ref": "#/$defs/noteText"
+        },
+        "notes": {
+          "$ref": "#/$defs/noteText"
+        },
+        "rev": {
+          "description": "Expected current rev (precondition).",
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "email": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/memberId"
+            }
+          }
+        }
+      ]
+    },
+    "memberKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 254
+    },
+    "memberPatch": {
+      "description": "PATCH body. project/email/id may appear but must equal the stored values. Unknown fields are ignored.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "not": {
+          "pattern": "^ai([A-Z_]|$)"
+        }
+      },
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/projectName"
+        },
+        "email": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        },
+        "host": {
+          "$ref": "#/$defs/host"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        },
+        "workdir": {
+          "$ref": "#/$defs/workdir"
+        },
+        "tmux": {
+          "$ref": "#/$defs/tmuxInput"
+        },
+        "responsibilities": {
+          "$ref": "#/$defs/noteText"
+        },
+        "quota": {
+          "$ref": "#/$defs/noteText"
+        },
+        "currentTask": {
+          "$ref": "#/$defs/noteText"
+        },
+        "notes": {
+          "$ref": "#/$defs/noteText"
+        }
+      }
+    },
+    "noteText": {
+      "type": "string",
+      "maxLength": 2000,
+      "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f]*$"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "projectName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+    },
+    "sessionKey": {
+      "type": "string",
+      "pattern": "^\\$[0-9]+:[1-9][0-9]{0,15}$"
+    },
+    "teamSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "seq",
+        "lseq",
+        "members",
+        "ai",
+        "live",
+        "machines"
+      ],
+      "properties": {
+        "type": {
+          "const": "snapshot",
+          "description": "Present only on the WebSocket."
+        },
+        "project": {
+          "$ref": "#/$defs/projectName"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lseq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "members": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/member"
+          }
+        },
+        "ai": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/memberKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/ai"
+          }
+        },
+        "live": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/memberKey"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/liveItem"
+          }
+        },
+        "machines": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/machineName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/machine"
+          }
+        }
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "RFC 3339, UTC (Z)",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+    },
+    "tmux": {
+      "type": "object",
+      "required": [
+        "id",
+        "created",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/tmuxSessionId"
+        },
+        "created": {
+          "$ref": "#/$defs/unixSeconds"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        }
+      }
+    },
+    "tmuxInput": {
+      "type": "object",
+      "required": [
+        "id",
+        "created",
+        "name"
+      ],
+      "description": "Unknown keys are ignored.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/tmuxSessionId"
+        },
+        "created": {
+          "$ref": "#/$defs/unixSeconds"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        }
+      }
+    },
+    "tmuxSessionId": {
+      "type": "string",
+      "pattern": "^\\$[0-9]+$"
+    },
+    "unixSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "workdir": {
+      "allOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?=[\\s\\S]*\\S)[^\\u0000-\\u001f\\u007f]*$"
+        },
+        {
+          "type": "string",
+          "pattern": "^/"
+        }
+      ]
+    }
+  }
+}

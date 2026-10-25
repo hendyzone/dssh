@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://team.example.invalid/schemas/agent-report-response.json",
+  "title": "Team service: POST /agent/report 200 response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ack",
+    "want_content",
+    "resync",
+    "min_agent"
+  ],
+  "properties": {
+    "ack": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "want_content": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sessionKey"
+      }
+    },
+    "resync": {
+      "type": "boolean"
+    },
+    "min_agent": {
+      "$ref": "#/$defs/semver"
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+    },
+    "sessionKey": {
+      "type": "string",
+      "pattern": "^\\$[0-9]+:[1-9][0-9]{0,15}$"
+    }
+  }
+}
