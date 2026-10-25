@@ -709,3 +709,63 @@ async fn team_service_legacy_cache_read_has_unknown_timestamp() {
     assert!(restarted.read().await.unwrap()["snapshots"][PROJECT]["savedAt"].is_null());
     restarted.shutdown().await;
 }
+
+async fn assert_old_delta_is_silent(sequence: u64) {
+    let directory = Directory::new();
+    let (listener, url) = listener().await;
+    let (service, mut events) = client(&directory, Arc::default(), timing(WAIT));
+    configure(&service, url, vec![PROJECT.to_owned()]).await;
+    let mut socket = accept(&listener).await;
+    assert_eq!(
+        receive(&mut socket).await,
+        json!({"type":"sub","projects":{(PROJECT):null}})
+    );
+    send(&mut socket, snapshot(5)).await;
+    event(&mut events, "team://snapshot", |value| value["seq"] == 5).await;
+    let before = service.inspect(PROJECT).await.unwrap();
+    send(
+        &mut socket,
+        json!({"type":"delta","project":PROJECT,"seq":sequence,
+            "ops":[{"op":"upsert","member":member("member-stale-write",sequence)}]}),
+    )
+    .await;
+    let barrier = format!("old-delta-{sequence}").into_bytes();
+    socket
+        .send(Message::Ping(barrier.clone().into()))
+        .await
+        .unwrap();
+    // The actor queues replies in order. A resubscription caused by the preceding
+    // delta must arrive before this pong; no sleep-based absence check is needed.
+    let response = timeout(WAIT, socket.next())
+        .await
+        .expect("Expected the processing barrier pong")
+        .expect("Client closed before the processing barrier")
+        .expect("Failed to read the processing barrier");
+    assert_eq!(
+        response,
+        Message::Pong(barrier.into()),
+        "Delta seq {sequence} <= local 5 must not send an extra subscription"
+    );
+    assert_eq!(
+        service.inspect(PROJECT).await.unwrap(),
+        before,
+        "Delta seq {sequence} <= local 5 must leave roster, sequence and cache timestamp unchanged"
+    );
+    while let Ok((name, _)) = events.try_recv() {
+        assert_ne!(
+            name, "team://delta",
+            "Discarded delta must not be published"
+        );
+    }
+    service.shutdown().await;
+}
+
+#[tokio::test]
+async fn team_service_duplicate_delta_does_not_resubscribe_or_change_roster() {
+    assert_old_delta_is_silent(5).await;
+}
+
+#[tokio::test]
+async fn team_service_expired_delta_does_not_resubscribe_or_change_roster() {
+    assert_old_delta_is_silent(4).await;
+}
