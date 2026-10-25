@@ -18,6 +18,7 @@ mod sync;
 mod tmux;
 mod tmux_program_status;
 mod team_ai;
+mod team_service;
 mod workspace;
 mod vscode;
 
@@ -49,6 +50,7 @@ pub fn run() {
             app.manage(office::OfficeState::default());
             app.manage(monitor::MonitorState::default());
             app.manage(forward::ForwardState::default());
+            app.manage(team_service::initialize(app.handle()).map_err(std::io::Error::other)?);
             use tauri::menu::{Menu, MenuItem, Submenu};
             let devtools = MenuItem::with_id(app, "devtools", "开发者工具", true, Some("F12"))?;
             let logs = MenuItem::with_id(app, "diagnostics", "诊断日志位置", true, None::<&str>)?;
@@ -71,6 +73,8 @@ pub fn run() {
             office::window_event(window, event);
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 window.state::<local_shell::LocalState>().shutdown();
+                let service = window.state::<team_service::TeamService>().inner().clone();
+                tauri::async_runtime::spawn(async move { service.shutdown().await; });
             }
         })
         .on_menu_event(|app, event| {
@@ -90,6 +94,9 @@ pub fn run() {
             }
         });
     install_command_handler(builder, tauri::generate_handler![
+            team_service::team_service_configure,
+            team_service::team_service_subscribe,
+            team_service::team_service_status,
             office::open_office_window,
             office::office_publish_snapshot,
             office::office_request_snapshot,

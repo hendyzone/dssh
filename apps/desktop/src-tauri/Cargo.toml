@@ -19,6 +19,8 @@ tauri-plugin-dialog = "2.7.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", features = ["sink"] }
 # SSH 协议层：交互 shell / SFTP / 端口转发
 russh = "0.54"
 russh-sftp = "2"
@@ -38,6 +40,9 @@ portable-pty = "0.9"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38.2"
