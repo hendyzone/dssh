@@ -18,6 +18,9 @@ use tokio_tungstenite::{
     },
 };
 
+#[path = "team_service_ai.rs"]
+pub(crate) mod ai;
+
 #[path = "team_service_rest.rs"]
 pub(crate) mod rest;
 

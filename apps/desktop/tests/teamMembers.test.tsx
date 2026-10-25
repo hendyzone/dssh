@@ -46,7 +46,7 @@ it("renders the service roster and keeps navigation with service editing availab
   for(const name of ["编辑备注 · host-b","更新终端","从团队移除"])
     expect((screen.getByRole("button",{name}) as HTMLButtonElement).disabled).toBe(false);
   expect((screen.getByRole("button",{name:"添加成员"}) as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.getByText("AI 摘要改由团队服务生成，即将上线")).toBeTruthy();
+  expect(screen.getByText("AI 摘要由团队服务生成")).toBeTruthy();
   expect(invoke).not.toHaveBeenCalled();
 });
 it.each([undefined,profile])("opens subscribed teams without a Lead binding (%s)",async binding=>{
@@ -183,8 +183,8 @@ const liveOf = (sessions: AgentSession[]): LiveSessions => ({
 });
 const worker = (over: Partial<TeamMember>): TeamMember => ({...member, ...over});
 
-function renderMerged(members: TeamMember[], live: LiveSessions) {
-  return render(<TeamDynamics sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}} members={members} onUpdated={async()=>{}} board={board} live={live}/>);
+function renderMerged(members: TeamMember[], live: LiveSessions, ai:Record<string,unknown>={}) {
+  return render(<TeamDynamics sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}} members={members} onUpdated={async()=>{}} board={board} live={live} serviceAi={ai}/>);
 }
 
 it("filters the merged list by the overview counts and clears on a second click", async () => {
@@ -315,16 +315,14 @@ it("does not render the empty-card line on a card row without a task", async () 
   expect(container.querySelectorAll(".team-card-line2")).toHaveLength(0);
 });
 
-it("shows the AI summary on the second line when there is no card, and an AI marker when there is one", async () => {
-  const note = {aiSummary:"上次修好了 DS-10 的终端输出", aiSource:"s", aiUpdatedAt:new Date().toISOString()};
-  const plain = worker({email:"plain@example.test", role:"p", tmux:{...member.tmux, name:"worker-demo-p"}, currentTask:"", ...note, aiSource:JSON.stringify(["remote",22,"dev","/repo","$2",123])});
-  const carded = worker({email:"card@example.test", role:"q", tmux:{...member.tmux, name:"worker-demo-q"}, ...note, aiSource:JSON.stringify(["remote",22,"dev","/repo","$2",123])});
-  const {container} = renderMerged([plain, carded], liveOf([
-    asSession({session:"worker-demo-p", state:"running"}),
-    asSession({session:"worker-demo-q", state:"running", taskCode:"DS-13", taskStatus:"doing"}),
-  ]));
-  expect(container.querySelector(".team-card-line2.is-ai")?.textContent).toContain("上次修好了 DS-10");
-  expect(container.querySelectorAll(".team-ai-chip")).toHaveLength(1);
+it("shows service AI on both card rows without replacing current task information", () => {
+  const plain=worker({email:"plain@example.invalid",role:"Plain",currentTask:"",tmux:{...member.tmux,name:"plain"}});
+  const carded=worker({email:"card@example.invalid",role:"Card",tmux:{...member.tmux,name:"card"}});
+  const ai={status:"working",summary:"Storage tests passed",evidence:"ok",model:"example-model",updatedAt:new Date().toISOString()};
+  const {container}=renderMerged([plain,carded],liveOf([asSession({session:"plain",state:"running"}),asSession({session:"card",state:"running",taskCode:"TASK-13",taskStatus:"doing"})]),{[plain.email!]:ai,[carded.email!]:ai});
+  expect(container.querySelectorAll('[data-ai-view="row"]')).toHaveLength(2);
+  for(const row of container.querySelectorAll('[data-ai-view="row"]'))expect(row.textContent).toContain("Storage tests passed");
+  expect(container.querySelector(".team-card-line2")?.textContent).toContain("TASK-13");
 });
 
 it("shows the empty state when the roster only contains the Lead", async () => {

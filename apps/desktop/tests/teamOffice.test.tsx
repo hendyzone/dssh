@@ -41,7 +41,7 @@ it("serializes only display fields, never server credentials, profiles, handles 
  expect(JSON.parse(JSON.stringify(result))).toEqual(result);
  expect(Object.keys(result).sort()).toEqual(["animationEnabled","mailAvailability","projects","themeId","version"]);
  const station=result.projects[0].sources[0].members[0];
- expect(Object.keys(station).sort()).toEqual(["id","isLead","name","paletteKey","status","taskSource","taskText"]);
+ expect(Object.keys(station).sort()).toEqual(["ai","aiEnabled","id","isLead","name","paletteKey","status","taskSource","taskText"]);
  expect(station).toMatchObject({name:"Worker",taskText:"manual task",taskSource:"manual",status:{state:"unknown",source:"activity"}});
  const wire=JSON.stringify(result);for(const secret of [server.password,"private-backend",profile.workdir,profile.tokenFile,profile.mailctlPath,member.email])expect(wire).not.toContain(secret);
  expect(result.mailAvailability).toBe("unavailable");

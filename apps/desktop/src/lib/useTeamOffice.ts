@@ -38,8 +38,8 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
     else if(state==="offline"||team?.offline)notice=`团队服务离线 · ${team?.receivedAt ? `数据截至 ${new Date(team.receivedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false})}`:"数据时间未知"}`;
     else if(state==="error")notice="团队服务暂不可用，请检查服务配置";
     else if(!team)notice="正在读取团队服务…";
-    return [source.id,{members:team?.members??[],live:team?.live??{},availability:team?(state==="online"?"ready":"offline"):state==="error"?"error":"loading",notice} satisfies OfficeRoster];
-  })),[sources,rosterKey,service.status.state]);
+    return [source.id,{members:team?.members??[],live:team?.live??{},ai:team?.ai??{},aiEnabled:service.status.ai_enabled,availability:team?(state==="online"?"ready":"offline"):state==="error"?"error":"loading",notice} satisfies OfficeRoster];
+  })),[sources,rosterKey,service.status.state,service.status.ai_enabled]);
   const boardKey=active?JSON.stringify([sources,lookupSettings,Object.values(rosters).map(roster=>roster.members)]):"";
   useEffect(()=>{
     if(!enabled)return;

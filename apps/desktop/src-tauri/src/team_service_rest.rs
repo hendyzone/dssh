@@ -8,7 +8,7 @@ pub struct WriteError {
     pub status: u16,
 }
 impl WriteError {
-    fn new(code: &'static str, status: u16) -> Self {
+    pub(super) fn new(code: &'static str, status: u16) -> Self {
         Self { code, status }
     }
     pub(super) fn stopped() -> Self {
@@ -22,10 +22,10 @@ pub(super) struct RestContext {
     pub initial: Option<Value>,
 }
 
-fn key_valid(key: &str) -> bool {
+pub(super) fn key_valid(key: &str) -> bool {
     !key.is_empty() && key.len() <= 1024 && !key.chars().any(char::is_control)
 }
-fn response_error(status: u16, value: &Value) -> WriteError {
+pub(super) fn response_error(status: u16, value: &Value) -> WriteError {
     let code = match value["error"]["code"].as_str() {
         Some("rev_mismatch") => "rev_mismatch",
         Some("if_match_required") => "if_match_required",
@@ -48,7 +48,7 @@ fn response_error(status: u16, value: &Value) -> WriteError {
     };
     WriteError::new(code, status)
 }
-async fn response_json(mut response: reqwest::Response) -> Result<Value, WriteError> {
+pub(super) async fn response_json(mut response: reqwest::Response) -> Result<Value, WriteError> {
     let mut bytes = Vec::new();
     while let Some(chunk) = response
         .chunk()
@@ -67,6 +67,9 @@ impl TeamService {
         if !project_valid(project) {
             return Err(WriteError::new("validation_failed", 422));
         }
+        self.native_context(project).await
+    }
+    pub(super) async fn native_context(&self, project: &str) -> Result<RestContext, WriteError> {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(Command::RestContext(project.to_owned(), tx))

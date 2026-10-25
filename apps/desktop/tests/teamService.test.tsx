@@ -16,7 +16,7 @@ vi.mock("../src/lib/agentSessions", async importOriginal => ({
 import TeamMembers from "../src/components/TeamMembers";
 import TeamPanel from "../src/components/TeamPanel";
 import CollaborationSettings from "../src/components/CollaborationSettings";
-import { configureTeamService, subscribeTeamService, useTeamService } from "../src/lib/teamService";
+import { configureTeamService, subscribeTeamService, useTeamService, refreshServiceAi } from "../src/lib/teamService";
 import { emptyProfile } from "../src/lib/collaboration";
 import { parseAgentSessions } from "../src/lib/agentSessions";
 import type { ServerEntry } from "../src/types";
@@ -71,7 +71,7 @@ it("renders a service snapshot without a Lead tmux binding or SSH roster request
   expect(await screen.findByRole("button", { name: "打开 · worker-a · worker-a" })).toBeTruthy();
   expect(state().snapshots.demo.seq).toBe(1);
   expect(bridge.invoke.mock.calls.every(([name]) => String(name).startsWith("team_service_"))).toBe(true);
-  expect(screen.getByText("AI 摘要改由团队服务生成，即将上线")).toBeTruthy();
+  expect(screen.getByText("AI 摘要由团队服务生成")).toBeTruthy();
 });
 
 it("applies contiguous deltas and ignores duplicate or older updates", async () => {
@@ -256,4 +256,75 @@ it("opens a real team panel without a Lead profile or tmux binding and switches 
   expect(await screen.findByRole("button", { name: "打开 · other-worker · other-worker" })).toBeTruthy();
   expect(screen.getByText("团队 · another")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "打开 · worker-a · worker-a" })).toBeNull();
+});
+
+it("keeps service AI until a real AI delta arrives after refresh", async () => {
+  await boot();
+  const ai={status:"working",summary:"Initial service summary",evidence:"literal evidence",model:"example-model",updatedAt:new Date().toISOString()};
+  await emit("team://snapshot", {...snapshot(),ai:{[member().key]:ai}});
+  expect(screen.getAllByText(ai.summary).length).toBeGreaterThan(0);
+  const previous=bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async(command,args)=>command==="team_service_ai_refresh"?{status:202,code:"accepted"}:previous(command,args));
+  await act(async()=>{fireEvent.click(screen.getAllByRole("button",{name:"重新总结",hidden:true})[0]);});
+  expect(screen.getByText("已请求，等待服务更新")).toBeTruthy();
+  expect(state().snapshots.demo.ai[member().key].summary).toBe(ai.summary);
+  await emit("team://delta",{type:"delta",project:"demo",seq:2,ops:[{op:"ai",key:member().key,ai:{...ai,summary:"Updated by service"}}]});
+  expect(screen.getAllByText("Updated by service").length).toBeGreaterThan(0);
+  expect(screen.queryByText(ai.summary)).toBeNull();
+  expect(bridge.invoke).toHaveBeenCalledWith("team_service_ai_refresh",{project:"demo",key:member().key});
+});
+
+it("uses only the safe capability boolean and shows disabled service AI", async () => {
+  const original=bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async(command,args)=>command==="team_service_capabilities"?{ai_enabled:false}:original(command,args));
+  await boot(); await emit("team://snapshot",snapshot());
+  expect(state().status.ai_enabled).toBe(false);
+  expect(screen.getAllByText("AI 摘要未启用").length).toBeGreaterThan(0);
+  for(const button of screen.getAllByRole("button",{name:"重新总结",hidden:true}))expect((button as HTMLButtonElement).disabled).toBe(true);
+  await emit("team://status",{state:"online",token_configured:true});
+  expect(state().status.ai_enabled).toBe(false);
+});
+
+it("discards a capability response from the previous configured service", async () => {
+  await boot();
+  const original=bridge.invoke.getMockImplementation()!;
+  let finish!:(value:unknown)=>void;let count=0;
+  bridge.invoke.mockImplementation(async(command,args)=>{
+    if(command==="team_service_capabilities") { count++;return count===1?new Promise(resolve=>{finish=resolve;}):{ai_enabled:true}; }
+    return original(command,args);
+  });
+  let first!:Promise<void>;
+  await act(async()=>{first=configureTeamService("https://old.example.invalid","test-credential",["demo"]);await Promise.resolve();await Promise.resolve();});
+  await waitFor(()=>expect(finish).toBeTypeOf("function"));
+  await act(async()=>configureTeamService("https://new.example.invalid","test-credential",["demo"]));
+  await act(async()=>{finish({ai_enabled:false});await first;});
+  expect(state().url).toContain("new.example.invalid");expect(state().status.ai_enabled).toBe(true);
+});
+
+it("propagates ai_disabled refresh to all service AI views", async () => {
+  await boot(); await emit("team://snapshot",snapshot());
+  const original=bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async(command,args)=>command==="team_service_ai_refresh"?{status:503,code:"ai_disabled"}:original(command,args));
+  await act(async()=>fireEvent.click(screen.getAllByRole("button",{name:"重新总结",hidden:true})[0]));
+  expect(state().status.ai_enabled).toBe(false);
+  expect(screen.getAllByText("AI 摘要未启用")).toHaveLength(2);
+  expect((screen.getByRole("button",{name:"重新总结",hidden:true}) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("does not let an earlier capability read undo a newer ai_disabled response", async () => {
+  await boot();
+  const original=bridge.invoke.getMockImplementation()!;
+  let finish!:(value:unknown)=>void;
+  bridge.invoke.mockImplementation(async(command,args)=>{
+    if(command==="team_service_capabilities")return new Promise(resolve=>{finish=resolve;});
+    if(command==="team_service_ai_refresh")return {status:503,code:"ai_disabled"};
+    return original(command,args);
+  });
+  let config!:Promise<void>;
+  await act(async()=>{config=configureTeamService("https://capability.example.invalid","test-credential",["demo"]);await Promise.resolve();await Promise.resolve();});
+  await waitFor(()=>expect(finish).toBeTypeOf("function"));
+  await act(async()=>{await refreshServiceAi("demo",member().key);});
+  expect(state().status.ai_enabled).toBe(false);
+  await act(async()=>{finish({ai_enabled:true});await config;});
+  expect(state().status.ai_enabled).toBe(false);
 });

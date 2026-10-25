@@ -1,3 +1,4 @@
+import TeamServiceAi from "./TeamServiceAi";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "./ui/button";
 import OfficeMail, {officeStationAnchor} from "./OfficeMail";
@@ -84,6 +85,7 @@ export default function TeamOffice({snapshot, visible = true, onPopOut}: {
                     <div className="office-person" style={{left:20*scale,top:14*scale}}><TeamMemberAvatar memberId={member.paletteKey} status={member.status} scale={scale} motionEnabled={snapshot.animationEnabled} paused={paused || closed}/></div>
                     <div className="office-desk-label" style={{top:51*scale,left:6*scale,right:6*scale}}><div className="office-station-name">{member.isLead && <span className="office-lead-label">Lead</span>} <strong title={member.name}>{member.name}</strong></div><span className="office-member-status" title={member.status.label}>{shortStatus[member.status.state]}</span></div>
                   </div>
+                  <TeamServiceAi ai={member.ai} enabled={member.aiEnabled}/>
                   <p className="office-member-task" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.taskText}</p>
                 </article>)}
               </div>

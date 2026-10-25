@@ -772,3 +772,49 @@ async fn team_service_expired_delta_does_not_resubscribe_or_change_roster() {
 
 #[path = "team_service_rest_tests.rs"]
 mod rest_tests;
+
+#[tokio::test]
+async fn team_service_ai_snapshot_delta_read_and_cache_survive_restart() {
+    let directory = Directory::new();
+    let vault = Arc::new(MemoryVault::default());
+    let (listener, url) = listener().await;
+    let (service, mut events) = client(&directory, vault.clone(), timing(WAIT));
+    configure(&service, url, vec![PROJECT.into()]).await;
+    let mut socket = accept(&listener).await;
+    receive(&mut socket).await;
+    let first_ai = json!({"summary":"First summary","status":"working","model":"example-model",
+        "updatedAt":"2026-01-01T00:00:00Z","evidence":"<script>sample</script>",
+        "digest":format!("sha256:{}", "a".repeat(64)), "source":{"machine":"machine-a","session":"$1:10"}});
+    let mut first = snapshot(1);
+    first["ai"] = json!({"member-one":first_ai});
+    send(&mut socket, first).await;
+    let first_event = event(&mut events, "team://snapshot", |v| v["seq"] == 1).await;
+    assert_eq!(first_event["ai"]["member-one"], first_ai);
+    let next_ai = json!({"summary":"Next summary","status":"idle","model":"example-model",
+        "updatedAt":"2026-01-01T00:01:00Z","evidence":"plain evidence",
+        "digest":format!("sha256:{}", "b".repeat(64)), "source":{"machine":"machine-a","session":"$1:10"}});
+    send(
+        &mut socket,
+        json!({"type":"delta","project":PROJECT,"seq":2,
+        "ops":[{"op":"ai","key":"member-one","ai":next_ai}]}),
+    )
+    .await;
+    let delta = event(&mut events, "team://delta", |v| v["seq"] == 2).await;
+    assert_eq!(delta["ops"][0]["ai"], next_ai);
+    assert_eq!(
+        service.read().await.unwrap()["snapshots"][PROJECT]["ai"]["member-one"],
+        next_ai
+    );
+    let cached: Value =
+        serde_json::from_slice(&std::fs::read(directory.0.join("snapshots.json")).unwrap())
+            .unwrap();
+    assert_eq!(cached["projects"][PROJECT]["ai"]["member-one"], next_ai);
+    service.shutdown().await;
+    let (restarted, mut cached_events) = client(&directory, vault, timing(WAIT));
+    let restored = event(&mut cached_events, "team://snapshot", |v| {
+        v["offline"] == true
+    })
+    .await;
+    assert_eq!(restored["ai"]["member-one"], next_ai);
+    restarted.shutdown().await;
+}

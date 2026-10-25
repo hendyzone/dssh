@@ -33,3 +33,11 @@
 .office-mail-overflow{position:sticky;top:8px;float:right;margin:8px;padding:3px 6px;background:#eee4ce;color:#252b2e;border:2px solid #684b37;font-size:11px}
 @keyframes office-mail-flight{0%{transform:translate(var(--mail-from-x),var(--mail-from-y));opacity:.7}25%{transform:translate(var(--mail-lane-x),var(--mail-from-y));opacity:1}75%{transform:translate(var(--mail-lane-x),var(--mail-to-y));opacity:1}100%{transform:translate(var(--mail-to-x),var(--mail-to-y));opacity:1}}
 @media(prefers-reduced-motion:reduce){.office-mail-layer .office-flying-mail{animation:none;transform:translate(var(--mail-to-x),var(--mail-to-y))}}
+
+.team-service-ai { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12px; }
+.team-service-ai-summary { overflow-wrap: anywhere; }
+.team-service-ai small { color: var(--muted-foreground); }
+.team-service-ai pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+.team-service-ai button { align-self: flex-start; text-decoration: underline; }
+.team-service-ai button:disabled { opacity: .5; cursor: not-allowed; }
+.office-station > .team-service-ai { max-width: 100%; }

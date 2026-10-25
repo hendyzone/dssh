@@ -287,7 +287,7 @@ it("renders live status, card brief, last commit, dirty files and model without 
   expect(screen.queryByText("无当前卡")).toBeNull();
   // AI summary stays on demand.
   expect(screen.queryByRole("button", { name: "总结 · host-a-pi" })).toBeNull();
-  expect(screen.getByText("AI 摘要改由团队服务生成，即将上线")).toBeTruthy();
+  expect(screen.getByText("AI 摘要由团队服务生成")).toBeTruthy();
   expect(mocks.invoke.mock.calls.every(([command]) => command === "taskboard_get")).toBe(true);
   expect(rows()).toHaveLength(3);
   expect(state.paths.some(p => p.includes("/other/"))).toBe(false);

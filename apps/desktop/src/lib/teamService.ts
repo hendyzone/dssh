@@ -7,6 +7,7 @@ export type TeamConnectionState = 'connecting' | 'online' | 'offline' | 'unautho
 export interface TeamServiceStatus {
   state: TeamConnectionState;
   token_configured: boolean;
+  ai_enabled?: boolean | null;
   since?: number;
   code?: string;
 }
@@ -83,6 +84,7 @@ let unlisten: UnlistenFn[] = [];
 let starting: Promise<void> | undefined;
 let lifetime = 0;
 let identityGeneration = 0;
+let capabilityRevision = 0;
 let configuring = false;
 let revision = 0;
 const projectRevisions = new Map<string, number>();
@@ -146,7 +148,7 @@ function loadCache() {
 loadCache();
 function applyStatus(status: TeamServiceStatus) {
   const reconnect = status.state === 'connecting';
-  publish({ ...current, status, snapshots: Object.fromEntries(Object.entries(current.snapshots).map(([p, snapshot]) => [p,
+  publish({ ...current, status: { ...status, ai_enabled: status.ai_enabled ?? current.status.ai_enabled }, snapshots: Object.fromEntries(Object.entries(current.snapshots).map(([p, snapshot]) => [p,
     { ...snapshot, status: status.state, offline: status.state !== 'online', ...(reconnect ? { lseq: -1 } : {}) }])) });
 }
 function eventReceived(event: unknown) {
@@ -209,7 +211,7 @@ async function pull(retryAfterPending = false, restore = false) {
     try {
       const reply = await invoke<unknown>('team_service_read');
       if (generation !== identityGeneration || configuring || !object(reply)) return;
-      const status = at === revision ? statusOf(reply.status) ?? current.status : current.status;
+      const status = at === revision ? {...(statusOf(reply.status) ?? current.status), ai_enabled: current.status.ai_enabled} : current.status;
       let url = current.url;
       if (typeof reply.url === 'string') url = normalizeServiceUrl(reply.url);
       if (current.url && url !== current.url && !restore) return;
@@ -253,6 +255,7 @@ async function start() {
       if (epoch !== lifetime) { installed.forEach(stop => stop()); return; }
       unlisten = installed;
       await pull(false, true);
+      if (epoch === lifetime) await loadCapabilities();
     } catch {
       installed.forEach(stop => stop());
       if (epoch === lifetime) applyStatus({ ...current.status, state: 'error' });
@@ -292,6 +295,7 @@ export async function configureTeamService(url: string, token: string, projects:
   finally { if (generation === identityGeneration) configuring = false; }
   pulling = undefined;
   await pull();
+  await loadCapabilities();
 }
 export async function subscribeTeamService(projects: string[]): Promise<void> {
   const selection = projectsOf(projects);
@@ -318,4 +322,25 @@ export async function refreshTeamService(project: string): Promise<TeamServicePr
   await pull();
   if (generation !== identityGeneration) throw new Error("团队服务已切换");
   return current.snapshots[project];
+}
+
+async function loadCapabilities(): Promise<void> {
+  if (!current.url) return;
+  const generation = identityGeneration, epoch = lifetime, url = current.url, capability = ++capabilityRevision;
+  try {
+    const reply = await invoke<{ai_enabled: boolean | null}>("team_service_capabilities");
+    if (generation !== identityGeneration || epoch !== lifetime || url !== current.url || capability !== capabilityRevision) return;
+    publish({...current, status: {...current.status, ai_enabled: typeof reply?.ai_enabled === "boolean" ? reply.ai_enabled : null}});
+  } catch { /* Unknown capabilities must not be presented as disabled. */ }
+}
+export interface AiRefreshResult { status: number; code: string; retry_after?: number }
+export async function refreshServiceAi(project: string, key: string): Promise<AiRefreshResult> {
+  const generation = identityGeneration;
+  const reply = await invoke<AiRefreshResult>("team_service_ai_refresh", {project, key});
+  if (generation !== identityGeneration) throw Error("团队服务已切换");
+  if (reply.status === 503 && reply.code === "ai_disabled") {
+    capabilityRevision++;
+    publish({...current, status: {...current.status, ai_enabled: false}});
+  }
+  return {status: reply.status, code: reply.code, retry_after: reply.retry_after};
 }

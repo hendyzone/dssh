@@ -1,3 +1,5 @@
+import TeamServiceAi from "./TeamServiceAi";
+import {serviceAi} from "../lib/serviceAi";
 import type { TeamLive } from "../lib/teamService";
 import { serviceMemberStatus } from "../lib/teamServicePresentation";
 import {useEffect,useRef,useState,type ReactNode} from "react";
@@ -12,7 +14,7 @@ import TeamLiveSummary from "./TeamLiveSummary";
 import TeamOffice from "./TeamOffice";
 import type { OfficeSnapshot } from "../lib/teamOffice";
 
-const sourceOf=(m:TeamMember)=>JSON.stringify([m.host,m.port,m.username,m.workdir,m.tmux.id,m.tmux.created]);
+
 
 /** Groups rendered as one compact row per member; everything else gets a full card. */
 const COMPACT_GROUPS:ReadonlySet<StatusGroup>=new Set(["lead","available","other","rosterWorking","rosterIdle","rosterUnknown"]);
@@ -36,9 +38,10 @@ function displayName(member:TeamMember,members:TeamMember[]){
 
 /** `live`: the panel's shared collector data (so the merged view shows one snapshot); polled here when omitted. */
 export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,board,live:shared,
-  serviceLive,onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange}:{
+  serviceLive,serviceAi:aiMap={},aiEnabled,serviceIdentity="",onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange}:{
   sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource;live?:LiveSessions;
   serviceLive?:Record<string,TeamLive>;
+  serviceAi?:Record<string,unknown>; aiEnabled?:boolean|null; serviceIdentity?:string;
   /** Shell actions owned by TeamMembers: the merged view keeps one toolbar row. */
   onRefresh?:()=>void;onAddMember?:()=>void;disabled?:boolean;more?:ReactNode;addForm?:ReactNode;
   /** Management block (notes, connection, edit/update/remove) owned by TeamMembers, placed in each member's details. */
@@ -110,9 +113,8 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     const compact=COMPACT_GROUPS.has(status.group);
     const key=memberKey(m);
     const {role,suffix}=names.get(key)!;
-    const valid=!!(m.aiSource===sourceOf(m)&&m.aiSummary);
-    const expired=valid&&!(Date.now()-Date.parse(m.aiUpdatedAt??"")<300000);
-    const aiText=valid?`AI：${expired?"摘要已过期 · ":""}${m.aiSummary}`:"";
+    const ai=serviceAi(aiMap[key]);
+    const aiTarget=serviceIdentity ? {project:profile.project,key,identity:serviceIdentity} : undefined;
     const open=memberOpen(key);
     const {server}=connection(m);
     const brief=session?.taskCode?live.briefs[briefKey(session.project,session.taskCode)]:undefined;
@@ -128,9 +130,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       :rosterNote?<span className="team-compact-card is-roster" title={m.currentTask}>{rosterNote}</span>:null;
     const details=<div className="team-card-expanded">
       {session&&<p className="team-live-detail">分支 {session.branch||"—"} · {session.commitHash||"—"}{session.lastLine&&<><br/>最后一行：{session.lastLine}</>}</p>}
-      {valid&&<p className="team-ai-summary">{`AI：${expired?"摘要已过期 · ":""}${m.aiSummary}`}</p>}
-      <p className="team-ai-note">已缓存 AI 摘要，仅供参考。更新时间：{valid&&m.aiUpdatedAt?new Date(m.aiUpdatedAt).toLocaleString():"暂无"}</p>
-      {valid&&m.aiEvidence&&<details><summary>上次成功采集的片段</summary><pre>{m.aiEvidence}</pre></details>}
+      <TeamServiceAi ai={ai} enabled={aiEnabled}/>
       {open&&renderMemberAdmin?.(m)}
       <Button size="sm" aria-label={`打开终端 · ${m.role}`} disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(m,server))}>打开终端</Button>
     </div>;
@@ -141,6 +141,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
           {identity}
           <span className="team-compact-state"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}</span>
           {lastCard}
+          <TeamServiceAi ai={ai} enabled={aiEnabled} target={aiTarget} compact/>
           {actions}
         </summary>
         {details}
@@ -150,15 +151,14 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       <summary className="team-card-head">
         <span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>
         {identity}
-        <span className="team-live-status"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}{valid&&session?.taskCode&&<span className="team-ai-chip" title={aiText}>AI</span>}</span>
+        <span className="team-live-status"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}</span>
         {actions}
         {session?.taskCode
           ?<div className="team-card-line2"><b>{session.taskCode}</b>{session.taskStatus&&<em>{live.statusNames[briefKey(session.project,session.taskStatus)]??session.taskStatus}</em>}{(brief?.brief||brief?.title)&&<span className="team-card-brief">{brief.brief||brief.title}</span>}</div>
           :!session&&m.currentTask?.trim()
             ?<div className="team-card-line2 is-roster" title={m.currentTask}><b>Lead 备注</b><span className="team-card-brief">{m.currentTask.trim().split(/\r?\n/)[0]}</span></div>
-            :aiText
-              ?<div className="team-card-line2 is-ai" title={aiText}><span className="team-ai-inline">{aiText}</span></div>
-              :null}
+            :null}
+        <TeamServiceAi ai={ai} enabled={aiEnabled} target={aiTarget} compact/>
         {(session?.commitTime||session?.model||session?.host||session?.dirty||(!session&&m.host))
           ?<div className="team-card-line3" title={[session?.commitHash,session?.branch].filter(Boolean).join(" · ")}>
             {session&&session.commitTime>0&&<span>提交 {ago(session.commitTime,now)}前 · {session.commitSubject}</span>}
@@ -180,7 +180,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
         {officeSnapshot&&<Button size="sm" variant={roomOpen?"secondary":"ghost"} aria-pressed={roomOpen} onClick={()=>setRoomOpen(open=>!open)}>房间</Button>}
         <Button size="icon-sm" variant="ghost" aria-label="刷新成员" title="刷新成员" disabled={!!disabled||busy} onClick={()=>onRefresh?.()}><RefreshCw size={15}/></Button>
         <Button size="sm" disabled={!!disabled||busy} onClick={()=>onAddMember?.()}><Plus size={14}/> 添加成员</Button>
-        <p>AI 摘要改由团队服务生成，即将上线</p>
+        <p>AI 摘要由团队服务生成</p>
         {more&&<details className="team-ai-options team-toolbar-details"><summary>更多</summary><div className="team-more-body">{more}</div></details>}
       </div>
     </div>

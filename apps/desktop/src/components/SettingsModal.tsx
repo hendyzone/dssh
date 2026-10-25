@@ -8,7 +8,6 @@ import { THEMES, getTheme, themeCategory } from "../themes";
 import SyncGuide from "./SyncGuide";
 import CollaborationSettings from "./CollaborationSettings";
 import TaskLookupSettings from "./TaskLookupSettings";
-import TeamAiSettings from "./TeamAiSettings";
 import type { CollaborationSession } from "../lib/collaboration";
 import {
   collectSyncUi,
@@ -51,7 +50,7 @@ export default function SettingsModal({
   onClose,
   onServersChanged,
 }: Props) {
-  const [section, setSection] = useState<"appearance" | "sync" | "collaboration" | "task-lookup" | "team-ai">("appearance");
+  const [section, setSection] = useState<"appearance" | "sync" | "collaboration" | "task-lookup">("appearance");
   const [themeFilter, setThemeFilter] = useState("all");
   const [themeQuery, setThemeQuery] = useState("");
   const visibleThemes = THEMES.filter(
@@ -155,12 +154,10 @@ export default function SettingsModal({
             <TabsTrigger value="sync">同步</TabsTrigger>
             <TabsTrigger value="collaboration">Agent 协作</TabsTrigger>
             <TabsTrigger value="task-lookup">任务查询</TabsTrigger>
-            <TabsTrigger value="team-ai">云端摘要</TabsTrigger>
           </TabsList>
           <div className="settings-scroll">
             <TabsContent value="collaboration"><CollaborationSettings sessions={collaborationSessions}/></TabsContent>
             <TabsContent value="task-lookup"><TaskLookupSettings sessions={collaborationSessions} servers={servers}/></TabsContent>
-            <TabsContent value="team-ai"><TeamAiSettings/></TabsContent>
             <TabsContent
               forceMount
               value="appearance"

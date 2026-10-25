@@ -244,7 +244,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
       <Button disabled={disabled} onClick={()=>void run(()=>writeMembers(confirmation.members,confirmation.patchKey))}>确认位置变更</Button>
       <Button disabled={busy} onClick={()=>setConfirmation(undefined)}>取消位置变更</Button>
     </section>}
-    <TeamDynamics key={serviceIdentity} sessionId={sessionId} profile={profile} navigation={navigation} members={members} serviceLive={team?.live??{}} board={board} live={live} onUpdated={async()=>{}}
+    <TeamDynamics key={serviceIdentity} sessionId={sessionId} profile={profile} navigation={navigation} members={members} serviceLive={team?.live??{}} serviceAi={team?.ai??{}} aiEnabled={service.status.ai_enabled} serviceIdentity={serviceIdentity} board={board} live={live} onUpdated={async()=>{}}
       pinnedKeys={[noteMember, editing?memberKey(editing):undefined].filter((key):key is string=>!!key)}
       officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
       onRefresh={()=>void run(async()=>{await refreshTeamService(profile.project);})} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>

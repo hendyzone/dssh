@@ -24,6 +24,16 @@ async fn http_ws_server() -> (
     mpsc::UnboundedReceiver<WebSocketStream<TcpStream>>,
     tokio::task::JoinHandle<()>,
 ) {
+    http_ws_server_with_headers("").await
+}
+async fn http_ws_server_with_headers(
+    response_headers: &'static str,
+) -> (
+    String,
+    mpsc::UnboundedReceiver<RequestRecord>,
+    mpsc::UnboundedReceiver<WebSocketStream<TcpStream>>,
+    tokio::task::JoinHandle<()>,
+) {
     let (listener, url) = listener().await;
     let (tx, rx) = mpsc::unbounded_channel();
     let (ws_tx, ws_rx) = mpsc::unbounded_channel();
@@ -101,7 +111,7 @@ async fn http_ws_server() -> (
                 .unwrap();
                 let (status, body) = response.await.unwrap();
                 let body = body.to_string();
-                let header = format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                let header = format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{response_headers}\r\n", body.len());
                 stream.write_all(header.as_bytes()).await.unwrap();
                 stream.write_all(body.as_bytes()).await.unwrap();
             });
@@ -330,6 +340,124 @@ async fn team_service_rest_stale_refresh_does_not_replace_newer_ws_snapshot() {
     request.reply.send((200, snapshot(8))).unwrap();
     old.await.unwrap().unwrap();
     assert_eq!(service.inspect(PROJECT).await.unwrap(), before);
+    service.shutdown().await;
+    server.abort();
+}
+
+#[tokio::test]
+async fn team_service_ai_refresh_statuses_retry_after_and_safe_outputs() {
+    for (status, code, header, expected_code, expected_retry) in [
+        (202, "ignored", "", "accepted", None),
+        (409, "no_live_session", "", "no_live_session", None),
+        (
+            429,
+            "rate_limited",
+            "Retry-After: 17\r\n",
+            "rate_limited",
+            Some(17),
+        ),
+        (
+            429,
+            "budget_exhausted",
+            "Retry-After: 86400\r\n",
+            "budget_exhausted",
+            Some(86400),
+        ),
+        (429, "rate_limited", "", "rate_limited", Some(30)),
+        (
+            429,
+            "rate_limited",
+            "Retry-After: invalid-secret\r\n",
+            "rate_limited",
+            Some(30),
+        ),
+        (503, "ai_disabled", "", "ai_disabled", None),
+    ] {
+        let directory = Directory::new();
+        let (url, mut requests, _ws, server) = http_ws_server_with_headers(header).await;
+        let (service, _events) = client(&directory, Arc::default(), rest_timing());
+        configure(&service, url, vec![PROJECT.into()]).await;
+        let task = tokio::spawn({
+            let service = service.clone();
+            async move {
+                service
+                    .ai_refresh(PROJECT.into(), "member/one@example.invalid".into())
+                    .await
+            }
+        });
+        let received = request(&mut requests).await;
+        assert_eq!(received.method, "POST");
+        assert_eq!(
+            received.path,
+            format!(
+                "/api/v1/projects/{PROJECT}/team/members/member%2Fone@example.invalid/ai/refresh"
+            )
+        );
+        assert_eq!(received.body, Value::Null);
+        received
+            .reply
+            .send((
+                status,
+                json!({"queued":true,"token":TOKEN,"debug":TOKEN,
+            "error":{"code":code,"message":TOKEN}}),
+            ))
+            .unwrap();
+        let output = serde_json::to_value(task.await.unwrap().unwrap()).unwrap();
+        let mut expected = json!({"status":status,"code":expected_code});
+        if let Some(retry) = expected_retry {
+            expected["retry_after"] = json!(retry);
+        }
+        assert_eq!(
+            output, expected,
+            "Only controlled result fields may cross IPC"
+        );
+        assert!(!output.to_string().contains(TOKEN));
+        assert!(!service.read().await.unwrap().to_string().contains(TOKEN));
+        assert!(
+            service.inspect(PROJECT).await.is_none(),
+            "Refresh must wait for a WS delta"
+        );
+        service.shutdown().await;
+        server.abort();
+    }
+}
+
+#[tokio::test]
+async fn team_service_capabilities_exposes_only_optional_boolean() {
+    let directory = Directory::new();
+    let (url, mut requests, server) = http_server().await;
+    let (service, _) = client(&directory, Arc::default(), rest_timing());
+    configure(&service, url, vec![PROJECT.into()]).await;
+    for enabled in [json!(false), json!(true), Value::Null, json!(TOKEN)] {
+        let task = tokio::spawn({
+            let service = service.clone();
+            async move { service.capabilities().await }
+        });
+        let received = request(&mut requests).await;
+        assert_eq!(received.method, "GET");
+        assert_eq!(received.path, "/api/v1/me");
+        received
+            .reply
+            .send((
+                200,
+                json!({"ai_enabled":enabled,"token":TOKEN,"label":TOKEN,"debug":TOKEN}),
+            ))
+            .unwrap();
+        let result = serde_json::to_value(task.await.unwrap().unwrap()).unwrap();
+        assert_eq!(result, json!({"ai_enabled":enabled.as_bool()}));
+        assert!(!result.to_string().contains(TOKEN));
+    }
+    let task = tokio::spawn({
+        let service = service.clone();
+        async move { service.ai_refresh(PROJECT.into(), "one".into()).await }
+    });
+    request(&mut requests)
+        .await
+        .reply
+        .send((401, json!({"error":{"code":TOKEN,"message":TOKEN}})))
+        .unwrap();
+    let error = serde_json::to_value(task.await.unwrap().unwrap_err()).unwrap();
+    assert_eq!(error, json!({"status":401,"code":"request_failed"}));
     service.shutdown().await;
     server.abort();
 }

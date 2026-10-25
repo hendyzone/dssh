@@ -1,3 +1,4 @@
+import {serviceAi, type ServiceAi} from "./serviceAi";
 import type { TeamLive } from "./teamService";
 import { serviceMemberAvatar } from "./teamServicePresentation";
 import { collaborationKey, type CollaborationProfile, type CollaborationSession } from "./collaboration";
@@ -47,6 +48,7 @@ export function buildOfficeMailDirectory(sources:OfficeTeamSource[],rosters:Reco
 
 export interface OfficeMember {
   id: string; name: string; isLead: boolean; status: TeamAvatarStatus;
+  ai?: ServiceAi; aiEnabled?: boolean | null;
   taskText: string; taskSource: "board" | "manual" | "none"; paletteKey: string;
 }
 export interface OfficeSource {
@@ -65,7 +67,7 @@ export interface OfficeTeamSource {
   server?: ServerEntry; backendId?: string; service?: boolean;
 }
 export interface OfficeRoster {
-  availability: OfficeSource["availability"]; notice: string; members: TeamMember[]; live?: Record<string,TeamLive>;
+  availability: OfficeSource["availability"]; notice: string; members: TeamMember[]; live?: Record<string,TeamLive>; ai?: Record<string,unknown>; aiEnabled?: boolean | null;
 }
 export interface OfficeBoard {
   snapshot?: SessionsSnapshot; briefs: Record<string, TaskBrief>; offline: boolean;
@@ -131,6 +133,7 @@ export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record
         isLead: /^lead\b/i.test(member.role.trim()) || boundLead,
         status: source.service ? serviceMemberAvatar(member, roster.live?.[memberKey(member)], context.boards?.[source.id]?.offline ? undefined : matchSession(member, context.boards?.[source.id]?.snapshot?.sessions??[])) : resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id]),
         paletteKey: officeKey(memberKey(member)),
+        ai: serviceAi(roster.ai?.[memberKey(member)]), aiEnabled: roster.aiEnabled,
       };
     }).sort((a, b) => Number(b.isLead) - Number(a.isLead)) : [];
     project.sources.push({ id: source.id, label: source.label, availability: roster.availability, notice: roster.notice, members });
