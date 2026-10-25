@@ -5,7 +5,7 @@
 <h1 align="center">dssh</h1>
 
 <p align="center">Remote terminals, files and dev tasks in one workspace.</p>
-<p align="center"><strong>v1.2.20</strong> · Tauri SSH client · Windows / macOS / Linux</p>
+<p align="center"><strong>v1.2.21</strong> · Tauri SSH client · Windows / macOS / Linux</p>
 <p align="center"><strong>English</strong> | <a href="README.zh-CN.md">简体中文</a></p>
 
 dssh is built for everyday remote development and server administration: connect to servers, keep long jobs running in tmux, edit remote files, review code diffs, and paste screenshot paths into remote tools such as Codex and Claude. For projects run by a team of coding agents, it also shows member status, task cards and model quota in the same window.
@@ -92,13 +92,15 @@ See [Workspace tools](docs/workspace-tools.md) and [Program status and tmux](doc
 
 Optional **Agent collaboration** (「Agent 协作」) is configured per tmux session + worktree under Settings → Agent collaboration (「设置 → Agent 协作」). It shows shared tasks and handoffs from a taskboard server you configure, and lets you search, preview, send and reply to messages through amail. It is off by default and credentials stay on the server. See [Agent collaboration](docs/agent-collaboration.md) (Chinese).
 
-**Team panel** (「团队」): open it from a tmux pane. The Lead registers member terminals and can open any member's tmux session across servers in one click ([details](docs/agent-collaboration.md#从-lead-跳转到成员终端)).
-Once a board address is configured, the "Activity" (「动态」) and "Members" (「成员」) pages share one live status: every minute dssh reads the board's read-only session collector (`GET /api/v1/agent-sessions`) from your taskboard server and shows, for each member, state and how long it has lasted, current card code / status / brief, last commit, uncommitted file count, model and host.
+**Team panel** (「团队」): configure a team service URL and project subscriptions in Settings → Agent collaboration. Members and their live state arrive through WebSocket independently of the current terminal's tmux session. Open a registered member's tmux session across servers in one click ([details](docs/agent-collaboration.md#从-lead-跳转到成员终端)).
+The "Activity" (「动态」) and "Members" (「成员」) pages use service status. Only members explicitly reported as `no_agent` fall back to the configured taskboard's read-only session collector (`GET /api/v1/agent-sessions`); taskboard data also provides current cards and recent commits.
+
+**v1.2.21:** The configurable team service supplies live rosters and status over WebSocket, with member editing and conflict handling. Reading and writing the Lead's local roster over SSH has been removed. Local AI summary generation is disabled; generation will move to the server.
 
 - Members are grouped by state: **Needs attention** (「需要处理」: stuck, a confirmation prompt, unsent input, or a session that is gone while its card is still in progress) is listed first and highlighted; **Waiting on Lead** (「等 Lead」: the worker is idle but its card is still in progress or blocked, longest wait first); **Delivered, awaiting review** (「已交付·待验收」: the card is in review); running; **Idle, ready for work** (「空闲·可派活」: no card in progress, blocked or in review). The Lead's own session has its own group.
 - A summary line at the top: needs attention N · waiting on Lead N (longest X) · in review N · ready for work N.
-- The Lead's hand-written "currently doing" note appears as "Lead note" (「Lead 备注」) with its age, flagged "may be stale" (「可能过期」) after 24 hours. If no board is configured or it is offline, both pages fall back to the hand-written state, labelled "(hand-written)" (「（手写）」) and "board offline" (「看板离线」), and retry every minute.
-- An on-demand AI summary of team activity is still available.
+- The Lead's hand-written "currently doing" note appears as "Lead note" (「Lead 备注」) with its age, flagged "may be stale" (「可能过期」) after 24 hours. Service connection status and cached data remain visible when offline.
+- Previously cached AI summaries remain read-only.
 
 **Task code lookup**: when an agent just says "T1090" or "AM-42", type the code at the top of the team panel to see its title, column, owner, brief, review verdict, blocker and prerequisites.
 With a project locked, the number alone is enough (`1090` becomes `T1090`); otherwise type "project code", or just the code for an exact cross-project match.

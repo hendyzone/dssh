@@ -5,7 +5,7 @@
 <h1 align="center">dssh</h1>
 
 <p align="center">把远程终端、文件和开发任务放在同一个工作区。</p>
-<p align="center"><strong>v1.2.20</strong> · Tauri SSH 客户端 · Windows / macOS / Linux</p>
+<p align="center"><strong>v1.2.21</strong> · Tauri SSH 客户端 · Windows / macOS / Linux</p>
 <p align="center"><a href="README.md">English</a> | <strong>简体中文</strong></p>
 
 dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中运行长任务、编辑远程文件、查看代码差异，也能给远程 Codex、Claude 等工具粘贴截图路径；带 Agent 团队的项目还能在同一个窗口里看成员状态、任务卡片和模型额度。
@@ -91,13 +91,15 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 可选的 **Agent 协作** 可在「设置 → Agent 协作」按 tmux 会话 + worktree 配置并开启，查看 taskboard 的共享任务与交接，
 通过 amail 查询、预览发送或回复消息。默认关闭，凭据留在远端。详见 [Agent 协作接入](docs/agent-collaboration.md)。
 
-**团队面板**：在 tmux 窗格里打开「团队」，Lead 可登记成员终端，跨服务器一键打开成员的 tmux 会话（[从 Lead 跳转到成员终端](docs/agent-collaboration.md#从-lead-跳转到成员终端)）。
-配置了看板地址后，「动态」和「成员」两页使用同一份实时状态：每分钟从你配置的 taskboard 服务读取只读的会话采集（`GET /api/v1/agent-sessions`），显示每个成员的状态与持续时长、当前卡片编号 / 状态 / 摘要、最近一次提交、未提交文件数、模型和主机。
+**团队面板**：在「设置 → Agent 协作」配置团队服务地址和订阅项目，通过 WebSocket 实时读取成员与状态，不依赖当前终端绑定 tmux 会话；仍可跨服务器一键打开已登记成员的 tmux 会话（[从 Lead 跳转到成员终端](docs/agent-collaboration.md#从-lead-跳转到成员终端)）。
+「动态」和「成员」两页使用服务状态；只有服务明确标记 `no_agent` 的成员才回退到已配置 taskboard 的只读会话采集（`GET /api/v1/agent-sessions`），看板同时提供当前卡片与最近提交等信息。
+
+**v1.2.21:** The configurable team service supplies live rosters and status over WebSocket, with member editing and conflict handling. Reading and writing the Lead's local roster over SSH has been removed. Local AI summary generation is disabled; generation will move to the server.
 
 - 成员按状态分组：**需要处理**（卡住、确认框、输入框残留、会话已离开但卡仍在进行中）排最前并高亮；**等 Lead**（worker 已空闲但卡仍在进行中 / 阻塞，按等待时长排序）；**已交付·待验收**（卡在待验收）；运行中；**空闲·可派活**（名下没有进行中 / 阻塞 / 待验收的卡）。Lead 自己的会话单列。
 - 面板顶部汇总：需要处理 N · 等 Lead N（最长 X）· 待验收 N · 可派活 N。
-- Lead 手写的「当前在做」显示为「Lead 备注」并标注更新时间，超过 24 小时标「可能过期」。看板未配置或离线时，两页回退到手写状态并标明「（手写）」「看板离线」，每分钟自动重试。
-- 需要时仍可开启 AI 自动总结团队动态。
+- Lead 手写的「当前在做」显示为「Lead 备注」并标注更新时间，超过 24 小时标「可能过期」。离线时继续显示服务连接状态与缓存数据。
+- 已有缓存 AI 摘要保留为只读。
 
 **任务编号查询**：agent 只说「T1090」「AM-42」时，在「团队」面板顶部输入编号即可看到标题、状态列、负责人、摘要、验收结论、阻塞原因和前置依赖；
 锁定项目后只需输编号（`1090` 自动补成 `T1090`），未锁定可输「项目 编号」或只输编号跨项目精确查找。
