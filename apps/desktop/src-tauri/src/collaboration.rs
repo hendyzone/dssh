@@ -76,11 +76,6 @@ impl Default for Profile {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Operation {
-    Members,
-    MemberSave,
-    MemberNotes,
-    MemberLease,
-    MemberRemove,
     Context,
     Inbox,
     InboxHeaders,
@@ -201,29 +196,7 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
             ))
         ),
     ];
-    if matches!(
-        request.operation,
-        Operation::MemberLease | Operation::Members | Operation::MemberSave | Operation::MemberNotes | Operation::MemberRemove
-    ) {
-        if request.body.len() > 64 * 1024 || request.body.contains('\0') {
-            return Err("成员位置超过限制".into());
-        }
-        let operation = match request.operation {
-            Operation::MemberLease => "memberLease",
-            Operation::Members => "members",
-            Operation::MemberSave => "memberSave",
-            Operation::MemberNotes => "memberNotes",
-            _ => "memberRemove",
-        };
-        args = vec![
-            literal(&profile.python_bin)?,
-            "-c".into(),
-            quote(include_str!("team_members.py")),
-            quote(&profile.project),
-            quote(operation),
-            quote(&request.body),
-        ];
-    } else if matches!(request.operation, Operation::Context) {
+    if matches!(request.operation, Operation::Context) {
         if !profile.taskboard_enabled {
             return Err("任务看板未开启".into());
         }
@@ -318,12 +291,7 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
                     quote(&request.task),
                 ]);
             }
-            Operation::Context
-            | Operation::Members
-            | Operation::MemberLease
-            | Operation::MemberNotes
-            | Operation::MemberSave
-            | Operation::MemberRemove => unreachable!(),
+            Operation::Context => unreachable!(),
         }
         if matches!(request.operation, Operation::Send | Operation::Reply) {
             if ![
@@ -355,10 +323,7 @@ fn build_command(profile: &Profile, request: &Request, _session: &str) -> Result
             }
         }
     }
-    let mailbox_guard = if matches!(
-        request.operation,
-        Operation::Context | Operation::MemberLease | Operation::Members | Operation::MemberSave | Operation::MemberNotes | Operation::MemberRemove
-    ) {
+    let mailbox_guard = if matches!(request.operation, Operation::Context) {
         String::new()
     } else {
         format!("[ -f {} ] || {{ echo 'this tmux/worktree mailbox is not provisioned' >&2; exit 1; }}; ", quote(&format!("{mail_home}/.agent-mail/env")))
@@ -531,18 +496,20 @@ mod tests {
         }
     }
     #[test]
-    fn member_roster_requires_binding_but_not_a_mailbox() {
-        let mut p = profile();
-        p.mail_enabled = false;
-        let command = build_command(&p, &request(Operation::Members), "ssh").unwrap();
-        assert!(command.contains("worktree changed"));
-        assert!(command.contains("'python3' '-c'") || command.contains("'python3' -c"));
-        assert!(!command.contains("mailbox is not provisioned"));
-        let mut save = request(Operation::MemberSave);
-        save.body = "x".repeat(64 * 1024 + 1);
-        assert!(build_command(&p, &save, "ssh").is_err());
-        p.enabled = false;
-        assert!(build_command(&p, &request(Operation::Members), "ssh").is_err());
+    fn legacy_roster_operations_are_not_deserializable() {
+        for operation in [
+            "members",
+            "memberSave",
+            "memberBatch",
+            "memberNotes",
+            "memberRemove",
+            "memberLease",
+        ] {
+            assert!(
+                serde_json::from_value::<Request>(serde_json::json!({"operation": operation}))
+                    .is_err()
+            );
+        }
     }
     #[test]
     fn member_attachment_guards_incarnation_and_worktree_before_attach() {

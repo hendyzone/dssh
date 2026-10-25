@@ -71,7 +71,7 @@ it("renders a service snapshot without a Lead tmux binding or SSH roster request
   expect(await screen.findByRole("button", { name: "打开 · worker-a · worker-a" })).toBeTruthy();
   expect(state().snapshots.demo.seq).toBe(1);
   expect(bridge.invoke.mock.calls.every(([name]) => String(name).startsWith("team_service_"))).toBe(true);
-  expect(screen.getByText("编辑将在后续版本开放")).toBeTruthy();
+  expect(screen.getByText("AI 摘要改由团队服务生成，即将上线")).toBeTruthy();
 });
 
 it("applies contiguous deltas and ignores duplicate or older updates", async () => {

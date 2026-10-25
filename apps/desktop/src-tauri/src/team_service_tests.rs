@@ -769,3 +769,6 @@ async fn team_service_duplicate_delta_does_not_resubscribe_or_change_roster() {
 async fn team_service_expired_delta_does_not_resubscribe_or_change_roster() {
     assert_old_delta_is_silent(4).await;
 }
+
+#[path = "team_service_rest_tests.rs"]
+mod rest_tests;

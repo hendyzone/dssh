@@ -286,7 +286,8 @@ it("renders live status, card brief, last commit, dirty files and model without 
   expect(third.classList.contains("team-compact-row")).toBe(true);
   expect(screen.queryByText("无当前卡")).toBeNull();
   // AI summary stays on demand.
-  expect(screen.getByRole("button", { name: "总结 · host-a-pi" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "总结 · host-a-pi" })).toBeNull();
+  expect(screen.getByText("AI 摘要改由团队服务生成，即将上线")).toBeTruthy();
   expect(mocks.invoke.mock.calls.every(([command]) => command === "taskboard_get")).toBe(true);
   expect(rows()).toHaveLength(3);
   expect(state.paths.some(p => p.includes("/other/"))).toBe(false);
@@ -300,7 +301,7 @@ it("shows 「看板离线」 instead of an error when the board is unreachable, 
   expect(screen.queryByRole("alert")).toBeNull();
   // Falls back to the hand-written state instead of a blank 「unknown」.
   expect(screen.getAllByText("待确认（手写）")).toHaveLength(3);
-  // Roster still shows, unranked, so 「打开」 and 「总结」 keep working.
+  // Roster still shows, unranked, and terminal navigation stays available.
   expect(rows().map(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent)).toEqual(["host-a-codex", "host-c-agy", "host-a-pi"]);
   state.offline = false;
   await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });

@@ -13,6 +13,7 @@ export interface TeamMember {
   workdir: string;
   tmux: NonNullable<SessionInfo["tmux"]>;
   updatedAt?: string;
+  rev?: number;
   responsibilities?: string;
   quota?: string;
   currentTask?: string;
@@ -63,6 +64,7 @@ export function parseMember(value: unknown, project: string): TeamMember {
   }
   return { ...info, ...ai, ...(validId ? {id:m.id} : {}), project, email:m.email, role:m.role, host:m.host, port:m.port, username:m.username, workdir:m.workdir,
     tmux:{id:m.tmux.id, created:m.tmux.created, name:m.tmux.name},
+    ...(Number.isSafeInteger(m.rev) && Number(m.rev) > 0 ? {rev:m.rev} : {}),
     ...(validText(m.updatedAt, 80) ? {updatedAt:m.updatedAt} : {}) };
 }
 

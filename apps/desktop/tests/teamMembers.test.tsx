@@ -14,7 +14,7 @@ import type { AgentSession, LiveSessions } from "../src/lib/agentSessions";
 import type { BoardSource } from "../src/lib/taskLookup";
 
 const serviceFixture=vi.hoisted(()=>({current:{} as any}));
-vi.mock("../src/lib/teamService",()=>({useTeamService:()=>serviceFixture.current}));
+vi.mock("../src/lib/teamService",()=>({useTeamService:()=>serviceFixture.current,refreshTeamService:vi.fn()}));
 vi.mock("@tauri-apps/api/core", () => ({invoke:vi.fn()}));
 const member:TeamMember = {project:"demo", email:"worker@example.test", role:"host-b", host:"remote", port:22, username:"dev", workdir:"/repo", tmux:{id:"$2", created:123, name:"worker"}};
 const server:ServerEntry = {id:"local-device-id", name:"开发机", host:"remote", port:22, username:"dev", authMethod:"password"};
@@ -36,7 +36,7 @@ function serviceRoster(members:TeamMember[]) {
 }
 beforeEach(() => { serviceRoster([member]); localStorage.clear(); vi.mocked(invoke).mockReset().mockResolvedValue(JSON.stringify([member])); });
 
-it("renders the service roster and keeps navigation while all edits are disabled",async()=>{
+it("renders the service roster and keeps navigation with service editing available",async()=>{
   const onOpen=vi.fn().mockResolvedValue(undefined);
   render(<TeamMembers sessionId="" profile={profile} navigation={{server,servers:[server],onOpen}}/>);
   fireEvent.click(await screen.findByRole("button",{name:"打开 · host-b · worker"}));
@@ -44,9 +44,9 @@ it("renders the service roster and keeps navigation while all edits are disabled
   await expand(await screen.findByText("待确认（Lead 手写）"));
   await expand(screen.getByRole("button",{name:"打开 · host-b · worker"}));
   for(const name of ["编辑备注 · host-b","更新终端","从团队移除"])
-    expect((screen.getByRole("button",{name}) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole("button",{name:"添加成员"}) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByText("编辑将在后续版本开放")).toBeTruthy();
+    expect((screen.getByRole("button",{name}) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button",{name:"添加成员"}) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText("AI 摘要改由团队服务生成，即将上线")).toBeTruthy();
   expect(invoke).not.toHaveBeenCalled();
 });
 it.each([undefined,profile])("opens subscribed teams without a Lead binding (%s)",async binding=>{
@@ -65,19 +65,20 @@ it("guides an unconfigured team to settings without remote discovery",()=>{
 it("retains the portable Lead guide helper without making remote writes",()=>{
   const p={...profile,workdir:"/lead's repo",tokenFile:"/private/token"};
   const prompt=teamLeadPrompt(p,server);
-  expect(prompt).toContain("memberBatch @.dssh/team/pending-members.json");
-  expect(prompt).toContain("fcntl.flock");
+  expect(prompt).toContain("dssh-team-maintainer skill");
+  expect(prompt).toContain("LEAD_TEAM_URL");
+  expect(prompt).not.toContain("fcntl.flock");
   expect(prompt).not.toContain("/private/token");
   expect(invoke).not.toHaveBeenCalled();
 });
-it("shows cached member notes without exposing the retired notes editor",async()=>{
+it("shows cached member notes with a service notes editor",async()=>{
   serviceRoster([{...member,responsibilities:"Backend",currentTask:"Task",notes:"Ready for review"}]);
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
   await expand(await screen.findByText("待确认（Lead 手写）"));
   await expand(screen.getByRole("button",{name:"打开 · host-b · worker"}));
   expect(screen.getByLabelText("成员摘要").textContent).toContain("Task");
   fireEvent.click(screen.getByRole("button",{name:"编辑备注 · host-b"}));
-  expect(screen.queryByRole("button",{name:"保存备注"})).toBeNull();
+  expect(screen.getByRole("button",{name:"保存备注"})).toBeTruthy();
   expect(invoke).not.toHaveBeenCalled();
 });
 it("portable positions strip secrets and local IDs, reject foreign projects and reused identities", () => {

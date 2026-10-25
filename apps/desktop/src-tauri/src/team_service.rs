@@ -1,4 +1,4 @@
-//! Authenticated, read-only team updates. Credentials never enter UI payloads.
+//! Authenticated team updates and native REST writes. Credentials never enter UI payloads.
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Map, Value};
 use std::{
@@ -17,6 +17,9 @@ use tokio_tungstenite::{
         client::IntoClientRequest, http::HeaderValue, protocol::WebSocketConfig, Message,
     },
 };
+
+#[path = "team_service_rest.rs"]
+pub(crate) mod rest;
 
 const SUBPROTOCOL: &str = "dssh-team.v1";
 const CACHE_LIMIT: u64 = 16 * 1024 * 1024;
@@ -173,6 +176,17 @@ enum Command {
     Subscribe(Vec<String>, oneshot::Sender<Result<(), String>>),
     Shutdown(oneshot::Sender<()>),
     Read(oneshot::Sender<Value>),
+    RestContext(
+        String,
+        oneshot::Sender<Result<rest::RestContext, rest::WriteError>>,
+    ),
+    Refresh(
+        u64,
+        String,
+        Option<Value>,
+        Value,
+        oneshot::Sender<Result<(), rest::WriteError>>,
+    ),
     #[cfg(test)]
     Inspect(String, oneshot::Sender<Option<Value>>),
 }
@@ -192,6 +206,7 @@ struct Actor {
     status: Arc<Mutex<Value>>,
     timing: Timing,
     configured: bool,
+    generation: u64,
     halted: bool,
 }
 impl TeamService {
@@ -216,6 +231,7 @@ impl TeamService {
             status: status.clone(),
             timing,
             configured: false,
+            generation: 0,
             halted: false,
         };
         tauri::async_runtime::spawn(actor.run(rx));
@@ -360,6 +376,7 @@ impl Actor {
                     let _ = reply.send(Err("Cannot save team service credential".into()));
                     return CommandEffect::Keep;
                 }
+                self.generation = self.generation.wrapping_add(1);
                 self.endpoint = Some(endpoint);
                 self.configured = true;
                 self.halted = false;
@@ -375,6 +392,7 @@ impl Actor {
                     let _ = reply.send(Ok(()));
                     return CommandEffect::Keep;
                 }
+                self.generation = self.generation.wrapping_add(1);
                 self.projects = projects;
                 self.lseq.clear();
                 self.snapshots
@@ -390,6 +408,14 @@ impl Actor {
             #[cfg(test)]
             Some(Command::Inspect(project, reply)) => {
                 let _ = reply.send(self.snapshots.get(&project).cloned());
+                return CommandEffect::Keep;
+            }
+            Some(Command::RestContext(project, reply)) => {
+                let _ = reply.send(self.rest_context(&project));
+                return CommandEffect::Keep;
+            }
+            Some(Command::Refresh(generation, project, initial, value, reply)) => {
+                let _ = reply.send(self.refresh_snapshot(generation, &project, initial, value));
                 return CommandEffect::Keep;
             }
             Some(Command::Read(reply)) => {

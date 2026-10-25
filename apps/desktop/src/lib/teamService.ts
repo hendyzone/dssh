@@ -308,3 +308,14 @@ export async function subscribeTeamService(projects: string[]): Promise<void> {
   pulling = undefined;
   await pull();
 }
+
+/** Refresh conflicts from REST through Rust; write responses never mutate this store. */
+export async function refreshTeamService(project: string): Promise<TeamServiceProject | undefined> {
+  const generation = identityGeneration;
+  await invoke("team_service_refresh", {project});
+  if (generation !== identityGeneration) throw new Error("团队服务已切换");
+  if (pulling) await pulling;
+  await pull();
+  if (generation !== identityGeneration) throw new Error("团队服务已切换");
+  return current.snapshots[project];
+}

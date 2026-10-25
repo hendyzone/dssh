@@ -114,7 +114,7 @@ export function useCollaboration() {
   }, []);
   return profiles;
 }
-export type CollaborationOperation = "context" | "inbox" | "inboxHeaders" | "read" | "send" | "reply" | "members" | "memberSave" | "memberRemove" | "memberNotes" | "memberLease";
+export type CollaborationOperation = "context" | "inbox" | "inboxHeaders" | "read" | "send" | "reply";
 export interface CollaborationRequest {
   operation: CollaborationOperation;
   task?: string; uid?: string; to?: string; kind?: string; body?: string; preview?: boolean;

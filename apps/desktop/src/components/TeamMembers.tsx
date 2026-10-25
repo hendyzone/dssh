@@ -1,8 +1,9 @@
-import { useTeamService } from "../lib/teamService";
+import { invoke } from "@tauri-apps/api/core";
+import { refreshTeamService, useTeamService } from "../lib/teamService";
 import TeamServiceBanner from "./TeamServiceBanner";
 import { useEffect, useRef, useState } from "react";
 import { Users } from "lucide-react";
-import { collaborationRequest, resolveWorktree, type CollaborationProfile, type CollaborationSession } from "../lib/collaboration";
+import { resolveWorktree, type CollaborationProfile, type CollaborationSession } from "../lib/collaboration";
 import { loadTeamMappings, matchingServers, memberKey, memberMappingKey, memberNoteFields, parseMember, TEAM_MAPPING_KEY, type MemberNoteField, type TeamMember } from "../lib/teamMembers";
 import { teamLeadPrompt } from "../lib/teamLeadPrompt";
 import type { ServerEntry } from "../types";
@@ -11,7 +12,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import TeamMemberNotes from "./TeamMemberNotes";
 import TeamDynamics from "./TeamDynamics";
-import { isLeadMember, liveSnapshot, useAgentSessions } from "../lib/agentSessions";
+import { liveSnapshot, useAgentSessions } from "../lib/agentSessions";
 import type { OfficeSnapshot } from "../lib/teamOffice";
 
 export interface TeamNavigation {
@@ -50,8 +51,9 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
   const [noteMember, setNoteMember] = useState<string>();
   const addRef = useRef<HTMLDivElement>(null);
 
+  const [confirmation, setConfirmation] = useState<{members: TeamMember[]; patchKey?: string}>();
   const [noteDraft, setNoteDraft] = useState<Partial<Record<MemberNoteField,string>>>({});
-  const leadPrompt = teamLeadPrompt(profile,navigation.server);
+  const leadPrompt = teamLeadPrompt(profile,navigation.server,service.url);
   // One collector poll feeds the merged list, so status and details read the same snapshot.
   const live = useAgentSessions(board, members);
   const snapshot = liveSnapshot(live);
@@ -63,21 +65,69 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(""); setNotice("");
     const version = generation.current;
-    try { await action(()=>version===generation.current); } catch (e) { if (version === generation.current) setError(String(e)); }
+    try { await action(()=>version===generation.current); } catch (e) {
+      if (version !== generation.current) return;
+      const failure = e as {status?: number; code?: string};
+      if (failure?.status === 412 && ["rev_mismatch", "if_match_required"].includes(failure.code ?? "")) {
+        setConfirmation(undefined);
+        try {
+          const fresh = await refreshTeamService(profile.project);
+          if (version !== generation.current) return;
+          if (!fresh) throw new Error("团队快照不可用");
+          const list = fresh.members;
+          const freshNote = list.find(member => memberKey(member) === noteMember);
+          if (freshNote) setNoteDraft(noteValues(freshNote));
+          else setNoteMember(undefined);
+          const freshEdit = editing && list.find(member => memberKey(member) === memberKey(editing));
+          setEditing(freshEdit); setRole(freshEdit?.role ?? ""); setSelected("");
+          if (position) {
+            try {
+              const old = JSON.parse(position);
+              const inputs = Array.isArray(old) ? old : [old];
+              const refreshed = inputs.map(input => list.find(member => memberKey(member) === memberKey(input))).filter(Boolean) as TeamMember[];
+              setPosition(JSON.stringify((Array.isArray(old) ? refreshed.map(writableMember) : refreshed[0] && writableMember(refreshed[0])) ?? {}, null, 2));
+            } catch { setPosition(""); }
+          }
+          setError("名单已被他人修改，已刷新，请确认后重试");
+        } catch { if (version === generation.current) setError("名单已被他人修改，刷新失败，请刷新成员后重试"); }
+      } else if (failure?.status === 409 && failure.code === "tmux_mismatch") {
+        setError("会话已更替，请刷新成员并核对当前会话后重试");
+      } else setError("团队服务操作失败，请检查连接、权限及输入后重试");
+    }
     finally { if (version === generation.current) { pending.current = false; setBusy(false); } }
   };
-  const request = async (operation: "memberSave" | "memberRemove" | "memberNotes", body = "") => {
+  const noteValues = (member: TeamMember) => Object.fromEntries(
+    Object.keys(memberNoteFields).filter(field => field !== "quota").map(field => [field, member[field as MemberNoteField] ?? ""]));
+  const writableMember = (member: TeamMember) => {
+    const {aiSummary, aiStatus, aiUpdatedAt, aiDigest, aiSource, aiEvidence, updatedAt, ...input} = member;
+    return input;
+  };
+  const hasPositionChange = (member: TeamMember) => {
+    const old = members.find(item => memberKey(item) === memberKey(member));
+    return old && ["host", "port", "username", "workdir", "tmux"].some(field =>
+      JSON.stringify(old[field as keyof TeamMember]) !== JSON.stringify(member[field as keyof TeamMember]));
+  };
+  const writeMembers = async (list: TeamMember[], patchKey?: string) => {
     const version = generation.current;
-    const raw: unknown = JSON.parse(await collaborationRequest(sessionId, profile, {operation, body}));
-    if (!Array.isArray(raw) || raw.length > 100) throw new Error("成员列表格式无效");
-    raw.map(m => parseMember(m, profile.project));
+    if (patchKey) {
+      const member = list[0];
+      await invoke("team_service_member_patch", {project: profile.project, key: patchKey,
+        patch: {role: member.role, host: member.host, port: member.port, username: member.username, workdir: member.workdir, tmux: member.tmux}, rev: member.rev ?? null});
+    } else await invoke("team_service_members_put", {project: profile.project, members: list.map(writableMember)});
     if (version !== generation.current) return;
+    setConfirmation(undefined); setAdding(false); setEditing(undefined);
+    setNotice("写入已接受，等待团队服务同步。");
+  };
+  const prepareMembers = async (list: TeamMember[], patchKey?: string) => {
+    list = list.map(member => ({...member, rev:member.rev ?? members.find(old => memberKey(old) === memberKey(member))?.rev}));
+    if (list.some(hasPositionChange)) { setConfirmation({members: list, patchKey}); return; }
+    await writeMembers(list, patchKey);
   };
   useEffect(() => {
-    setMapping(loadTeamMappings()); setPosition(""); setError(""); setNotice(""); setAdding(false); setBusy(false);setNoteMember(undefined);
+    setMapping(loadTeamMappings()); setPosition(""); setError(""); setNotice(""); setAdding(false); setBusy(false);setNoteMember(undefined);setConfirmation(undefined);
     return () => { generation.current++; pending.current = false; };
   }, [serviceIdentity]);
-  const disabled = true; // Service roster editing is deliberately unavailable in this release.
+  const disabled = busy || !service.url || service.status.state !== "online";
   // The merged list also renders the Lead; the empty state is about Workers only.
   const workers = members.filter(m=>!/^lead\b/i.test(m.role.trim()));
   const startAdd = (member?:TeamMember) => {setAdding(true);setEditing(member);setRole(member?.role??"");setSelected("");setError("");};
@@ -114,8 +164,8 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
         <div className="team-notes-editor">
           {(Object.entries(memberNoteFields).filter(([key])=>key!=="quota") as [MemberNoteField,string][]).map(([field,label])=><label className="collaboration-field" key={field}>{label}<textarea maxLength={2000} disabled={busy} value={noteDraft[field]??""} onChange={e=>setNoteDraft(old=>({...old,[field]:e.target.value}))}/></label>)}
           <div className="collaboration-actions"><Button size="sm" disabled={disabled} onClick={()=>void run(async current=>{
-            await request("memberNotes",JSON.stringify({project:profile.project,id:member.id,email:member.email,...noteDraft}));
-            if(current()){setNoteMember(undefined);setNotice("成员备注已保存。");}
+            await invoke("team_service_member_patch", {project:profile.project, key, patch:noteDraft, rev:null});
+            if(current()){setNoteMember(undefined);setNotice("写入已接受，等待团队服务同步。");}
           })}>保存备注</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>setNoteMember(undefined)}>取消备注编辑</Button></div>
         </div>
       </div>}
@@ -124,9 +174,12 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
         <p>信息更新：{member.updatedAt?new Date(member.updatedAt).toLocaleString():"未知"}（不代表在线）</p>
         {server?connectionSelect(member,server):<><p>为这位成员选择本机的 SSH 连接。</p>{connectionSelect(member)}{!navigation.servers.length&&<p>请先在左侧添加服务器。</p>}</>}
         <div className="collaboration-actions"><Button size="sm" variant="ghost" disabled={disabled} aria-label={`编辑备注 · ${member.role}`} onClick={()=>{
-          setNoteMember(key);setNoteDraft(Object.fromEntries(Object.keys(memberNoteFields).filter(field=>field!=="quota").map(field=>[field,member[field as MemberNoteField]??""])));
+          setNoteMember(key);setNoteDraft(noteValues(member));
         }}>编辑备注</Button><Button size="sm" variant="ghost" disabled={disabled} onClick={()=>startAdd(member)}>更新终端</Button>
-          <Button size="sm" variant="ghost" disabled={disabled} onClick={()=>void run(()=>request("memberRemove",key))}>从团队移除</Button></div>
+          <Button size="sm" variant="ghost" disabled={disabled} onClick={()=>void run(async current=>{
+            await invoke("team_service_member_delete", {project:profile.project,key,tmux:`${member.tmux.id}:${member.tmux.created}`,rev:member.rev??null});
+            if(current())setNotice("删除已接受，等待团队服务同步。");
+          })}>从团队移除</Button></div>
       </div>
     </>;
   };
@@ -137,15 +190,19 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
     }}><option value="">选择已打开的终端</option>{choices.map(s=><option key={s.pane.id} value={s.pane.id}>{s.pane.tmux?.name} · {s.pane.server.name}</option>)}</select></label>
     {!choices.length && <p>先从左侧连接成员的服务器，在 tmux 列表打开它的会话，然后回到这里添加。</p>}
     <label className="collaboration-field">成员名称<Input value={role} disabled={busy} onChange={e=>setRole(e.target.value)} placeholder="例如 后端开发"/></label>
-    <div className="collaboration-actions"><Button size="sm" disabled={disabled || !candidate || !role.trim()} onClick={()=>void run(async current=>{
+    <div className="collaboration-actions"><Button size="sm" disabled={disabled || (!candidate && !editing) || !role.trim()} onClick={()=>void run(async current=>{
+      if (!candidate && editing) {
+        await invoke("team_service_member_patch", {project:profile.project,key:memberKey(editing),patch:{role:role.trim()},rev:null});
+        if(current()){setAdding(false);setEditing(undefined);setNotice("写入已接受，等待团队服务同步。");}
+        return;
+      }
       if(!candidate?.pane.tmux)return;
       const {pane,backendId}=candidate;
       const workdir=await resolveWorktree(backendId,pane.tmux!);
       if(!current())return;
       const existing=editing??members.find(m=>m.host===pane.server.host && m.port===pane.server.port && m.username===pane.server.username && m.tmux.id===pane.tmux!.id && m.tmux.created===pane.tmux!.created);
-      const member=parseMember({id:existing?.id??`member-${crypto.randomUUID()}`,email:existing?.email??"",role:role.trim(),project:profile.project,host:pane.server.host,port:pane.server.port,username:pane.server.username,workdir,tmux:pane.tmux},profile.project);
-      await request("memberSave",JSON.stringify(member));
-      if(current()){setAdding(false);setEditing(undefined);setNotice(`${member.role} 已加入团队，可以直接打开终端。`);}
+      const member=parseMember({rev:existing?.rev,id:existing?.id??`member-${crypto.randomUUID()}`,email:existing?.email??"",role:role.trim(),project:profile.project,host:pane.server.host,port:pane.server.port,username:pane.server.username,workdir,tmux:pane.tmux},profile.project);
+      if(current()) await prepareMembers([member], editing ? memberKey(editing) : undefined);
     })}>{editing?"更新终端":"加入团队"}</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>setAdding(false)}>取消</Button></div>
     <p>服务器和工作目录会自动读取，不需要配置邮箱。</p>
   </div> : undefined;
@@ -153,15 +210,20 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
     <Button size="sm" disabled={busy} onClick={copyLeadPrompt}>复制给 Lead 的提示词</Button>
     <details className="team-lead-guide"><summary>查看提示词</summary><p>贴给 Lead 批量登记成员和维护备注，完成后刷新成员。</p><textarea aria-label="给 Lead 的团队管理提示词" readOnly value={leadPrompt}/></details>
     <details><summary>高级：导入或分享成员位置</summary>
-      <p className="team-footnote">团队保存在 Lead 工作区，换电脑后连接同一工作区即可继续使用。</p>
+      <p className="team-footnote">团队保存在团队服务，换电脑后配置同一服务与项目即可继续使用。</p>
       <p>需要从其他设备转移成员位置时使用。</p>
-      <label className="collaboration-field">成员位置 JSON<textarea value={position} onChange={e=>setPosition(e.target.value)} placeholder="粘贴已有的成员位置"/></label>
+      <label className="collaboration-field">成员位置 JSON（单个或批量数组）<textarea value={position} onChange={e=>setPosition(e.target.value)} placeholder="粘贴已有的成员位置"/></label>
       <div className="collaboration-actions"><Button size="sm" disabled={disabled||!position} onClick={()=>void run(async current=>{
-        await request("memberSave",JSON.stringify(parseMember(JSON.parse(position),profile.project)));
-        if(current())setNotice("成员位置已保存。");
+        const raw = JSON.parse(position);
+        const input = Array.isArray(raw) ? raw : [raw];
+        if (!input.length || input.length > 100) throw new Error("每批须为 1–100 人");
+        const list = input.map(value => parseMember(value, profile.project));
+        if(current()) await prepareMembers(list);
       })}>登记到当前团队</Button>
       <Button size="sm" disabled={busy||!position} onClick={()=>void run(async current=>{
-        await navigator.clipboard.writeText(JSON.stringify(parseMember(JSON.parse(position),profile.project),null,2));
+        const raw = JSON.parse(position);
+        const parsed = Array.isArray(raw) ? raw.map(value => writableMember(parseMember(value,profile.project))) : writableMember(parseMember(raw,profile.project));
+        await navigator.clipboard.writeText(JSON.stringify(parsed,null,2));
         if(current())setNotice("成员位置已复制。");
       })}>复制位置</Button>
       <Button size="sm" variant="ghost" disabled={disabled} onClick={()=>void run(async()=>{
@@ -176,11 +238,16 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
     {busy && <p role="status">正在处理…</p>}
     <TeamServiceBanner project={team} status={service.status}/>
     {!service.url && <p role="status">请在协作设置中配置团队服务。</p>}
-    <p>编辑将在后续版本开放</p>
+    {confirmation && <section role="dialog" aria-label="确认成员位置变更">
+      <p>将修改以下成员的位置。请核对服务器、目录与 tmux 身份后再次确认。</p>
+      <pre>{JSON.stringify(confirmation.members.map(({role,host,port,username,workdir,tmux})=>({role,host,port,username,workdir,tmux})),null,2)}</pre>
+      <Button disabled={disabled} onClick={()=>void run(()=>writeMembers(confirmation.members,confirmation.patchKey))}>确认位置变更</Button>
+      <Button disabled={busy} onClick={()=>setConfirmation(undefined)}>取消位置变更</Button>
+    </section>}
     <TeamDynamics key={serviceIdentity} sessionId={sessionId} profile={profile} navigation={navigation} members={members} serviceLive={team?.live??{}} board={board} live={live} onUpdated={async()=>{}}
       pinnedKeys={[noteMember, editing?memberKey(editing):undefined].filter((key):key is string=>!!key)}
       officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
-      onRefresh={()=>{}} onAddMember={()=>startAdd()} disabled={disabled} more={service.url ? undefined : more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>
+      onRefresh={()=>void run(async()=>{await refreshTeamService(profile.project);})} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>
     {!workers.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>订阅项目的成员将由团队服务同步。</p></div>}
   </section>;
 }
