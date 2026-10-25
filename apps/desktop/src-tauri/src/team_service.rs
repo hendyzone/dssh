@@ -117,6 +117,13 @@ fn timestamp() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
+fn saved_at() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u64::MAX as u128) as u64
+}
 fn atomic_json(path: &Path, value: &Value) -> Result<(), String> {
     let bytes = serde_json::to_vec(value).map_err(|_| "Cannot encode team cache")?;
     if bytes.len() as u64 > CACHE_LIMIT {
@@ -165,6 +172,7 @@ enum Command {
     Configure(String, String, oneshot::Sender<Result<Value, String>>),
     Subscribe(Vec<String>, oneshot::Sender<Result<(), String>>),
     Shutdown(oneshot::Sender<()>),
+    Read(oneshot::Sender<Value>),
     #[cfg(test)]
     Inspect(String, oneshot::Sender<Option<Value>>),
 }
@@ -251,6 +259,14 @@ impl TeamService {
             .ok()?;
         rx.await.ok()?
     }
+    pub async fn read(&self) -> Result<Value, String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(Command::Read(tx))
+            .await
+            .map_err(|_| "Team service stopped")?;
+        rx.await.map_err(|_| "Team service stopped".into())
+    }
     pub async fn shutdown(&self) {
         let (tx, rx) = oneshot::channel();
         if self.tx.send(Command::Shutdown(tx)).await.is_ok() {
@@ -287,7 +303,7 @@ impl Actor {
                 (
                     project.clone(),
                     json!({"project":project,"seq":snapshot["seq"],
-                "members":snapshot["members"],"ai":snapshot["ai"]}),
+                "members":snapshot["members"],"ai":snapshot["ai"],"savedAt":snapshot["savedAt"]}),
                 )
             })
             .collect();
@@ -327,7 +343,7 @@ impl Actor {
                         {
                             let value = json!({"type":"snapshot","project":project,"seq":snapshot["seq"],
                                 "lseq":0,"members":snapshot["members"],"ai":snapshot["ai"],
-                                "live":{},"machines":{},"offline":true});
+                                "live":{},"machines":{},"offline":true,"savedAt":snapshot.get("savedAt").and_then(Value::as_u64)});
                             self.snapshots.insert(project.clone(), value.clone());
                             self.sink.emit("team://snapshot", value);
                         }
@@ -374,6 +390,16 @@ impl Actor {
             #[cfg(test)]
             Some(Command::Inspect(project, reply)) => {
                 let _ = reply.send(self.snapshots.get(&project).cloned());
+                return CommandEffect::Keep;
+            }
+            Some(Command::Read(reply)) => {
+                let status = self
+                    .status
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .clone();
+                let _ = reply.send(json!({"url":self.endpoint,"projects":self.projects,
+                    "status":status,"snapshots":self.snapshots}));
                 return CommandEffect::Keep;
             }
             Some(Command::Shutdown(reply)) => {
@@ -467,7 +493,7 @@ impl Actor {
                     return self.subscription(Some(&project), true);
                 }
                 let snapshot = json!({"type":"snapshot","project":project,"seq":seq,"lseq":lseq,
-                    "members":members,"ai":ai,"live":live,"machines":machines});
+                    "members":members,"ai":ai,"live":live,"machines":machines,"savedAt":saved_at()});
                 self.snapshots.insert(project.clone(), snapshot.clone());
                 self.lseq.insert(project, lseq);
                 if self.cache().is_err() {
@@ -533,13 +559,16 @@ impl Actor {
                     }
                 }
                 next["seq"] = json!(seq);
+                let at = saved_at();
+                next["savedAt"] = json!(at);
+                next.as_object_mut().unwrap().remove("offline");
                 self.snapshots.insert(project, next);
                 if self.cache().is_err() {
                     self.error("cache_write_failed");
                 }
                 self.sink.emit(
                     "team://delta",
-                    json!({"type":"delta","project":value["project"],"seq":seq,"ops":ops}),
+                    json!({"type":"delta","project":value["project"],"seq":seq,"ops":ops,"savedAt":at}),
                 );
             }
             "live" => {
@@ -788,6 +817,10 @@ pub async fn team_service_subscribe(
     projects: Vec<String>,
 ) -> Result<(), String> {
     state.subscribe(projects).await
+}
+#[tauri::command]
+pub async fn team_service_read(state: State<'_, TeamService>) -> Result<Value, String> {
+    state.read().await
 }
 #[tauri::command]
 pub fn team_service_status(state: State<'_, TeamService>) -> Value {

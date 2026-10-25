@@ -1,3 +1,5 @@
+import type { TeamLive } from "../lib/teamService";
+import { serviceMemberStatus } from "../lib/teamServicePresentation";
 import {useEffect,useRef,useState,type ReactNode} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {ExternalLink,Plus,RefreshCw,Sparkles} from "lucide-react";
@@ -43,8 +45,9 @@ function displayName(member:TeamMember,members:TeamMember[]){
 
 /** `live`: the panel's shared collector data (so the merged view shows one snapshot); polled here when omitted. */
 export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,onUpdated,board,live:shared,
-  onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange}:{
+  serviceLive,onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange}:{
   sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource;live?:LiveSessions;
+  serviceLive?:Record<string,TeamLive>;
   /** Shell actions owned by TeamMembers: the merged view keeps one toolbar row. */
   onRefresh?:()=>void;onAddMember?:()=>void;disabled?:boolean;more?:ReactNode;addForm?:ReactNode;
   /** Management block (notes, connection, edit/update/remove) owned by TeamMembers, placed in each member's details. */
@@ -56,13 +59,16 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   onRoomOpenChange?:(open:boolean)=>void;
 }){
   const self={...profile,username:navigation.server.username};
-  const isLead=(m:TeamMember)=>isLeadMember(m,self);
+  const isLead=(m:TeamMember)=>serviceLive === undefined ? isLeadMember(m,self) : /^lead\b/i.test(m.role.trim());
   const members=rosterMembers.filter(m=>!isLead(m));      // Worker rows feed AI selection/summaries
   const own=useAgentSessions(shared?undefined:board,members);
   const live=shared??own;
   const snapshot=liveSnapshot(live);
   // Rows include the Lead: its details carry the same note/connection/update/remove actions.
-  const ranked=rankMembers(rosterMembers,snapshot,isLead);
+  const hasServiceStatus=serviceLive !== undefined && rosterMembers.some(member=>serviceLive[memberKey(member)]?.match!=="no_agent");
+  const ranked=rankMembers(rosterMembers,snapshot,isLead).map(row=>serviceLive === undefined || serviceLive[memberKey(row.member)]?.match === "no_agent" ? row : {
+    ...row,...serviceMemberStatus(row.member,serviceLive[memberKey(row.member)],row.session,snapshot?.now??Date.now()/1000,isLead(row.member)),
+  }).sort((a,b)=>a.status.rank-b.status.rank||a.index-b.index);
   // Display names only depend on the roster, so compute them once (was O(n²) per row).
   const names=new Map(rosterMembers.map(m=>[memberKey(m),displayName(m,rosterMembers)]));
   const pinned=new Set(pinnedKeys??[]);
@@ -224,7 +230,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   },[connectionKey,auto]);
   // Board offline / still loading: there are no count chips, so a leftover filter would trap the
   // list on "没有符合的成员" with no way to clear it. Drop the filter with the summary.
-  const liveReady=!!snapshot;
+  const liveReady=hasServiceStatus || !!snapshot;
   useEffect(()=>{if(!liveReady)setFilter(undefined);},[liveReady]);
 
   const toggleFilter=(key:StatusGroup)=>setFilter(old=>old===key?undefined:key);
@@ -309,8 +315,8 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   };
   return <section className="team-dynamics" aria-label="团队动态">
     <div className="team-toolbar">
-      <div className="team-toolbar-title"><strong>团队 · {members.length} 人</strong><small>看板实时 · 每分钟刷新{auto?" · AI 自动总结中":""}</small></div>
-      <TeamLiveSummary board={board} live={live} summary={summarizeTeam(ranked,snapshot)} filter={activeFilter} onFilter={toggleFilter}/>
+      <div className="team-toolbar-title"><strong>团队 · {members.length} 人</strong><small>{serviceLive !== undefined?"团队服务实时同步":"看板实时 · 每分钟刷新"}{auto?" · AI 自动总结中":""}</small></div>
+      <TeamLiveSummary serviceMode={hasServiceStatus} board={board} live={live} summary={summarizeTeam(ranked,snapshot??(hasServiceStatus?{sessions:[],now:Date.now()/1000,ttlSeconds:180,alertAfterSeconds:600,collectedAt:0}:undefined))} filter={activeFilter} onFilter={toggleFilter}/>
       {activeFilter&&<Button size="sm" variant="ghost" onClick={()=>setFilter(undefined)}>清除筛选</Button>}
       <div className="team-toolbar-actions">
         {officeSnapshot&&<Button size="sm" variant={roomOpen?"secondary":"ghost"} aria-pressed={roomOpen} onClick={()=>setRoomOpen(open=>!open)}>房间</Button>}

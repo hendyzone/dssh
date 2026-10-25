@@ -9,6 +9,8 @@ import { focusTask, ingestTaskOutput, programTaskId, removeTask, taskSnapshot, t
 import { emptyProfile, saveCollaboration } from "../src/lib/collaboration";
 import { LOCAL_SHELL } from "../src/lib/localShell";
 
+const teamServiceMock=vi.hoisted(()=>({url:"",projects:[] as string[],status:{state:"online",token_configured:true},snapshots:{}}));
+vi.mock("../src/lib/teamService",()=>({useTeamService:()=>teamServiceMock}));
 const terminalMock = vi.hoisted(() => ({ connected: false }));
 const officeMock=vi.hoisted(()=>({exists:false,visible:true,collect:vi.fn(),mail:vi.fn(),publish:vi.fn(),snapshot:{version:1,themeId:"one-light",animationEnabled:true,mailAvailability:"unavailable",projects:[]}}));
 vi.mock("../src/lib/useOfficeMail",()=>({useOfficeMail:(options:unknown)=>{officeMock.mail(options);return undefined}}));
@@ -82,6 +84,7 @@ vi.mock("../src/components/SftpPanel", () => ({ default: () => null }));
 vi.mock("../src/components/ForwardPanel", () => ({ default: () => null }));
 
 beforeEach(() => {
+  teamServiceMock.url="";teamServiceMock.projects=[];
   terminalMock.connected = false;
   officeMock.exists=false;officeMock.visible=true;officeMock.collect.mockClear();officeMock.mail.mockClear();officeMock.publish.mockClear();
   vi.mocked(invoke).mockReset().mockResolvedValue([]);
@@ -556,11 +559,11 @@ it("collects for an existing office only while main is visible and passes presen
  officeMock.visible=false;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);
  officeMock.exists=false;officeMock.visible=true;view.rerender(<App/>);expect(officeMock.collect.mock.lastCall?.[0].enabled).toBe(false);view.unmount();
 });
-it("gates the actual mail hook on inline room or popup presence and main visibility",async()=>{
+it.each(["ssh","local"])("opens the service room without a Lead binding or tmux and gates mail (%s)",async kind=>{
  localStorage.clear();terminalMock.connected=true;
  vi.mocked(invoke).mockImplementation(async command => command === "collaboration_worktree" ? "/repo" : command === "collaboration_request" ? "[]" : []);
- saveCollaboration("server",{...emptyProfile(),enabled:true,membersEnabled:true,project:"office",workdir:"/repo",tmuxId:"$1",tmuxCreated:10,tmuxName:"agent"});
- const servers=await loadServers();saveWorkspace({tabs:[{id:"mail-tab",activePane:0,panes:[{id:"mail-pane",server:servers[0],tmux:{id:"$1",created:10,name:"agent"}}]}],activeTabId:"mail-tab",groups:[],cwds:{}});
+ teamServiceMock.url="https://team.example.invalid";teamServiceMock.projects=["office"];
+ const servers=await loadServers();saveWorkspace({tabs:[{id:"mail-tab",activePane:0,panes:[{id:"mail-pane",server:kind==="local"?LOCAL_SHELL:servers[0]}]}],activeTabId:"mail-tab",groups:[],cwds:{}});
  const view=render(<App/>);await act(async()=>{});
  const enabled=()=>officeMock.mail.mock.lastCall?.[0].enabled;
  expect(enabled()).toBe(false);

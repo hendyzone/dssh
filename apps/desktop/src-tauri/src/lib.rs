@@ -97,6 +97,7 @@ pub fn run() {
             team_service::team_service_configure,
             team_service::team_service_subscribe,
             team_service::team_service_status,
+            team_service::team_service_read,
             office::open_office_window,
             office::office_publish_snapshot,
             office::office_request_snapshot,

@@ -1,3 +1,5 @@
+import { useTeamService } from "../lib/teamService";
+import TeamServiceBanner from "./TeamServiceBanner";
 import { useEffect, useRef, useState } from "react";
 import { Users } from "lucide-react";
 import { collaborationRequest, resolveWorktree, type CollaborationProfile, type CollaborationSession } from "../lib/collaboration";
@@ -32,7 +34,10 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
   officeSnapshot?: OfficeSnapshot; officeVisible?: boolean; onPopOut?: () => Promise<void>;
   onRoomOpenChange?: (open: boolean) => void;
 }) {
-  const [members, setMembers] = useState<TeamMember[]>([]);
+  const service = useTeamService();
+  const team = service.snapshots[profile.project];
+  const members = team?.members ?? [];
+  const serviceIdentity = JSON.stringify([service.url, profile.project]);
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState("");
   const [role, setRole] = useState("");
@@ -61,21 +66,20 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
     try { await action(()=>version===generation.current); } catch (e) { if (version === generation.current) setError(String(e)); }
     finally { if (version === generation.current) { pending.current = false; setBusy(false); } }
   };
-  const request = async (operation: "members" | "memberSave" | "memberRemove" | "memberNotes", body = "") => {
+  const request = async (operation: "memberSave" | "memberRemove" | "memberNotes", body = "") => {
     const version = generation.current;
     const raw: unknown = JSON.parse(await collaborationRequest(sessionId, profile, {operation, body}));
     if (!Array.isArray(raw) || raw.length > 100) throw new Error("成员列表格式无效");
-    const list = raw.map(m => parseMember(m, profile.project));
-    if (version === generation.current) setMembers(list);
+    raw.map(m => parseMember(m, profile.project));
+    if (version !== generation.current) return;
   };
   useEffect(() => {
-    setMembers([]); setMapping(loadTeamMappings()); setPosition(""); setError(""); setNotice(""); setAdding(false); setBusy(false);setNoteMember(undefined);
-    if (sessionId && profile.enabled) void run(() => request("members"));
+    setMapping(loadTeamMappings()); setPosition(""); setError(""); setNotice(""); setAdding(false); setBusy(false);setNoteMember(undefined);
     return () => { generation.current++; pending.current = false; };
-  }, [sessionId, profile]);
-  const disabled = busy || !sessionId || !profile.enabled;
+  }, [serviceIdentity]);
+  const disabled = true; // Service roster editing is deliberately unavailable in this release.
   // The merged list also renders the Lead; the empty state is about Workers only.
-  const workers = members.filter(m=>!isLeadMember(m,{...profile,username:navigation.server.username}));
+  const workers = members.filter(m=>!/^lead\b/i.test(m.role.trim()));
   const startAdd = (member?:TeamMember) => {setAdding(true);setEditing(member);setRole(member?.role??"");setSelected("");setError("");};
   // 「更新终端 / 添加成员」表单出现时把它带到视野里，并把焦点放到第一个输入控件。
   useEffect(()=>{
@@ -170,11 +174,13 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
     {error && <p role="alert" className="collaboration-error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {busy && <p role="status">正在处理…</p>}
-    {!sessionId && <p role="status">连接 Lead 终端后即可读取团队。</p>}
-    <TeamDynamics key={JSON.stringify([sessionId,profile.project,profile.workdir])} sessionId={sessionId} profile={profile} navigation={navigation} members={members} board={board} live={live} onUpdated={()=>request("members")}
+    <TeamServiceBanner project={team} status={service.status}/>
+    {!service.url && <p role="status">请在协作设置中配置团队服务。</p>}
+    <p>编辑将在后续版本开放</p>
+    <TeamDynamics key={serviceIdentity} sessionId={sessionId} profile={profile} navigation={navigation} members={members} serviceLive={team?.live??{}} board={board} live={live} onUpdated={async()=>{}}
       pinnedKeys={[noteMember, editing?memberKey(editing):undefined].filter((key):key is string=>!!key)}
       officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
-      onRefresh={()=>void run(()=>request("members"))} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>
-    {!workers.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>点击「添加成员」，从已打开的终端中选择。成员可以在不同服务器上。</p></div>}
+      onRefresh={()=>{}} onAddMember={()=>startAdd()} disabled={disabled} more={service.url ? undefined : more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>
+    {!workers.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>订阅项目的成员将由团队服务同步。</p></div>}
   </section>;
 }

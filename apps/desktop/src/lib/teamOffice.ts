@@ -1,3 +1,5 @@
+import type { TeamLive } from "./teamService";
+import { serviceMemberAvatar } from "./teamServicePresentation";
 import { collaborationKey, type CollaborationProfile, type CollaborationSession } from "./collaboration";
 import { briefKey, matchSession, type SessionsSnapshot, type TaskBrief } from "./agentSessions";
 import { resolveTeamAvatar, type TeamAvatarStatus } from "./teamAvatar";
@@ -60,10 +62,10 @@ export interface OfficeSnapshot {
 /** Internal main-window transport; deliberately separate from OfficeSnapshot. */
 export interface OfficeTeamSource {
   id: string; project: string; label: string; profile: CollaborationProfile;
-  server?: ServerEntry; backendId?: string;
+  server?: ServerEntry; backendId?: string; service?: boolean;
 }
 export interface OfficeRoster {
-  availability: OfficeSource["availability"]; notice: string; members: TeamMember[];
+  availability: OfficeSource["availability"]; notice: string; members: TeamMember[]; live?: Record<string,TeamLive>;
 }
 export interface OfficeBoard {
   snapshot?: SessionsSnapshot; briefs: Record<string, TaskBrief>; offline: boolean;
@@ -118,15 +120,16 @@ function taskText(member: TeamMember, board?: OfficeBoard): Pick<OfficeMember, "
 export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record<string, OfficeRoster>, context: OfficeBuildContext): OfficeSnapshot {
   const projects = new Map<string, OfficeProject>();
   for (const source of sources) {
-    let project = projects.get(source.project);
-    if (!project) { project = { id: officeKey(source.project), name: source.project, sources: [] }; projects.set(source.project, project); }
+    const identity = source.service ? source.id : source.project;
+    let project = projects.get(identity);
+    if (!project) { project = { id: officeKey(identity), name: source.project, sources: [] }; projects.set(identity, project); }
     const roster = rosters[source.id] ?? { availability: source.backendId ? "loading" : "offline", notice: source.backendId ? "正在读取团队…" : "连接 Lead 所在服务器后可读取团队", members: [] };
-    const members = roster.availability === "ready" ? roster.members.map(member => {
+    const members = (roster.availability === "ready" || source.service) ? roster.members.map(member => {
       const boundLead = !!source.server && matchingServers(member, [source.server]).length > 0 && member.tmux.id === source.profile.tmuxId && member.tmux.created === source.profile.tmuxCreated && member.workdir === source.profile.workdir;
       return {
         id: officeKey(JSON.stringify([source.id, memberKey(member)])), name: member.role,
         isLead: /^lead\b/i.test(member.role.trim()) || boundLead,
-        status: resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id]),
+        status: source.service ? serviceMemberAvatar(member, roster.live?.[memberKey(member)], context.boards?.[source.id]?.offline ? undefined : matchSession(member, context.boards?.[source.id]?.snapshot?.sessions??[])) : resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id]),
         paletteKey: officeKey(memberKey(member)),
       };
     }).sort((a, b) => Number(b.isLead) - Number(a.isLead)) : [];

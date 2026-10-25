@@ -1,3 +1,4 @@
+import { useTeamService } from "./lib/teamService";
 import { AppDialog } from "./components/ui/app-dialog";
 import { PositionedMenu, MenuItem } from "./components/ui/positioned-menu";
 import { Button } from "./components/ui/button";
@@ -94,6 +95,8 @@ type ContextMenu = { tabId: string; x: number; y: number };
 
 export default function App() {
   const collaborationProfiles = useCollaboration();
+  const teamService = useTeamService();
+  const serviceTeamsEnabled = !!teamService.url && teamService.projects.length > 0;
   useEffect(() => {
     document.addEventListener("contextmenu", preventBrowserContextMenu, true);
     return () =>
@@ -1048,7 +1051,7 @@ export default function App() {
           tabs.map((t) => {
             const local = isLocalShell(t.panes[t.activePane].server);
             const requestedPanel = sidePanels[t.id] ?? null;
-            const panel = local && !["tmux", "tasks", "collaboration"].includes(requestedPanel ?? "") ? null : requestedPanel;
+            const panel = local && !["tmux", "tasks", "collaboration", "team"].includes(requestedPanel ?? "") ? null : requestedPanel;
             const activePaneBackend =
               backendIds[t.panes[t.activePane]?.id ?? ""] ?? null;
             const collaboration = t.id === activeTabId ? activeCollaboration : undefined;
@@ -1062,7 +1065,7 @@ export default function App() {
                   <ToolRail
                     local={local}
                     side="left"
-                    teamEnabled={!!t.panes[t.activePane]?.tmux}
+                    teamEnabled={serviceTeamsEnabled || (!local && !!t.panes[t.activePane]?.tmux)}
                     collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
@@ -1070,7 +1073,7 @@ export default function App() {
                   <ToolRail
                     local={local}
                     side="right"
-                    teamEnabled={!!t.panes[t.activePane]?.tmux}
+                    teamEnabled={serviceTeamsEnabled || (!local && !!t.panes[t.activePane]?.tmux)}
                     collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
                     active={panel}
                     onSelect={(kind) => togglePanel(t.id, kind)}
@@ -1142,7 +1145,7 @@ export default function App() {
                       />
                     </PanelDock>
                   )}
-                  {panel === "team" && t.id === activeTabId && t.panes[t.activePane]?.tmux && <PanelDock kind="team">
+                  {panel === "team" && t.id === activeTabId && (serviceTeamsEnabled || t.panes[t.activePane]?.tmux) && <PanelDock kind="team">
                     <TeamPanel officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (

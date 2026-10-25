@@ -641,3 +641,71 @@ fn team_service_retry_jitter_has_exponential_ceiling_and_cap() {
     limits.jitter = || 0.0;
     assert_eq!(retry_delay(&limits, 5), Duration::ZERO);
 }
+
+#[tokio::test]
+async fn team_service_read_preserves_cache_timestamp_and_never_returns_credential() {
+    let directory = Directory::new();
+    let vault = Arc::new(MemoryVault::default());
+    let (listener, url) = listener().await;
+    let (service, mut events) = client(&directory, vault.clone(), timing(WAIT));
+    configure(&service, url, vec![PROJECT.to_owned()]).await;
+    let mut socket = accept(&listener).await;
+    receive(&mut socket).await;
+    send(&mut socket, snapshot(20)).await;
+    let delivered = event(&mut events, "team://snapshot", |v| v["seq"] == 20).await;
+    let timestamp = delivered["savedAt"].as_u64().unwrap();
+    assert!(timestamp > 0);
+    let read = service.read().await.unwrap();
+    assert!(!read.to_string().contains(TOKEN));
+    assert_eq!(read["status"]["token_configured"], true);
+    assert_eq!(read["snapshots"][PROJECT]["savedAt"], timestamp);
+    service
+        .subscribe(vec![PROJECT.to_owned(), "another-project".into()])
+        .await
+        .unwrap();
+    assert_eq!(
+        service.read().await.unwrap()["snapshots"][PROJECT]["savedAt"],
+        timestamp
+    );
+    service.shutdown().await;
+    let (restarted, mut cached_events) = client(&directory, vault, timing(WAIT));
+    let cached = event(&mut cached_events, "team://snapshot", |v| {
+        v["offline"] == true
+    })
+    .await;
+    assert_eq!(cached["savedAt"], timestamp);
+    assert_eq!(
+        restarted.read().await.unwrap()["snapshots"][PROJECT]["savedAt"],
+        timestamp
+    );
+    restarted.shutdown().await;
+}
+
+#[tokio::test]
+async fn team_service_legacy_cache_read_has_unknown_timestamp() {
+    let directory = Directory::new();
+    let vault = Arc::new(MemoryVault::default());
+    let (listener, url) = listener().await;
+    let (service, mut events) = client(&directory, vault.clone(), timing(WAIT));
+    configure(&service, url, vec![PROJECT.to_owned()]).await;
+    let mut socket = accept(&listener).await;
+    receive(&mut socket).await;
+    send(&mut socket, snapshot(1)).await;
+    event(&mut events, "team://snapshot", |v| v["seq"] == 1).await;
+    service.shutdown().await;
+    let path = directory.0.join("snapshots.json");
+    let mut legacy: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    legacy["projects"][PROJECT]
+        .as_object_mut()
+        .unwrap()
+        .remove("savedAt");
+    std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+    let (restarted, mut cached_events) = client(&directory, vault, timing(WAIT));
+    let cached = event(&mut cached_events, "team://snapshot", |v| {
+        v["offline"] == true
+    })
+    .await;
+    assert!(cached["savedAt"].is_null());
+    assert!(restarted.read().await.unwrap()["snapshots"][PROJECT]["savedAt"].is_null());
+    restarted.shutdown().await;
+}

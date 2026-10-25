@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("../src/lib/teamService",()=>({useTeamService:()=>({url:"https://team.example.invalid",projects:["demo"],status:{state:"online",token_configured:true},snapshots:{demo:{project:"demo",identity:"service-demo",seq:1,members:team,ai:{},machines:{},live:Object.fromEntries(team.map(member=>[member.email||member.id,{match:"no_agent"}])),receivedAt:Date.now(),offline:false,status:"online"}}})}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 
 import TeamDynamics from "../src/components/TeamDynamics";
@@ -32,17 +33,17 @@ const session = (name: string, extra: Record<string, unknown> = {}) => parseAgen
 describe("parseAgentSessions (data mapping)", () => {
   it("maps collector fields and fills neutral defaults", () => {
     const snap = parseAgentSessions(payload([
-      row("worker-demo-cw3-agy", { host: "host-b", tool: "agy", task_code: "T0504", task_status: "doing", state: "running", dirty: 35, model: "Gemini", context_pct: 54, commit_subject: "fix: x" }),
-      row("worker-demo-cw1-codex"),
+      row("worker-demo-host-c-agy", { host: "host-b", tool: "agy", task_code: "T0504", task_status: "doing", state: "running", dirty: 35, model: "Gemini", context_pct: 54, commit_subject: "fix: x" }),
+      row("worker-demo-host-a-codex"),
       { host: "host-a", state: "idle" },
       null,
     ]));
     expect(snap).toMatchObject({ now: NOW, ttlSeconds: 180, alertAfterSeconds: 600, collectedAt: NOW - 24 });
     expect(snap.sessions).toHaveLength(2);
     expect(snap.sessions[0]).toMatchObject({
-      host: "host-b", session: "worker-demo-cw3-agy", box: "demo-cw3-agy", tool: "agy", state: "running", stateSince: NOW - 3600,
+      host: "host-b", session: "worker-demo-host-c-agy", box: "demo-host-c-agy", tool: "agy", state: "running", stateSince: NOW - 3600,
       hostOk: true, stale: false, taskCode: "T0504", taskStatus: "doing", commitHash: "a279fa74", commitTime: NOW - 7200,
-      commitSubject: "fix: x", dirty: 35, model: "Gemini", contextPct: 54, worktree: "/work/.worktrees/demo-cw3-agy",
+      commitSubject: "fix: x", dirty: 35, model: "Gemini", contextPct: 54, worktree: "/work/.worktrees/demo-host-c-agy",
     });
     // task_status / model / context_pct are absent when the session has no card or the tool reports no model.
     expect(snap.sessions[1]).toMatchObject({ taskCode: "", taskStatus: "", model: "" });
@@ -198,8 +199,8 @@ describe("matchSession (member ↔ session)", () => {
   const two = (a: Record<string, unknown>, b: Record<string, unknown>) => parseAgentSessions(payload([row("worker-demo-x", a), row("worker-demo-x", b)])).sessions;
 
   it("matches by tmux session name even when the roster stores an IP and the collector an ssh alias", () => {
-    const sessions = parseAgentSessions(payload([row("worker-demo-cw3-agy", { host: "host-b" }), row("worker-demo-cw1-pi")])).sessions;
-    expect(matchSession(member("worker-demo-cw3-agy", { host: "192.0.2.9" }), sessions)?.host).toBe("host-b");
+    const sessions = parseAgentSessions(payload([row("worker-demo-host-c-agy", { host: "host-b" }), row("worker-demo-host-a-pi")])).sessions;
+    expect(matchSession(member("worker-demo-host-c-agy", { host: "192.0.2.9" }), sessions)?.host).toBe("host-b");
     expect(matchSession(member("worker-demo-nobody"), sessions)).toBeUndefined();
   });
   it("disambiguates a shared session name by host, tolerating user@, port, case and domain", () => {
@@ -231,7 +232,7 @@ const server: ServerEntry = { id: "lead", name: "Lead", host: "192.0.2.6", port:
 const profile = { ...emptyProfile(), enabled: true, project: "demo", workdir: "/lead", tmuxId: "$9", tmuxCreated: 9, tmuxName: "lead" };
 const navigation = { server, servers: [server], onOpen: vi.fn() };
 const board = boardSource({ ...defaultLookupSettings(), boardUrl: "http://board.test:8091" })!;
-const roster = [member("worker-demo-cw1-codex"), member("worker-demo-cw3-agy", { host: "192.0.2.9" }), member("worker-demo-cw1-pi")];
+const roster = [member("worker-demo-host-a-codex"), member("worker-demo-host-c-agy", { host: "192.0.2.9" }), member("worker-demo-host-a-pi")];
 const state: { sessions: unknown; offline: boolean; paths: string[] } = { sessions: undefined, offline: false, paths: [] };
 
 function fakeBoard(command: string, args: { path: string }) {
@@ -250,11 +251,11 @@ beforeEach(() => {
   clearBoardCache();
   state.offline = false; state.paths = [];
   state.sessions = payload([
-    row("worker-demo-cw1-codex"),
-    row("worker-demo-cw3-agy", { host: "host-b", state: "running", task_code: "T0504", task_status: "doing", dirty: 35, model: "Gemini 4", commit_subject: "chore(s4): apply review" }),
-    row("worker-demo-cw1-pi", { state: "waiting_input", state_detail: "确认框/菜单", task_code: "T0503", task_status: "review", state_since: NOW - 900 }),
+    row("worker-demo-host-a-codex"),
+    row("worker-demo-host-c-agy", { host: "host-b", state: "running", task_code: "T0504", task_status: "doing", dirty: 35, model: "Gemini 4", commit_subject: "chore(s4): apply review" }),
+    row("worker-demo-host-a-pi", { state: "waiting_input", state_detail: "确认框/菜单", task_code: "T0503", task_status: "review", state_since: NOW - 900 }),
     // Another project's session in the global list: never shown, its card never fetched.
-    row("worker-other-cw1-codex", { project: "other", state: "stuck", task_code: "X1", task_status: "doing" }),
+    row("worker-other-host-a-codex", { project: "other", state: "stuck", task_code: "X1", task_status: "doing" }),
   ]);
   mocks.invoke.mockReset();
   mocks.invoke.mockImplementation(fakeBoard);
@@ -285,7 +286,7 @@ it("renders live status, card brief, last commit, dirty files and model without 
   expect(third.classList.contains("team-compact-row")).toBe(true);
   expect(screen.queryByText("无当前卡")).toBeNull();
   // AI summary stays on demand.
-  expect(screen.getByRole("button", { name: "总结 · cw1-pi" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "总结 · host-a-pi" })).toBeTruthy();
   expect(mocks.invoke.mock.calls.every(([command]) => command === "taskboard_get")).toBe(true);
   expect(rows()).toHaveLength(3);
   expect(state.paths.some(p => p.includes("/other/"))).toBe(false);
@@ -300,7 +301,7 @@ it("shows 「看板离线」 instead of an error when the board is unreachable, 
   // Falls back to the hand-written state instead of a blank 「unknown」.
   expect(screen.getAllByText("待确认（手写）")).toHaveLength(3);
   // Roster still shows, unranked, so 「打开」 and 「总结」 keep working.
-  expect(rows().map(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent)).toEqual(["cw1-codex", "cw3-agy", "cw1-pi"]);
+  expect(rows().map(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent)).toEqual(["host-a-codex", "host-c-agy", "host-a-pi"]);
   state.offline = false;
   await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
   await waitFor(() => expect(screen.queryByText(/看板离线/)).toBeNull());

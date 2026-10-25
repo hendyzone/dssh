@@ -45,7 +45,7 @@ export default function ToolRail({
         aria-label={side === "left" ? "左侧工具" : "右侧工具"}
       >
         {(["sftp", "tmux", "team", "forward", "tasks", "changes", "monitor", "quota", "collaboration"] as const)
-          .filter(kind => !local || ["tmux", "tasks", "collaboration"].includes(kind))
+          .filter(kind => !local || ["tmux", "tasks", "collaboration", "team"].includes(kind))
           .filter(kind => kind !== "team" || teamEnabled)
           .filter(kind => kind !== "collaboration" || collaborationEnabled)
           .filter(

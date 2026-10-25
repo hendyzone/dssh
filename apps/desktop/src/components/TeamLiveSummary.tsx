@@ -6,13 +6,13 @@ import type { LiveSessions, StatusGroup, TeamSummary } from "../lib/agentSession
  * clicking it again clears the filter. The board state notes (not configured / offline / loading)
  * take the same slot so the panel always says why live counts are missing.
  */
-export default function TeamLiveSummary({ board, live, summary, filter, onFilter }: {
-  board?: BoardSource; live: LiveSessions; summary: TeamSummary;
+export default function TeamLiveSummary({ board, live, summary, filter, onFilter, serviceMode=false }: {
+  serviceMode?: boolean; board?: BoardSource; live: LiveSessions; summary: TeamSummary;
   filter?: StatusGroup;
   onFilter?: (group: StatusGroup) => void;
 }) {
-  if (!board) return <p className="team-live-note">未配置看板，无法显示实时状态：{NO_SOURCE}。下面按 Lead 手写状态显示。</p>;
-  if (live.offline) return <p role="status" className="team-live-offline" title={live.error}>
+  if (!serviceMode && !board) return <p className="team-live-note">未配置看板，无法显示实时状态：{NO_SOURCE}。下面按 Lead 手写状态显示。</p>;
+  if (!serviceMode && live.offline) return <p role="status" className="team-live-offline" title={live.error}>
     看板离线{live.fetchedAt ? `（上次成功 ${formatAge(new Date(live.fetchedAt).toISOString())}前）` : ""} · 下面按 Lead 手写状态显示，可能过期；每分钟自动重试
   </p>;
   if (!summary.live) return <p role="status" className="team-live-note">正在读取看板会话…</p>;
