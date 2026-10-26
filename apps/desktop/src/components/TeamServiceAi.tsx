@@ -55,7 +55,7 @@ export default function TeamServiceAi({ai, enabled, target, compact = false}: {
   return <span className="team-service-ai" data-ai-view={compact ? "row" : "detail"}>
     {(enabled === false || disabledByService) && <span>AI 摘要未启用</span>}
     {ai ? <><span className="team-service-ai-summary">{ai.summary || "暂无 AI 摘要"}</span>
-      <small>{labels[ai.status]} · AI · {ai.model} · {relativeTime(ai.updatedAt, now)}</small>
+      <small title={ai.model ? `摘要由 ${ai.model} 生成` : undefined}>{labels[ai.status]} · AI 摘要 · {relativeTime(ai.updatedAt, now)}</small>
       {!compact && ai.evidence && <details><summary>AI 摘要依据</summary><pre>{ai.evidence}</pre></details>}
     </> : enabled !== false && !disabledByService && <span>暂无 AI 摘要</span>}
     {target && <button type="button" disabled={pending || remaining > 0 || enabled === false || disabledByService} onClick={event => {event.preventDefault(); event.stopPropagation(); void refresh();}}>

@@ -15,7 +15,10 @@ afterEach(()=>{cleanup();vi.useRealTimers();});
 async function request(){await act(async()=>fireEvent.click(screen.getByRole('button',{name:'重新总结'})));}
 it('renders service fields and literal hostile evidence without active DOM',()=>{
  const {container}=render(<TeamServiceAi ai={ai} target={target}/>);
- expect(screen.getByText('Testing storage')).toBeTruthy();expect(screen.getByText('工作中 · AI · example-model · 2 分钟前')).toBeTruthy();
+ expect(screen.getByText('Testing storage')).toBeTruthy();expect(screen.getByText('工作中 · AI 摘要 · 2 分钟前')).toBeTruthy();
+ const small=container.querySelector('.team-service-ai small')!;
+ expect(small.textContent).not.toContain('example-model');
+ expect(small.getAttribute('title')).toBe('摘要由 example-model 生成');
  fireEvent.click(screen.getByText('AI 摘要依据'));
  expect(container.querySelector('pre')?.textContent).toBe(ai.evidence);
  expect(container.querySelector('script,img')).toBeNull();
@@ -78,7 +81,7 @@ it('carries only AI presentation fields into the room and offers no refresh comm
  const snapshot=buildOfficeSnapshot([{id:'source',project:'demo',label:'Demo',profile:emptyProfile(),service:true}],{source:{availability:'ready',notice:'',members:[member],ai:{[target.key]:{...ai,digest:'PRIVATE_DIGEST',source:{machine:'PRIVATE_HOST',session:'PRIVATE_SESSION'}}}}},{servers:[],sessions:[],themeId:'one-light',animationEnabled:false});
  expect(Object.keys(snapshot.projects[0].sources[0].members[0].ai!).sort()).toEqual(["evidence","model","status","summary","updatedAt"]);
  expect(JSON.stringify(snapshot)).not.toMatch(/PRIVATE_|worker@example|host-a/);
- render(<TeamOffice snapshot={snapshot}/>);const station=document.querySelector('.office-station')!;expect(within(station as HTMLElement).getByText(ai.summary)).toBeTruthy();expect(within(station as HTMLElement).getByText(/AI · example-model/)).toBeTruthy();expect(screen.queryByRole('button',{name:'重新总结'})).toBeNull();
+ render(<TeamOffice snapshot={snapshot}/>);const station=document.querySelector('.office-station')!;expect(within(station as HTMLElement).getByText(ai.summary)).toBeTruthy();expect(within(station as HTMLElement).getByText(/AI 摘要/)).toBeTruthy();expect(screen.queryByRole('button',{name:'重新总结'})).toBeNull();
 });
 
 it('rejects malformed AI dates and unknown states instead of rendering invalid relative time',()=>{
