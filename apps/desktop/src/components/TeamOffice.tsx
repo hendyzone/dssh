@@ -183,7 +183,7 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
           <div hidden={closed} className="office-project-floor">
             {!project.sources.length && <EmptyDesks scale={scale}/>}
             {project.sources.map(source => <section className="office-source" key={source.id} aria-label={source.label}>
-              <p className="office-source-label">{source.label}</p>
+              {(project.sources.length > 1 || source.label !== project.name) && <p className="office-source-label">{source.label}</p>}
               {source.availability !== "ready" ? <p role="status" className="office-source-notice">{source.notice}</p>
                 : !source.members.length ? <p className="office-source-notice">此团队尚未登记成员。</p> : null}
               {!source.members.length && <EmptyDesks scale={scale}/>}
@@ -202,7 +202,13 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                     data-palette-key={member.paletteKey} aria-label={`工位 ${member.name}`} aria-describedby={detailId}
                     tabIndex={0} onClick={open} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}>
                     <span className="office-sr-only">{member.status.label}</span>
-                    <div className="office-pixels" style={{width:96*scale*factor,height:72*scale*factor}}>
+                    <div className="office-ai-slot">
+                      {member.ai && <div className={`office-ai-bubble${oldAi?" is-old":""}`} title={`AI 摘要（${relative(member.ai.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}）`}>
+                        <span className="office-ai-text">{member.ai.summary.length > 20 ? `${member.ai.summary.slice(0, 20)}…` : member.ai.summary}</span>
+                        <small>{relative(member.ai.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}</small>
+                      </div>}
+                    </div>
+                    <div className="office-pixels" style={{width:96*scale*factor,height:72*scale*factor+26}}>
                       <div className="office-furniture-scale" style={{transform:`scale(${factor})`}}>
                         <Desk scale={scale} lead={member.isLead}/>
                       </div>
@@ -218,12 +224,8 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                         <span className="office-member-status" title={member.status.label}>{shortStatus[member.status.state] ?? STATE_LABELS[member.status.state] ?? member.status.label}</span>
                         {member.machine && <span className="office-member-machine" title={member.machine}>{member.machine}</span>}
                       </div>
-                      {member.ai && <div className={`office-ai-bubble${oldAi?" is-old":""}`} title={`AI 摘要（${relative(member.ai.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}）`}>
-                        <span className="office-ai-text">{member.ai.summary.length > 20 ? `${member.ai.summary.slice(0, 20)}…` : member.ai.summary}</span>
-                        <small>{relative(member.ai.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}</small>
-                      </div>}
                     </div>
-                    <p className="office-member-task" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskFull || member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.taskText}</p>
+                    <p className="office-member-task office-station-paper" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskFull || member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.taskText}</p>
                     <DetailCard member={member} now={seconds} id={detailId}/>
                   </article>;
                 })}

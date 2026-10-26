@@ -147,3 +147,36 @@ it("shows the local clock and switches sky phase without touching member data", 
   expect(view.container.querySelector(".office-stars")).toBeTruthy();
   vi.useRealTimers();
 });
+
+it("keeps the AI bubble in a reserved row so no overflow container can clip it", () => {
+  const view = render(<TeamOffice snapshot={snapshot([member("a", { ai: { status: "working", summary: "正在合并房间与成员视图", evidence: "", model: "m", updatedAt: new Date().toISOString() } }), member("b")])}/>);
+  const stationA = view.container.querySelector('[data-member-id="a"]')!;
+  const bubble = stationA.querySelector(".office-ai-bubble")!;
+  expect(bubble.parentElement?.classList.contains("office-ai-slot")).toBe(true);
+  expect(stationA.querySelector(".office-pixels")?.contains(bubble)).toBe(false);
+  // 每个工位都有同样高度的气泡槽，行内卡片才能对齐
+  expect(view.container.querySelectorAll(".office-ai-slot")).toHaveLength(2);
+});
+
+it("renders the task paper as an independent block after the desk, never under the nameplate", () => {
+  const view = render(<TeamOffice snapshot={snapshot([member("a", { taskText: "T40 · 统一成员显示", taskFull: "T40 统一成员显示" })])}/>);
+  const station = view.container.querySelector('[data-member-id="a"]')!;
+  const pixels = station.querySelector(".office-pixels")!;
+  const label = station.querySelector(".office-desk-label")!;
+  const paper = station.querySelector(".office-station-paper")!;
+  expect(paper).toBeTruthy();
+  expect(pixels.contains(paper)).toBe(false);
+  expect(label.contains(paper)).toBe(false);
+  expect(paper.previousElementSibling).toBe(pixels);
+});
+
+it("does not render a second team name for a single-source project", () => {
+  const one = render(<TeamOffice snapshot={snapshot([member("a")])}/>);
+  const region = one.container.querySelector('[aria-label="项目 alpha"]')!;
+  expect(region.querySelector(".office-source-label")).toBeNull();
+  one.unmount();
+  const twoSources: OfficeSnapshot = snapshot([member("a")]);
+  twoSources.projects[0].sources.push({ id: "s2", label: "alpha · other", availability: "ready", notice: "", members: [] });
+  render(<TeamOffice snapshot={twoSources}/>);
+  expect(screen.getByText("alpha · other")).toBeTruthy();
+});
