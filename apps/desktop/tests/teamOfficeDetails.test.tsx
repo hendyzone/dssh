@@ -90,7 +90,8 @@ it("explains service and mail state instead of a bare unavailable label", () => 
   const { rerender } = render(<TeamOffice snapshot={snapshot([member("a")])}/>);
   expect(screen.getByText(/邮件动态未配置/)).toBeTruthy();
   rerender(<TeamOffice snapshot={snapshot([member("a")], { service: { state: "online" } })}/>);
-  expect(screen.getByRole("status").textContent).toContain("服务在线");
+  expect(screen.getByLabelText("服务在线").getAttribute("data-online")).toBe("true");
+  expect(screen.queryByText(/数据来自团队服务的订阅项目/)).toBeNull();
   rerender(<TeamOffice snapshot={snapshot([member("a")], { service: { state: "offline", at: Date.now() - 3600_000 } })}/>);
   expect(screen.getByRole("status").textContent).toMatch(/团队服务离线 · 数据截至 \d\d:\d\d/);
   rerender(<TeamOffice snapshot={snapshot([member("a")], { service: { state: "unauthorized" } })}/>);
@@ -158,16 +159,16 @@ it("keeps the AI bubble in a reserved row so no overflow container can clip it",
   expect(view.container.querySelectorAll(".office-ai-slot")).toHaveLength(2);
 });
 
-it("renders the task paper as an independent block after the desk, never under the nameplate", () => {
-  const view = render(<TeamOffice snapshot={snapshot([member("a", { taskText: "T40 · 统一成员显示", taskFull: "T40 统一成员显示" })])}/>);
+it("keeps the task inside a normal-flow nameplate after the desk", () => {
+  const view = render(<TeamOffice snapshot={snapshot([member("a", { taskText: "T1 · 验证成员显示", taskFull: "T1 验证成员显示" })])}/>);
   const station = view.container.querySelector('[data-member-id="a"]')!;
   const pixels = station.querySelector(".office-pixels")!;
   const label = station.querySelector(".office-desk-label")!;
   const paper = station.querySelector(".office-station-paper")!;
   expect(paper).toBeTruthy();
   expect(pixels.contains(paper)).toBe(false);
-  expect(label.contains(paper)).toBe(false);
-  expect(paper.previousElementSibling).toBe(pixels);
+  expect(label.contains(paper)).toBe(true);
+  expect(label.previousElementSibling).toBe(pixels);
 });
 
 it("does not render a second team name for a single-source project", () => {
