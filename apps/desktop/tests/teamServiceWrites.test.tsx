@@ -27,11 +27,11 @@ async function boot(withCandidate=false){
   await act(async()=>{await configureTeamService(`https://writes-${++serial}.example.invalid`,"setup-only-secret",["demo"]);});
   await emit("team://status",native.status);
   await emit("team://snapshot",snap());
-  const row=screen.getByRole("button",{name:"打开 · Worker · worker",hidden:true}).closest("details")!;
+  const row=screen.getByRole("button",{name:"打开 · worker",hidden:true}).closest("details")!;
   const group=row.parentElement!.closest("details")!;
   await act(async()=>{group.open=true;fireEvent(group,new Event("toggle"));});
   await act(async()=>{row.open=true;fireEvent(row,new Event("toggle"));});
-  await screen.findByRole("button",{name:"编辑备注 · Worker"});
+  await screen.findByRole("button",{name:"编辑备注 · worker"});
   bridge.invoke.mockClear();
 }
 beforeEach(()=>{
@@ -61,7 +61,7 @@ beforeEach(()=>{
 afterEach(cleanup);
 
 it("sends notes through Rust without credentials and only applies the subsequent WS delta",async()=>{
-  await boot();fireEvent.click(screen.getByRole("button",{name:"编辑备注 · Worker"}));
+  await boot();fireEvent.click(screen.getByRole("button",{name:"编辑备注 · worker"}));
   fireEvent.change(screen.getByLabelText("其他备注"),{target:{value:"New note"}});
   fireEvent.click(screen.getByRole("button",{name:"保存备注"}));
   await screen.findByText("写入已接受，等待团队服务同步。");
@@ -75,7 +75,7 @@ it("sends notes through Rust without credentials and only applies the subsequent
 });
 it.each(["rev_mismatch","if_match_required"])("refreshes and refills on 412 %s without retrying the write",async code=>{
   await boot();failure={status:412,code,message:"secret-error-body"};
-  fireEvent.click(screen.getByRole("button",{name:"编辑备注 · Worker"}));
+  fireEvent.click(screen.getByRole("button",{name:"编辑备注 · worker"}));
   fireEvent.change(screen.getByLabelText("其他备注"),{target:{value:"Stale draft"}});
   fireEvent.click(screen.getByRole("button",{name:"保存备注"}));
   await screen.findByText("名单已被他人修改，已刷新，请确认后重试");

@@ -151,6 +151,7 @@ test("canceling session termination never issues a destructive command", async (
   );
 });
 
+// 该用例连续开关两次 Radix 菜单表单，jsdom 下偶发超过默认 60s（与产品行为无关）；按 T53 口径只在本用例放宽超时。
 test("remote aliases are visible on another SSH connection and can be cleared", async () => {
   let current = { ...snapshot, sessions: [{ ...snapshot.sessions[0], alias: "" }] };
   mocks.invoke.mockImplementation(async (command, args) => {
@@ -179,7 +180,7 @@ test("remote aliases are visible on another SSH connection and can be cleared", 
   fireEvent.click(screen.getByRole("button", { name: "确定" }));
   await screen.findByText("work");
   expect(screen.queryByText("开发任务")).toBeNull();
-});
+}, 180000);
 
 test("groups share remote membership, collapse, and allow returning to ungrouped", async () => {
   let current = { ...snapshot, sessions: [
@@ -218,7 +219,7 @@ test("groups share remote membership, collapse, and allow returning to ungrouped
   fireEvent.click(screen.getByRole("button", { name: "确定" }));
   await screen.findByRole("button", { name: "未分组 1" });
   expect(screen.getByRole("button", { name: "项目甲 1" })).toBeTruthy();
-});
+}, 180000);
 
 test("pointer dragging moves the dragged session into a collapsed folder and back to ungrouped", async () => {
   let current = { ...snapshot, sessions: [

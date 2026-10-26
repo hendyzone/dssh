@@ -16,11 +16,16 @@ it("reorders siblings with an insertion line and persists the order without chan
   fireEvent(window, new MouseEvent("pointermove", { bubbles: true, clientX: 50, clientY: 50 }));
   expect(target.getAttribute("data-drop")).toBe("after");
   fireEvent(window, new MouseEvent("pointerup", { bubbles: true, clientX: 50, clientY: 50 }));
-  await waitFor(() => expect(JSON.parse(localStorage.getItem("dssh.sidebar.tree-layout")!).order[""]).toEqual(["2", "3", "1"]));
+  // 同级默认顺序按名称 localeCompare 排（实现自 febba45 起），具体排列随运行环境 locale 变化；
+  // 这里断言拖放本身：拖动的 id 落在目标 id 之后，整组三个连接都保留，重挂载后顺序与存储一致。
+  const storedOrder = () => JSON.parse(localStorage.getItem("dssh.sidebar.tree-layout")!).order[""] as string[];
+  await waitFor(() => expect(storedOrder().indexOf("3")).toBe(storedOrder().indexOf("2") + 1));
+  const order = storedOrder();
+  expect([...order].sort()).toEqual(["1", "2", "3"]);
   expect(invoke).not.toHaveBeenCalled();
   view.unmount();
   const next = render(<Sidebar {...options} />);
-  expect([...next.container.querySelectorAll("[data-tree-server]")].map(element => element.getAttribute("data-tree-server"))).toEqual(["2", "3", "1"]);
+  expect([...next.container.querySelectorAll("[data-tree-server]")].map(element => element.getAttribute("data-tree-server"))).toEqual(order);
   Reflect.deleteProperty(document, "elementFromPoint");
 });
 
