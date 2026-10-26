@@ -8,6 +8,9 @@ const mail=(sequence:number,events=[event()],extra:Partial<OfficeMailView>={}):O
 const snapshot=(value=mail(1,[])):OfficeSnapshot=>({version:1,themeId:"one-light",animationEnabled:true,mailAvailability:"unavailable",mail:value,projects:[{id:"p1",name:"One",sources:[{id:"one",label:"First",availability:"ready",notice:"",members:[member]}]},{id:"p2",name:"Two",sources:[{id:"two",label:"Second",availability:"ready",notice:"",members:[member]}]}]});
 let media:{matches:boolean;addEventListener:ReturnType<typeof vi.fn>;removeEventListener:ReturnType<typeof vi.fn>};
 beforeEach(()=>{
+ // Mail geometry scenarios deliberately keep both rooms open at a fixed scale.
+ localStorage.setItem("dssh.office.collapsed.v1", "[]");
+ localStorage.setItem("dssh.office.scale.v1", "2");
  vi.useFakeTimers();vi.spyOn(document,"hidden","get").mockReturnValue(false);
  media={matches:false,addEventListener:vi.fn(),removeEventListener:vi.fn()};vi.stubGlobal("matchMedia",()=>media);
  vi.spyOn(HTMLElement.prototype,"clientWidth","get").mockReturnValue(600);

@@ -85,10 +85,10 @@ it("updates members without losing other project sections and offers pop-out thr
  const next=structuredClone(value);next.projects[0].sources[0].members.splice(0,1);view.rerender(<TeamOffice snapshot={next} onPopOut={open}/>);
  expect(view.container.querySelectorAll("[data-member-id]")).toHaveLength(5);expect(view.container.querySelector('[data-member-id="m0"]')).toBeNull();expect(screen.getByRole("region",{name:"项目 Beta"})).toBeTruthy();
 });
-it("uses only integer scale choices and scales SVG coordinates without changing the pixel viewBox",()=>{
+it("offers adaptive sizing plus integer scales without changing the pixel viewBox",()=>{
  const view=render(<TeamOffice snapshot={room()}/>);const svg=view.container.querySelector('.team-member-avatar svg')!;
- expect(svg.getAttribute("width")).toBe("56");expect(svg.getAttribute("height")).toBe("64");
- const select=screen.getByRole("combobox",{name:"房间像素缩放"});expect(within(select).getAllByRole("option").map(option=>option.getAttribute("value"))).toEqual(["1","2","3"]);
+ expect(svg.getAttribute("width")).toBe("28");expect(svg.getAttribute("height")).toBe("32");
+ const select=screen.getByRole("combobox",{name:"房间像素缩放"});expect(within(select).getAllByRole("option").map(option=>option.getAttribute("value"))).toEqual(["auto","1","2","3"]);
  fireEvent.change(select,{target:{value:"1"}});expect(svg.getAttribute("width")).toBe("28");expect(svg.getAttribute("height")).toBe("32");
  fireEvent.change(select,{target:{value:"3"}});expect(svg.getAttribute("width")).toBe("84");expect(svg.getAttribute("height")).toBe("96");expect(svg.getAttribute("viewBox")).toBe("0 0 28 32");
 });

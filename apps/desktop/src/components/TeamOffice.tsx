@@ -6,15 +6,56 @@ import TeamMemberAvatar from "./TeamMemberAvatar";
 import { officeStatusCounts, type OfficeMember, type OfficeService, type OfficeSnapshot } from "../lib/teamOffice";
 import "./TeamOffice.css";
 
+const SCALE_KEY = "dssh.office.scale.v1";
+type OfficeScale = number;
+type ScaleMode = "auto" | "1" | "2" | "3";
+const textScale = (scale: number) => 1 + (scale - 1) * .15;
+export function fitOfficeGrid(count: number, width: number, height: number, lead = false, groupCounts?: number[]) {
+  const total = Math.max(1, count);
+  const factor = lead ? 1.12 : 1;
+  const geometry = (scale: number, columns: number) => {
+    const text = textScale(scale);
+    const rows = groupCounts?.length ? groupCounts.reduce((sum, count) => sum + Math.ceil(count / columns), 0) : Math.ceil(total / columns);
+    const stationWidth = Math.max(160, 96 * scale * factor);
+    // Bubble, desk and label: name/status plus one or two task lines, padding and border.
+    const stationHeight = 24 * text + 72 * scale * factor + (scale < 1.75 ? 52 : 70) * text;
+    return {scale, columns, rows, stationWidth, stationHeight,
+      width: columns * stationWidth + (columns - 1) * 14,
+      height: rows * stationHeight + (rows - 1) * 22};
+  };
+  let best = geometry(1, Math.max(1, Math.min(total, Math.floor((width + 14) / 174))));
+  for (let scale = 1; scale <= 3; scale += .25) {
+    for (let columns = 1; columns <= total; columns++) {
+      const candidate = geometry(scale, columns);
+      if (candidate.width <= width && candidate.height <= height &&
+          (candidate.scale > best.scale || candidate.scale === best.scale && candidate.rows < best.rows)) best = candidate;
+    }
+  }
+  return best;
+}
+function readScale(): ScaleMode {
+  try {
+    const value = localStorage.getItem(SCALE_KEY);
+    if (value === "1" || value === "2" || value === "3") return value;
+  } catch { /* storage is optional */ }
+  return "auto";
+}
 const COLLAPSE_KEY = "dssh.office.collapsed.v1";
 const TOOL_LABELS: Record<string, string> = { claude: "CL", codex: "CX", pi: "PI", dsh: "DSH", cursor: "CU", agy: "AGY" };
 const STATE_LABELS: Record<string, string> = { working: "运行中", idle: "空闲", blocked: "等待", error: "卡住", unknown: "离线", done: "完成" };
 
-function readCollapsed(): Set<string> {
+function priority(member: OfficeMember) {
+  const counts = officeStatusCounts([member]);
+  return counts.stuck ? 0 : counts.waiting ? 1 : counts.running ? 2 : counts.idle ? 3 : 4;
+}
+function sortedMembers(members: OfficeMember[]) {
+  return [...members].sort((a, b) => Number(b.isLead) - Number(a.isLead) || priority(a) - priority(b));
+}
+function readCollapsed(projects: string[]): Set<string> {
   try {
-    const value = JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "[]");
-    return new Set(Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : []);
-  } catch { return new Set(); }
+    const value = JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "null");
+    return new Set(Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : projects.slice(1));
+  } catch { return new Set(projects.slice(1)); }
 }
 function writeCollapsed(value: Set<string>) {
   try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...value])); } catch { /* storage is optional */ }
@@ -59,7 +100,7 @@ function mailNote(mail: OfficeSnapshot["mail"], availability: string) {
 }
 
 /** Original pixel furniture, shared by occupied stations and the unassigned desks. */
-function Desk({scale, lead = false}: {scale:1|2|3;lead?:boolean}) {
+function Desk({scale, lead = false}: {scale:number;lead?:boolean}) {
   return <svg className="office-furniture" width={96*scale} height={72*scale} viewBox="0 0 96 72" shapeRendering="crispEdges" aria-hidden="true">
     <path className="office-floor-shadow" d="M7 59h79v3h4v3H11v-3H7z"/>
     <path className="office-chair" d="M24 31h20v18H24zm5 18h10v9H29zm-5 9h20v3H24z"/>
@@ -75,7 +116,7 @@ function Desk({scale, lead = false}: {scale:1|2|3;lead?:boolean}) {
     {lead && <><path className="office-lead-plaque" d="M10 43h13v5H10z"/><path className="office-plaque-mark" d="M13 44h7v2h-7z"/></>}
   </svg>;
 }
-function EmptyDesks({scale}: {scale:1|2|3}) {
+function EmptyDesks({scale}: {scale:number}) {
   return <div className="office-empty-desks" aria-hidden="true">{[0,1,2].map(index=><div className="office-empty-desk office-pixels" aria-hidden="true" key={index} style={{width:96*scale,height:72*scale}}><Desk scale={scale}/></div>)}</div>;
 }
 function UpperWall({phase, clock}: {phase:"day"|"dusk"|"night"; clock:string}) {
@@ -126,8 +167,46 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
   onOpenMember?: (paletteKey: string) => void;
 }) {
   const mailContainer=useRef<HTMLDivElement>(null);
-  const [scale,setScale] = useState<1|2|3>(2);
-  const [collapsed,setCollapsed] = useState<Set<string>>(readCollapsed);
+  const [scaleMode, setScaleMode] = useState<ScaleMode>(readScale);
+  const [roomSize, setRoomSize] = useState({width: 0, height: 0});
+  const compactWall = roomSize.height < 520;
+  const [collapsed,setCollapsed] = useState<Set<string>>(() => readCollapsed(snapshot.projects.map(project => project.id)));
+  const knownProjects = useRef(new Set(snapshot.projects.map(project => project.id)));
+  useEffect(() => {
+    const newClosed = snapshot.projects.filter((project, index) => index > 0 && !knownProjects.current.has(project.id));
+    knownProjects.current = new Set(snapshot.projects.map(project => project.id));
+    if (newClosed.length) setCollapsed(previous => new Set([...previous, ...newClosed.map(project => project.id)]));
+  }, [snapshot.projects]);
+  const openProjects = snapshot.projects.filter(project => !collapsed.has(project.id));
+  const activeMembers = openProjects.flatMap(project => project.sources.flatMap(source => source.members));
+  const furnitureFactor = activeMembers.some(member => member.isLead) ? 1.12 : 1;
+  const wallHeight = compactWall ? 32 : Math.min(120, Math.max(48, window.innerHeight * .14));
+  // Reserve project signs and the existing project/floor padding before fitting every station.
+  const groups = openProjects.flatMap(project => project.sources.filter(source => source.members.length));
+  const sourceOverhead = openProjects.reduce((sum, project) => sum + project.sources.reduce((height, source) => height +
+    (source.members.length && (project.sources.length > 1 || source.label !== project.name) ? 32 : 0), 0), 0) + Math.max(0, groups.length - 1) * 30;
+  const grid = fitOfficeGrid(activeMembers.length, Math.max(0, roomSize.width - 58),
+    Math.max(0, roomSize.height - wallHeight - 64 * snapshot.projects.length - 74 - sourceOverhead), furnitureFactor > 1, groups.map(source => source.members.length));
+  const scale: OfficeScale = scaleMode === "auto" ? grid.scale : Number(scaleMode);
+  const mailScale = scale < 1.5 ? 1 : scale < 2.5 ? 2 : 3;
+  const avatarScale = scale === 1 || scale === 2 || scale === 3 ? scale : 1;
+  useEffect(() => {
+    const room = mailContainer.current;
+    if (!room) return;
+    const update = (width: number, height: number) => setRoomSize(previous => previous.width === width && previous.height === height ? previous : {width, height});
+    update(room.clientWidth, room.clientHeight);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries.find(item => item.target === room);
+      if (entry) update(room.clientWidth || entry.contentRect.width, room.clientHeight || entry.contentRect.height);
+    });
+    observer.observe(room);
+    return () => observer.disconnect();
+  }, []);
+  const changeScale = (value: ScaleMode) => {
+    setScaleMode(value);
+    try { localStorage.setItem(SCALE_KEY, value); } catch { /* storage is optional */ }
+  };
   const [hidden,setHidden] = useState(() => document.hidden);
   const [now,setNow] = useState(() => new Date());
   const [reduced,setReduced] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
@@ -152,6 +231,8 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(timer);
   }, [paused]);
+  const totals = officeStatusCounts(snapshot.projects.flatMap(project => project.sources.flatMap(source => source.members)));
+  const serviceWarning = snapshot.service && ["offline", "error", "unauthorized"].includes(snapshot.service.state);
   const motion = snapshot.animationEnabled && !reduced;
   const phase = skyPhase(now);
   const seconds = Math.floor(now.getTime() / 1000);
@@ -160,13 +241,15 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
     writeCollapsed(next);
     return next;
   });
-  return <section className="team-office" aria-label="公司办公室" data-paused={String(paused)} data-motion={motion?"on":"off"} data-phase={phase}>
-    <header className="office-toolbar"><strong>公司办公室</strong><div>
-      <label>像素缩放 <select aria-label="房间像素缩放" value={scale} onChange={event => setScale(Number(event.target.value) as 1|2|3)}>
-        <option value="1">1×</option><option value="2">2×</option><option value="3">3×</option>
+  return <section className="team-office" aria-label="公司办公室" data-paused={String(paused)} data-motion={motion?"on":"off"} data-phase={phase}
+    data-scale={scale} data-columns={grid.columns} data-rows={grid.rows} data-scale-mode={scaleMode} data-compact-wall={String(compactWall)} data-compact-label={String(scale < 1.75)}
+    style={{"--office-text": textScale(scale), "--office-columns": scaleMode === "auto" ? grid.columns : undefined, "--office-station-width": `${Math.max(160, 96 * scale * furnitureFactor)}px`} as CSSProperties}>
+    <header className="office-toolbar"><span className="office-overview"><span className="office-service-dot" data-online={String(snapshot.service?.state === "online")} aria-label={snapshot.service?.state === "online" ? "服务在线" : "服务未连接"}/><span>工作中 {totals.running} · 卡住 {totals.stuck} · 等待 {totals.waiting}</span></span><div>
+      <label><select aria-label="房间像素缩放" value={scaleMode} onChange={event => changeScale(event.target.value as ScaleMode)}>
+        <option value="auto">自适应</option><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option>
       </select></label>{onPopOut && <Button size="sm" variant="outline" onClick={onPopOut}>弹出窗口</Button>}
     </div></header>
-    <p className="office-coverage" role="status">{serviceNote(snapshot.service)}</p>
+    {serviceWarning && <p className="office-coverage" role="status">{serviceNote(snapshot.service)}</p>}
     <div className="office-projects" ref={mailContainer}>
       <UpperWall phase={phase} clock={clockText(now)}/>
       {!snapshot.projects.length && <div className="office-unassigned"><p className="office-empty">暂无已登记的团队。先在 Lead 终端的团队面板登记项目。</p><EmptyDesks scale={scale}/></div>}
@@ -177,7 +260,7 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
         return <section className="office-project" aria-label={`项目 ${project.name}`} key={project.id} data-paused={String(paused || closed)}>
           <button className="office-project-sign" aria-label={`${closed?"展开":"折叠"}项目 ${project.name}`} aria-expanded={!closed} onClick={() => toggle(project.id)}>
             <span aria-hidden="true">{closed?"▸":"▾"}</span> {project.name}
-            <span className="office-project-counts" aria-label="团队状态计数">运行中 {counts.running} · 等待 {counts.waiting} · 卡住 {counts.stuck} · 空闲 {counts.idle} · 离线 {counts.offline}</span>
+            <span className="office-project-counts" aria-label="团队状态计数">{[["运行中", counts.running], ["等待", counts.waiting], ["卡住", counts.stuck], ["空闲", counts.idle], ["离线", counts.offline]].filter(([, count]) => Number(count) > 0).map(([label, count]) => `${label} ${count}`).join(" · ")}</span>
             <small>{members.length} 人</small>
           </button>
           <div hidden={closed} className="office-project-floor">
@@ -187,11 +270,15 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
               {source.availability !== "ready" ? <p role="status" className="office-source-notice">{source.notice}</p>
                 : !source.members.length ? <p className="office-source-notice">此团队尚未登记成员。</p> : null}
               {!source.members.length && <EmptyDesks scale={scale}/>}
-              <div className="office-desks" style={{"--office-station-width":`${Math.max(128,96*scale)}px`} as CSSProperties}>
-                {source.members.map(member => {
+              <div className="office-desks">
+                {sortedMembers(source.members).map(member => {
                   const ended = member.match === "gone" || member.match === "replaced";
-                  const grey = member.match === "no_agent" || member.machineOnline === false;
+                  const quiet = priority(member) >= 3;
+                  const grey = priority(member) === 4;
+                  const urgent = priority(member) <= 1;
                   const oldAi = member.ai && Number.isFinite(Date.parse(member.ai.updatedAt)) && (now.getTime() - Date.parse(member.ai.updatedAt)) > 30 * 60_000;
+                  const bubbleText = member.ai?.summary || member.status.label;
+                  const bubbleLimit = scale < 1.75 ? 16 : 20;
                   const detailId = `office-detail-${member.id}`;
                   const open = () => onOpenMember?.(member.paletteKey);
                   const factor = member.isLead ? 1.12 : 1;
@@ -199,37 +286,36 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                   // One placement for both prompts: inside the desk box, below the bubble slot.
                   const badge = ["waiting_input", "input_pending"].includes(member.liveState ?? "") || member.status.state === "blocked"
                     ? "warn" : member.liveState === "stuck" || member.status.state === "error" ? "alert" : "";
-                  return <article className={`office-station${member.isLead?" is-lead":""}${ended?" is-ended":""}${grey?" is-grey":""}${member.liveState==="stuck"||member.status.state==="error"?" is-stuck":""} ${stateClass}`}
+                  return <article className={`office-station${member.isLead?" is-lead":""}${ended?" is-ended":""}${grey?" is-grey":""}${quiet?" is-quiet":""}${member.liveState==="stuck"||member.status.state==="error"?" is-stuck":""} ${stateClass}`}
                     key={member.id} data-member-id={member.id} data-office-station={officeStationAnchor(source.id,member.id)}
                     data-state={member.status.state} data-live-state={member.liveState ?? ""} data-match={member.match ?? ""}
                     data-palette-key={member.paletteKey} aria-label={`工位 ${member.name}`} aria-describedby={detailId}
                     tabIndex={0} onClick={open} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}>
                     <span className="office-sr-only">{member.status.label}</span>
                     <div className="office-ai-slot">
-                      {member.ai && <div className={`office-ai-bubble${oldAi?" is-old":""}`} title={`AI 摘要（${relative(member.ai.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}）`}>
-                        <span className="office-ai-text">{member.ai.summary.length > 20 ? `${member.ai.summary.slice(0, 20)}…` : member.ai.summary}</span>
-                        <small>{relative(member.ai.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}</small>
+                      {((member.ai && !(quiet && oldAi)) || urgent) && <div className={`office-ai-bubble${oldAi && !urgent?" is-old":""}`} title={`AI 摘要（${relative(member.ai?.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}）`}>
+                        <span className="office-ai-text">{bubbleText.length > bubbleLimit ? `${bubbleText.slice(0, bubbleLimit)}…` : bubbleText}</span>
+                        <small>{relative(member.ai?.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}</small>
                       </div>}
                     </div>
-                    <div className="office-pixels" style={{width:96*scale*factor,height:72*scale*factor+26}}>
-                      <div className="office-furniture-scale" style={{transform:`scale(${factor})`}}>
+                    <div className="office-pixels" style={{width:96*scale*factor,height:72*scale*factor}}>
+                      <div className="office-furniture-scale" style={{width:96*scale,height:72*scale,transform:`scale(${factor})`}}>
                         <Desk scale={scale} lead={member.isLead}/>
                       </div>
                       {ended
                         ? <div className="office-empty-chair" aria-hidden="true"><svg width={20*scale} height={18*scale} viewBox="0 0 20 18" shapeRendering="crispEdges"><path className="office-chair" d="M3 1h14v8H3zm2 8h10v6H5zm-2 6h14v3H3z"/></svg></div>
-                        : <div className="office-person" style={{left:20*scale*factor,top:14*scale*factor}}><TeamMemberAvatar memberId={member.paletteKey} status={member.status} scale={scale} motionEnabled={motion} paused={paused || closed}/></div>}
+                        : <div className="office-person" style={{left:20*scale*factor,top:14*scale*factor}}><div style={{width:28*scale,height:32*scale}}><div style={{width:28*avatarScale,height:32*avatarScale,transform:`scale(${scale/avatarScale})`,transformOrigin:"top left"}}><TeamMemberAvatar memberId={member.paletteKey} status={member.status} scale={avatarScale} motionEnabled={motion} paused={paused || closed}/></div></div></div>}
                       {badge && <span className={`office-state-badge is-${badge}`} aria-hidden="true">{badge === "warn" ? "?" : "!"}</span>}
-                      <div className="office-desk-label" style={{top:51*scale*factor,left:6*scale,right:6*scale}}>
+                    </div>
+                    <div className="office-desk-label">
                         <div className="office-station-name">
                           {member.isLead && <span className="office-lead-label">Lead</span>}
                           {member.tool && <span className="office-tool" title={`工具 ${member.tool}`}>{TOOL_LABELS[member.tool] ?? member.tool}</span>}
                           <strong title={member.name}>{member.name}</strong>
                         </div>
-                        <span className="office-member-status" title={member.status.label}>{shortStatus[member.status.state] ?? STATE_LABELS[member.status.state] ?? member.status.label}</span>
-                        {member.machine && <span className="office-member-machine" title={member.machine}>{member.machine}</span>}
-                      </div>
+                        <div className="office-status-line"><span className="office-member-status" title={member.status.label}>{shortStatus[member.status.state] ?? STATE_LABELS[member.status.state] ?? member.status.label}</span></div>
+                    {!quiet && <p className="office-member-task office-station-paper" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskFull || member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.taskText}</p>}
                     </div>
-                    <p className="office-member-task office-station-paper" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskFull || member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.taskText}</p>
                     <DetailCard member={member} now={seconds} id={detailId}/>
                   </article>;
                 })}
@@ -238,7 +324,7 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
           </div>
         </section>;
       })}
-      <OfficeMail scale={scale} mail={snapshot.mail} paused={paused} motion={motion} container={mailContainer} layoutKey={[scale,collapsed,snapshot.projects]}/>
+      <OfficeMail scale={mailScale} mail={snapshot.mail} paused={paused} motion={motion} container={mailContainer} layoutKey={[scale,collapsed,snapshot.projects]}/>
     </div>
     <footer className="office-mailbox"><span aria-hidden="true">✉</span> {mailNote(snapshot.mail, snapshot.mailAvailability)}</footer>
   </section>;
