@@ -80,8 +80,14 @@ it('carries only AI presentation fields into the room and offers no refresh comm
  const member={project:'demo',email:target.key,role:'Worker',host:'host-a',port:22,username:'dev',workdir:'/srv/example',tmux:{id:'$1',created:1,name:'worker'}};
  const snapshot=buildOfficeSnapshot([{id:'source',project:'demo',label:'Demo',profile:emptyProfile(),service:true}],{source:{availability:'ready',notice:'',members:[member],ai:{[target.key]:{...ai,digest:'PRIVATE_DIGEST',source:{machine:'PRIVATE_HOST',session:'PRIVATE_SESSION'}}}}},{servers:[],sessions:[],themeId:'one-light',animationEnabled:false});
  expect(Object.keys(snapshot.projects[0].sources[0].members[0].ai!).sort()).toEqual(["evidence","model","status","summary","updatedAt"]);
- expect(JSON.stringify(snapshot)).not.toMatch(/PRIVATE_|worker@example|host-a/);
- render(<TeamOffice snapshot={snapshot}/>);const station=document.querySelector('.office-station')!;expect(within(station as HTMLElement).getByText(ai.summary)).toBeTruthy();expect(within(station as HTMLElement).getByText(/AI 摘要/)).toBeTruthy();expect(screen.queryByRole('button',{name:'重新总结'})).toBeNull();
+ // 成员机器名自 T38/T40 起是房间的展示字段（只显示名字、不显示 IP），AI digest/source 与邮箱仍不得进快照。
+ expect(snapshot.projects[0].sources[0].members[0].machine).toBe('host-a');
+ expect(JSON.stringify(snapshot)).not.toMatch(/PRIVATE_|worker@example/);
+ render(<TeamOffice snapshot={snapshot}/>);const station=document.querySelector('.office-station')!;
+ // T38 房间改版后摘要同时出现在气泡与展开详情里，这里只要求房间里确实展示，不再限定唯一节点。
+ expect(within(station as HTMLElement).getAllByText(ai.summary).length).toBeGreaterThan(0);
+ expect(within(station as HTMLElement).getAllByText(/AI 摘要/).length).toBeGreaterThan(0);
+ expect(screen.queryByRole('button',{name:'重新总结'})).toBeNull();
 });
 
 it('rejects malformed AI dates and unknown states instead of rendering invalid relative time',()=>{
