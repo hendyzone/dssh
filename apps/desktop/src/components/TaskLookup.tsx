@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Lock, LockOpen, Search } from "lucide-react";
 import {
   BoardError, listProjects, listStatuses, loadCard, lookupTask, NO_SOURCE, projectReasonLabel, saveLookupSettings, shortName, taskIndex,
-  useLookupSettings, type BoardProject, type BoardSource, type BoardStatus, type LookupResult, type ProjectReason, type TaskIndex,
+  useLookupSettings, saveTeamLock, loadLookupSettings, type TeamLookupScope, type BoardProject, type BoardSource, type BoardStatus, type LookupResult, type ProjectReason, type TaskIndex,
 } from "../lib/taskLookup";
 import TaskCard, { StatusBadge } from "./TaskCard";
 import { Button } from "./ui/button";
@@ -54,10 +54,14 @@ export function LookupOutcome({ state, source }: { state: ReturnType<typeof useT
  * Task lookup for the team panel: pick and lock a project, type a code (prefix optional),
  * or 「项目 编号」 when unlocked; browse the project's tasks by status, assignee and title.
  */
-export default function TaskLookup({ source, inferred }: { source?: BoardSource; inferred?: { project: string; reason: ProjectReason } }) {
+interface TaskLookupProps { source?: BoardSource; inferred?: { project: string; reason: ProjectReason }; teamScope?: TeamLookupScope }
+export default function TaskLookup(props: TaskLookupProps) {
+  return <ScopedTaskLookup key={props.teamScope?.key ?? "global"} {...props}/>;
+}
+function ScopedTaskLookup({ source, inferred, teamScope }: TaskLookupProps) {
   const settings = useLookupSettings();
-  const locked = settings.lockedProject;
-  const [selected, setSelected] = useState(inferred && inferred.reason !== "locked" ? inferred.project : "");
+  const locked = teamScope ? settings.teamLocks?.[teamScope.key] ?? "" : settings.lockedProject;
+  const [selected, setSelected] = useState(!teamScope && inferred && inferred.reason !== "locked" ? inferred.project : "");
   const project = locked || selected;
   const [projects, setProjects] = useState<BoardProject[]>([]);
   const [projectsError, setProjectsError] = useState("");
@@ -68,18 +72,26 @@ export default function TaskLookup({ source, inferred }: { source?: BoardSource;
     let live = true;
     setProjectsError("");
     if (!source) return;
-    listProjects(source).then(value => { if (live) setProjects(value.filter(p => !p.archived || p.slug === project)); }).catch(e => { if (live) setProjectsError(errorText(e)); });
+    listProjects(source).then(value => {
+      if (!live) return;
+      const visible = value.filter(p => !p.archived || p.slug === project);
+      setProjects(visible);
+      if (teamScope && !Object.prototype.hasOwnProperty.call(loadLookupSettings().teamLocks ?? {}, teamScope.key)) {
+        try { saveTeamLock(teamScope, visible.some(p => p.slug === teamScope.project) ? teamScope.project : ""); }
+        catch (error) { setSettingsError(String(error)); }
+      }
+    }).catch(e => { if (live) setProjectsError(errorText(e)); });
     return () => { live = false; };
   }, [source?.key]);
   const lockedName = projects.find(p => p.slug === locked)?.name;
   const submit = () => { if (input.trim()) void state.lookup(input, project || undefined); };
   const setLock = (value: string) => {
-    try { saveLookupSettings({ lockedProject: value }); setSettingsError(""); if (!value) setSelected(locked); }
+    try { if (teamScope) saveTeamLock(teamScope,value); else saveLookupSettings({ lockedProject: value }); setSettingsError(""); if (!value) setSelected(locked); }
     catch (e) { setSettingsError(String(e)); }
   };
   return <section className="task-lookup" aria-label="任务查询">
     <div className="task-lookup-project">
-      {locked ? <span className="task-lookup-locked" title="锁定后只需输入编号；终端编号识别也使用此项目">
+      {locked ? <span className="task-lookup-locked" title={teamScope ? "仅锁定当前团队的任务查询" : "锁定后只需输入编号；终端编号识别也使用此项目"}>
         <Lock size={13}/><strong>{lockedName ?? locked}</strong>{lockedName && lockedName !== locked && <small>{locked}</small>}
       </span> : <select aria-label="查询项目" value={selected} onChange={e => setSelected(e.target.value)}>
         <option value="">全部项目（按编号精确查找）</option>
@@ -87,10 +99,10 @@ export default function TaskLookup({ source, inferred }: { source?: BoardSource;
         {projects.map(p => <option key={p.slug} value={p.slug}>{p.name === p.slug ? p.slug : `${p.name} · ${p.slug}`}</option>)}
       </select>}
       <Button size="sm" variant={locked ? "default" : "outline"} aria-pressed={!!locked} disabled={!locked && !selected}
-        title={locked ? "解锁后可切换项目" : "锁定此项目：重启 dssh 后保持，终端编号识别优先使用"}
+        title={locked ? "解锁后可切换项目" : teamScope ? "锁定当前团队的查询项目，其他团队不受影响" : "锁定此项目：重启 dssh 后保持，终端编号识别优先使用"}
         onClick={() => setLock(locked ? "" : selected)}>{locked ? <><LockOpen size={13}/>解锁</> : <><Lock size={13}/>锁定</>}</Button>
     </div>
-    {!locked && inferred && <p className="task-lookup-hint">当前终端项目：{inferred.project}（{projectReasonLabel[inferred.reason]}）</p>}
+    {!teamScope && !locked && inferred && <p className="task-lookup-hint">当前终端项目：{inferred.project}（{projectReasonLabel[inferred.reason]}）</p>}
     <form className="task-lookup-form" onSubmit={e => { e.preventDefault(); submit(); }}>
       <Input aria-label="任务编号" value={input} placeholder={project ? `编号，如 T1090 或 1090` : "项目 编号，如 smart-table T1090；或只输编号"} onChange={e => setInput(e.target.value)}/>
       <Button size="sm" type="submit" disabled={!input.trim() || state.busy}><Search size={13}/>查询</Button>

@@ -418,6 +418,29 @@ mod tests {
         .is_err());
     }
     #[test]
+    fn team_locks_encrypted_roundtrip_and_old_global_only_restore() {
+        let mut payload=bundle::sample_bundle();payload.entries.clear();
+        let identity=serde_json::json!(["service","https://team.example.invalid/api/v1","example-project"]).to_string();
+        let settings=serde_json::json!({"boardUrl":"","terminalLinks":true,"lockedProject":"global-default","overrides":{},"teamLocks":{identity.clone():""}});
+        payload.ui_state.insert("dssh.task-lookup.v1".into(),settings.to_string());
+        bundle::validate_ui(&payload.ui_state).unwrap();
+        let encrypted=encrypt_bundle(&payload,"test-sync-password").unwrap();
+        assert!(!String::from_utf8_lossy(&encrypted).contains("global-default"));
+        let restored=decrypt_bundle(&encrypted,"test-sync-password").unwrap();
+        let dir=std::env::temp_dir().join(format!("dssh-team-lock-sync-{}",rand::random::<u64>()));std::fs::create_dir(&dir).unwrap();
+        let result=bundle::restore_at_with(&dir.join("servers.json"),restored,||Ok(())).unwrap();
+        let actual:serde_json::Value=serde_json::from_str(&result.ui_state["dssh.task-lookup.v1"]).unwrap();
+        assert_eq!(actual,settings);
+        let mut old=payload;let mut old_settings=settings;old_settings.as_object_mut().unwrap().remove("teamLocks");
+        old.ui_state.insert("dssh.task-lookup.v1".into(),old_settings.to_string());
+        let encrypted=encrypt_bundle(&old,"test-sync-password").unwrap();
+        let old=decrypt_bundle(&encrypted,"test-sync-password").unwrap();
+        let result=bundle::restore_at_with(&dir.join("servers.json"),old,||Ok(())).unwrap();
+        let actual:serde_json::Value=serde_json::from_str(&result.ui_state["dssh.task-lookup.v1"]).unwrap();
+        assert_eq!(actual,old_settings);assert!(actual.get("teamLocks").is_none());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn reads_original_v1_backups_without_inventing_credentials() {
         let salt = [1u8; 16];
         let nonce = [2u8; 12];

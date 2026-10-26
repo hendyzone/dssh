@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { collaborationKey, type CollaborationProfile } from "./collaboration";
-import type { SessionInfo } from "../types";
+import type { ServerEntry, SessionInfo } from "../types";
 
 /** Read-only taskboard lookups: find a task by project + code, index codes for the terminal. */
 
@@ -37,8 +37,10 @@ export interface TaskLookupSettings {
   boardUrl: string;
   /** Recognise task codes in terminal output. */
   terminalLinks: boolean;
-  /** Project locked in the team panel; empty when unlocked. */
+  /** Global project lock used outside scoped team panels. */
   lockedProject: string;
+  /** Missing scope is uninitialized; an empty value is an explicit unlock. */
+  teamLocks?: Record<string, string>;
   /** Manual project per `server:<id>` or `tmux:<serverId>:<session name>`. */
   overrides: Record<string, string>;
 }
@@ -65,6 +67,10 @@ export function loadLookupSettings(): TaskLookupSettings {
     if (typeof raw.boardUrl === "string" && !boardUrlError(raw.boardUrl)) settings.boardUrl = raw.boardUrl.trim();
     if (typeof raw.terminalLinks === "boolean") settings.terminalLinks = raw.terminalLinks;
     if (typeof raw.lockedProject === "string" && isIdentifier(raw.lockedProject)) settings.lockedProject = raw.lockedProject;
+    if (raw.teamLocks && typeof raw.teamLocks === "object" && !Array.isArray(raw.teamLocks)) {
+      const entries = Object.entries(raw.teamLocks);
+      if (entries.length <= 256) settings.teamLocks = Object.fromEntries(entries.filter(([key,value]) => validTeamLockKey(key) && typeof value === "string" && (!value || isIdentifier(value))));
+    }
     if (raw.overrides && typeof raw.overrides === "object" && !Array.isArray(raw.overrides))
       for (const [key, value] of Object.entries(raw.overrides as Record<string, unknown>))
         if (typeof value === "string" && isIdentifier(value) && /^(server|tmux):/.test(key)) settings.overrides[key] = value;
@@ -76,6 +82,8 @@ export function saveLookupSettings(patch: Partial<TaskLookupSettings>): TaskLook
   const error = boardUrlError(next.boardUrl);
   if (error) throw new Error(error);
   if (next.lockedProject && !isIdentifier(next.lockedProject)) throw new Error("项目编号格式无效");
+  if (next.teamLocks && (typeof next.teamLocks !== "object" || Array.isArray(next.teamLocks) || Object.keys(next.teamLocks).length > 256 ||
+      Object.entries(next.teamLocks).some(([key,value]) => !validTeamLockKey(key) || typeof value !== "string" || (value !== "" && !isIdentifier(value))))) throw new Error("团队项目锁定配置无效");
   next.boardUrl = next.boardUrl.trim();
   localStorage.setItem(TASK_LOOKUP_KEY, JSON.stringify(next));
   window.dispatchEvent(new Event(EVENT));
@@ -92,6 +100,35 @@ export function useLookupSettings(): TaskLookupSettings {
 }
 export const serverOverrideKey = (serverId: string) => `server:${serverId}`;
 export const tmuxOverrideKey = (serverId: string, tmuxName: string) => `tmux:${serverId}:${tmuxName}`;
+
+export interface TeamLookupScope { key: string; project: string }
+export function validTeamLockKey(key: string): boolean {
+  const within = (value: string, max: number) => new TextEncoder().encode(value).length <= max && !/[\u0000-\u001f\u007f-\u009f]/.test(value);
+  if (!within(key, 4096)) return false;
+  try {
+    const value = JSON.parse(key);
+    if (!Array.isArray(value) || value.length !== 3 || !value.every(v=>typeof v === "string") || !isIdentifier(value[2])) return false;
+    if (value[0] === "service") {
+      const url = new URL(value[1]);
+      return !boardUrlError(value[1]) && value[1] === url.toString().replace(/\/$/, "") && url.pathname.endsWith("/api/v1");
+    }
+    if (value[0] !== "legacy") return false;
+    const [host,port,user,workdir,name,...extra] = JSON.parse(value[1]);
+    return !extra.length && typeof host === "string" && !!host && within(host, 1024) && host === host.trim().toLowerCase() &&
+      Number.isInteger(port) && port >= 1 && port <= 65535 && typeof user === "string" && !!user && within(user, 256) &&
+      typeof workdir === "string" && !!workdir && within(workdir, 4096) && typeof name === "string" && !!name && within(name, 256);
+  } catch { return false; }
+}
+/** Service URLs are already canonicalized by the team service store. */
+export function teamLookupScope(url: string, project: string, server?: ServerEntry, profile?: CollaborationProfile): TeamLookupScope | undefined {
+  const key = url ? JSON.stringify(["service",url,project]) : server && profile
+    ? JSON.stringify(["legacy",JSON.stringify([server.host.trim().toLowerCase(),server.port,server.username,profile.workdir,profile.tmuxName]),project]) : "";
+  return validTeamLockKey(key) ? {key,project} : undefined;
+}
+export function saveTeamLock(scope: TeamLookupScope, project: string): void {
+  const settings = loadLookupSettings();
+  saveLookupSettings({teamLocks:{...settings.teamLocks,[scope.key]:project}});
+}
 
 // ---------- which board, which project ----------
 /**
@@ -113,7 +150,7 @@ export const NO_SOURCE = "未配置看板地址：在「设置 → 任务查询�
 
 export type ProjectReason = "locked" | "collaboration" | "tmux" | "server";
 export const projectReasonLabel: Record<ProjectReason, string> = {
-  locked: "团队面板锁定", collaboration: "Agent 协作绑定", tmux: "手动指定（tmux 会话）", server: "手动指定（服务器）",
+  locked: "全局锁定", collaboration: "Agent 协作绑定", tmux: "手动指定（tmux 会话）", server: "手动指定（服务器）",
 };
 /** Collaboration bindings that belong to this pane's tmux incarnation. */
 export function paneProfiles(profiles: Record<string, CollaborationProfile>, pane?: SessionInfo): CollaborationProfile[] {

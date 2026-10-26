@@ -47,9 +47,9 @@ export default function TaskLookupSettings({ sessions = [], servers = [] }: { se
       {boardUrlError(url) && <p role="alert" className="collaboration-error">{boardUrlError(url)}</p>}
     </fieldset>
     <label className="collaboration-toggle"><input type="checkbox" checked={settings.terminalLinks} onChange={e => save({ terminalLinks: e.target.checked }, e.target.checked ? "已开启终端编号识别。" : "已关闭终端编号识别。")}/> 识别终端中的任务编号（只认当前项目看板上存在的编号）</label>
-    <fieldset><legend>当前项目</legend>
-      <p>终端所属项目依次取：团队面板锁定的项目 → 此 tmux 会话的 Agent 协作绑定 → 下方手动指定（tmux 会话优先于服务器）。都没有时不识别编号。</p>
-      {settings.lockedProject ? <div className="collaboration-actions"><span>已锁定：<strong>{settings.lockedProject}</strong></span><Button size="sm" variant="outline" onClick={() => save({ lockedProject: "" }, "已解锁项目。")}>解锁</Button></div> : <p>未锁定项目；可在团队面板顶部锁定。</p>}
+    <fieldset><legend>全局项目</legend>
+      <p>终端所属项目依次取：全局锁定的项目 → 此 tmux 会话的 Agent 协作绑定 → 下方手动指定（tmux 会话优先于服务器）。都没有时不识别编号。</p>
+      {settings.lockedProject ? <div className="collaboration-actions"><span>已锁定：<strong>{settings.lockedProject}</strong></span><Button size="sm" variant="outline" onClick={() => save({ lockedProject: "" }, "已解锁项目。")}>解锁</Button></div> : <p>未设置全局锁定。团队面板的查询锁定按团队独立保存，不影响终端。</p>}
       {choices.length ? <>
         <label className="collaboration-field">为会话指定项目<select value={paneId} onChange={e => { setPaneId(e.target.value); setScope(choices.find(s => s.pane.id === e.target.value)?.pane.tmux ? "tmux" : "server"); }}>
           {choices.map(s => <option key={s.pane.id} value={s.pane.id}>{s.pane.server.name}{s.pane.tmux ? ` · tmux ${s.pane.tmux.name}` : ""}</option>)}

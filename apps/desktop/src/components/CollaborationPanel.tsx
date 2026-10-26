@@ -1,3 +1,4 @@
+import {teamLookupScope} from "../lib/taskLookup";
 import { useEffect, useRef, useState } from "react";
 import { collaborationRequest, type CollaborationProfile, type CollaborationRequest } from "../lib/collaboration";
 import { Button } from "./ui/button";
@@ -79,7 +80,7 @@ export default function CollaborationPanel({sessionId,profile,onClose,teamNaviga
     <header data-panel-drag-handle tabIndex={0}><strong>Agent 协作 · {profile.project}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭 Agent 协作" onClick={onClose}><IconClose/></Button></header>
     <div className="collaboration-content">
       <p>{profile.tmuxName || profile.tmuxId} · {profile.workdir}</p>
-      {taskLookup && <details className="task-lookup-details"><summary>查任务（编号 → 状态卡片）</summary><TaskLookup source={taskLookup.source} inferred={taskLookup.inferred}/></details>}
+      {taskLookup && teamLookupScope("",profile.project,teamNavigation?.server,profile) && <details className="task-lookup-details"><summary>查任务（编号 → 状态卡片）</summary><TaskLookup source={taskLookup.source} inferred={taskLookup.inferred} teamScope={teamLookupScope("",profile.project,teamNavigation?.server,profile)}/></details>}
       {teamNavigation && <TeamMembers sessionId={sessionId} profile={profile} navigation={teamNavigation} board={taskLookup?.source} officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}/>}
       <details><summary>发送接入手册给 Agent</summary><AgentGuide profile={profile}/></details>
       {!sessionId&&<p role="status">终端已断开，请先打开对应终端。</p>}

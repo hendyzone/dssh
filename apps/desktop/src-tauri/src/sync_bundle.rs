@@ -69,6 +69,28 @@ fn random_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+fn team_lock_identity_valid(raw: &str) -> bool {
+    if raw.len() > 4096 { return false; }
+    let Ok(parts) = serde_json::from_str::<Vec<serde_json::Value>>(raw) else { return false; };
+    if parts.len() != 3 || !parts[2].as_str().is_some_and(crate::taskboard::identifier) { return false; }
+    let Some(identity) = parts[1].as_str() else { return false; };
+    match parts[0].as_str() {
+        Some("service") => crate::taskboard::board_url(identity).is_ok_and(|url| {
+            url.as_str() == identity && url.path().ends_with("/api/v1")
+        }),
+        Some("legacy") => {
+            let Ok(lead) = serde_json::from_str::<Vec<serde_json::Value>>(identity) else { return false; };
+            let text = |index: usize, max: usize| lead.get(index).and_then(serde_json::Value::as_str)
+                .is_some_and(|value| !value.is_empty() && value.len() <= max && !value.chars().any(char::is_control));
+            lead.len() == 5 && text(0, 1024) && text(2, 256) && text(3, 4096) && text(4, 256)
+                && lead[0].as_str().is_some_and(|host| host == host.trim().to_lowercase())
+                && lead[1].as_u64().is_some_and(|port| (1..=65535).contains(&port))
+
+        }
+        _ => false,
+    }
+}
+
 pub fn validate_ui(ui: &UiState) -> Result<(), SyncError> {
     for (key, value) in ui {
         if !UI_KEYS.contains(&key.as_str()) || value.len() > 512 * 1024 {
@@ -98,6 +120,15 @@ pub fn validate_ui(ui: &UiState) -> Result<(), SyncError> {
                     let project = parsed["lockedProject"].as_str().ok_or_else(|| error("锁定项目格式无效"))?;
                     if (!project.is_empty() && !crate::taskboard::identifier(project)) || !parsed["terminalLinks"].is_boolean() {
                         return Err(error("任务查询配置无效"));
+                    }
+                    if let Some(locks) = parsed.get("teamLocks") {
+                        let locks = locks.as_object().filter(|locks| locks.len() <= 256)
+                            .ok_or_else(|| error("团队锁定配置格式无效"))?;
+                        for (identity, project) in locks {
+                            if !team_lock_identity_valid(identity) || !project.as_str().is_some_and(|project| project.is_empty() || crate::taskboard::identifier(project)) {
+                                return Err(error("团队锁定配置无效"));
+                            }
+                        }
                     }
                     let overrides = parsed["overrides"].as_object().ok_or_else(|| error("项目绑定格式无效"))?;
                     for (key, value) in overrides {
@@ -383,6 +414,42 @@ mod tests {
         let mut json = serde_json::to_value(sample_bundle()).unwrap();
         json.as_object_mut().unwrap().remove("teamService");
         assert!(serde_json::from_value::<Bundle>(json).unwrap().team_service.is_none());
+    }
+    #[test]
+    fn team_locks_validate_boundaries_and_preserve_global_and_explicit_unlock() {
+        let service = serde_json::json!(["service", "https://team.example.invalid/api/v1", "demo"]).to_string();
+        let legacy = serde_json::json!(["legacy", serde_json::json!(["host.example.invalid",22,"user","/repo","lead"]).to_string(), "legacy-project"]).to_string();
+        let original = serde_json::json!({"boardUrl":"", "terminalLinks":true, "lockedProject":"global-project", "overrides":{"server:old":"global-project"}, "teamLocks":{service.clone():"",legacy.clone():"legacy-board"}});
+        let ui_for = |value: &serde_json::Value| BTreeMap::from([("dssh.task-lookup.v1".into(),value.to_string())]);
+        let mut ui=ui_for(&original);
+        validate_ui(&ui).unwrap();
+        remap_team_connections(&mut ui,&BTreeMap::from([("old".into(),"new".into())])).unwrap();
+        let remapped:serde_json::Value=serde_json::from_str(&ui["dssh.task-lookup.v1"]).unwrap();
+        assert_eq!(remapped["teamLocks"],original["teamLocks"]);
+        assert_eq!(remapped["lockedProject"],"global-project");
+        assert_eq!(remapped["overrides"],serde_json::json!({"server:new":"global-project"}));
+        let mut old=original.clone();old.as_object_mut().unwrap().remove("teamLocks");
+        validate_ui(&ui_for(&old)).unwrap();
+        for invalid in [serde_json::json!([]),serde_json::Value::Null,serde_json::json!({"__proto__":"demo"}),serde_json::json!({service.clone():42}),serde_json::json!({service.clone():"bad/project"})] {
+            let mut value=original.clone();value["teamLocks"]=invalid;
+            assert!(validate_ui(&ui_for(&value)).is_err());
+        }
+        for identity in [
+            serde_json::json!(["service","https://user:secret@team.example.invalid/api/v1","demo"]).to_string(),
+            serde_json::json!(["service","https://team.example.invalid/api/v1/","demo"]).to_string(),
+            serde_json::json!(["service","https://team.example.invalid/api/v1?token=secret","demo"]).to_string(),
+            serde_json::json!(["legacy",serde_json::json!(["host",0,"user","/repo","lead"]).to_string(),"demo"]).to_string(),
+            serde_json::json!(["legacy",serde_json::json!(["host",22,"user","/repo",""]).to_string(),"demo"]).to_string(),
+            "x".repeat(4097),
+        ] {
+            let mut value=original.clone();value["teamLocks"]=serde_json::json!({identity:"demo"});
+            assert!(validate_ui(&ui_for(&value)).is_err());
+        }
+        let mut locks=serde_json::Map::new();
+        for index in 0..256 { locks.insert(serde_json::json!(["service","https://team.example.invalid/api/v1",format!("project-{index}")]).to_string(),serde_json::json!("")); }
+        let mut value=original.clone();value["teamLocks"]=serde_json::Value::Object(locks.clone());validate_ui(&ui_for(&value)).unwrap();
+        locks.insert(service,serde_json::json!("demo"));value["teamLocks"]=serde_json::Value::Object(locks);
+        assert!(validate_ui(&ui_for(&value)).is_err());
     }
     #[test]
     fn team_bindings_follow_restored_server_ids() {
