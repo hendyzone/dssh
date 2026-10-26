@@ -65,7 +65,7 @@
 /* 卡片行（需要处理 / 等 Lead / 运行中 / 待验收） */
 .team-dynamics .team-live-card{border-bottom:1px solid var(--ui-border)}
 .team-dynamics .team-live-card:last-child{border-bottom:0}
-.team-dynamics .team-live-card>summary.team-card-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;
+.team-dynamics .team-live-card>summary.team-card-head{display:grid;grid-template-columns:7px minmax(0,1fr) auto auto;
  align-items:center;gap:2px 8px;padding:6px 2px;min-width:0}
 .team-dynamics .team-live-dot{width:7px;height:7px;border-radius:50%;background:var(--ui-muted);flex:none}
 .team-dynamics .team-live-dot.is-bad{background:var(--ui-danger,#e06c75);
@@ -75,7 +75,9 @@
 .team-dynamics .team-live-dot.is-run,.team-dynamics .team-live-dot.is-review{background:var(--ui-accent)}
 .team-dynamics .team-live-dot.is-idle,.team-dynamics .team-live-dot.is-gone,
 .team-dynamics .team-live-dot.is-offline,.team-dynamics .team-live-dot.is-none{background:var(--ui-muted)}
-.team-dynamics .team-ai-identity{font-size:13px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.team-dynamics .team-ai-identity{font-size:13px;min-width:0;max-width:100%;text-align:left;justify-self:start;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+/* AI content belongs to its own row, not the status-dot track. */
+.team-dynamics .team-live-card>summary.team-card-head>.team-service-ai{grid-column:1/-1;min-width:0}
 /* 副标题（工具 · 模型）与旧的后缀样式保持一致：小一号、弱化色、不抢主标题。 */
 .team-dynamics .team-live-subtitle{font-size:11px;font-weight:400;color:var(--ui-muted);margin-left:4px}
 .team-dynamics .team-live-status{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
