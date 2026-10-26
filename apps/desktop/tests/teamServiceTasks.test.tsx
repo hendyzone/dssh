@@ -8,7 +8,7 @@ import {emptyProfile} from "../src/lib/collaboration";
 vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn()}));
 vi.mock("../src/lib/agentSessions",async original=>({...await original<any>(),taskBrief:vi.fn()}));
 vi.mock("../src/lib/taskLookup",async original=>({...await original<any>(),loadCard:vi.fn()}));
-const member={project:"alpha",email:"worker@example.invalid",role:"Worker",host:"host.example.invalid",port:22,username:"dev",workdir:"/repo",tmux:{id:"$1",created:1,name:"worker"},currentTask:"工作中·beta/T8"};
+const member={project:"alpha",email:"worker@example.invalid",role:"Worker",host:"host.example.invalid",port:22,username:"dev",workdir:"/repo",tmux:{id:"$1",created:1,name:"worker"},currentTask:""};
 const server={id:"host",name:"Example",host:member.host,port:22,username:"dev",authMethod:"password" as const};
 const report={key:member.email,match:"exact" as const,state:"running" as const,detail:"",branch:"task/alpha-T7"};
 const board={key:"board",webUrl:"https://board.example.invalid",route:{kind:"direct" as const,url:"https://board.example.invalid"}};
@@ -18,7 +18,7 @@ const props=(extra:any={})=>({sessionId:"",profile:{...emptyProfile(),project:"a
 beforeEach(()=>{vi.mocked(taskBrief).mockReset().mockImplementation(async(_source,project,code)=>({code,title:project+" task title",brief:"Focused task brief"}));vi.mocked(loadCard).mockReset().mockResolvedValue({project:"alpha",task:{code:"T7",title:"Full task title",status_key:"doing",assignee:"",updated_at:"",status_changed_at:"",summary:"",acceptance:""},slugs:[],dependencies:[],dependents:[]} as any);});
 it("maps service branch and collector-bound project-qualified task, falling back only to a valid roster task",()=>{
  expect(serviceMemberState(member,report,bound)).toMatchObject({branch:"task/alpha-T7",project:"alpha",taskCode:"T7"});
- expect(serviceMemberState(member,{...report,branch:undefined})).toMatchObject({branch:"",project:"beta",taskCode:"T8"});
+ expect(serviceMemberState({...member,currentTask:"工作中·beta/T8"},{...report,branch:undefined})).toMatchObject({branch:"",project:"beta",taskCode:"T8"});
  expect(memberTaskTarget({...member,currentTask:"arbitrary private note"})).toBeUndefined();
 });
 it("shows a service task brief and opens the existing task card on click",async()=>{
@@ -30,7 +30,7 @@ it("shows a service task brief and opens the existing task card on click",async(
 });
 it("shows a compact Lead task and roster fallback, with code alone when the brief is unavailable",async()=>{
  vi.mocked(taskBrief).mockResolvedValue(null);
- render(<TeamDynamics {...props({members:[{...member,role:"Lead"}],serviceLive:{[member.email]:{...report,branch:undefined}},live:{...live,snapshot:undefined}})}/>);
+ render(<TeamDynamics {...props({members:[{...member,role:"Lead",currentTask:"工作中·beta/T8"}],serviceLive:{[member.email]:{...report,branch:undefined}},live:{...live,snapshot:undefined}})}/>);
  const button=await screen.findByRole("button",{name:"T8"});expect(button).toBeTruthy();
  await waitFor(()=>expect(taskBrief).toHaveBeenCalledWith(expect.objectContaining({route:board.route}),"beta","T8"));
 });
@@ -53,14 +53,14 @@ it("requires a unique host and tmux name for collector task binding",()=>{
  expect(memberTaskSession(member,[bound])).toBe(bound);
 });
 it("uses roster tasks for no_agent without inventing live status",async()=>{
- render(<TeamDynamics {...props({serviceLive:{[member.email]:{...report,match:"no_agent"}},live:{...live,snapshot:undefined}})}/>);
+ render(<TeamDynamics {...props({members:[{...member,currentTask:"工作中·beta/T8"}],serviceLive:{[member.email]:{...report,match:"no_agent"}},live:{...live,snapshot:undefined}})}/>);
  expect(await screen.findByRole("button",{name:"T8 · beta task title"})).toBeTruthy();
 });
 
 it("never derives a card number from branch and rejects stale collector bindings",()=>{
  expect(memberTaskTarget({...member,currentTask:""},{...bound,taskCode:""})).toBeUndefined();
  expect(serviceMemberState({...member,currentTask:""},report)).toMatchObject({taskCode:"",branch:"task/alpha-T7"});
- expect(memberTaskTarget(member,{...bound,stale:true})).toEqual({project:"beta",code:"T8",manual:true});
+ expect(memberTaskTarget({...member,currentTask:"工作中·beta/T8"},{...bound,stale:true})).toEqual({project:"beta",code:"T8",manual:true});
 });
 it("does not show a previous board's late title after the route changes",async()=>{
  let resolve!:(value:any)=>void;vi.mocked(taskBrief).mockReturnValueOnce(new Promise(r=>{resolve=r;}));
@@ -68,4 +68,23 @@ it("does not show a previous board's late title after the route changes",async()
  view.rerender(<TeamDynamics {...props({board:{...board,key:"other-board",webUrl:"https://other-board.example.invalid"}})}/>);
  await screen.findByRole("button",{name:"T7 · alpha task title"});resolve({code:"T7",title:"Old board title",brief:""});
  await waitFor(()=>expect(document.body.textContent).not.toContain("Old board title"));
+});
+
+it("prefers an explicit roster assignment over a conflicting collector card",async()=>{
+ const assigned={...member,currentTask:"工作中·dssh/T53"};
+ const previous={...bound,project:"other",taskCode:"DC-15"};
+ expect(memberTaskTarget(assigned,previous)).toEqual({project:"dssh",code:"T53",manual:true});
+ render(<TeamDynamics {...props({members:[assigned],live:{...live,snapshot:{...live.snapshot,sessions:[previous]}}})}/>);
+ expect(await screen.findByRole("button",{name:"T53 · dssh task title"})).toBeTruthy();
+ expect(screen.queryByRole("button",{name:/DC-15/})).toBeNull();
+});
+it.each(["空闲","空闲·等待新任务"])("hides the task for roster idle intent %s despite a bound collector card",currentTask=>{
+ expect(memberTaskTarget({...member,currentTask},bound)).toBeUndefined();
+ render(<TeamDynamics {...props({members:[{...member,currentTask}]})}/>);
+ expect(document.querySelector('.team-task-link')).toBeNull();expect(taskBrief).not.toHaveBeenCalled();
+});
+it.each(["","待确认·等用户","工作中·无法解析","unstructured note"])("falls back to the valid collector binding for %j",currentTask=>{
+ expect(memberTaskTarget({...member,currentTask},bound)).toEqual({project:"alpha",code:"T7",manual:false});
+ expect(memberTaskTarget({...member,currentTask})).toBeUndefined();
+ expect(memberTaskTarget({...member,currentTask},{...bound,stale:true})).toBeUndefined();
 });
