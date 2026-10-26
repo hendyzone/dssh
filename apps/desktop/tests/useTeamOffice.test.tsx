@@ -22,7 +22,7 @@ beforeEach(()=>{
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks()});
 it("renders service members without profiles, SSH connections or remote roster reads",()=>{
  const view=renderHook(()=>useTeamOffice(options()));
- expect(currentSource(view).members[0].name).toBe("Worker");
+ expect(currentSource(view).members[0].name).toBe("worker");
  expect(currentSource(view).availability).toBe("ready");
  expect(collaborationRequest).not.toHaveBeenCalled();
 });
