@@ -386,7 +386,7 @@ function projectFailure(error: unknown): ProjectValidationError {
     ? "无权读取团队服务项目，请检查令牌权限。"
     : "无法读取团队服务项目，请检查连接后重试。");
 }
-async function visibleProjects(candidate?: {url: string; token: string}): Promise<string[]> {
+export async function visibleProjects(candidate?: {url: string; token: string}): Promise<string[]> {
   try {
     const reply = await invoke<unknown>("team_service_projects", candidate);
     if (!object(reply) || !Array.isArray(reply.projects) || reply.projects.some(p => typeof p !== "string" || !projectPattern.test(p))) throw Error();

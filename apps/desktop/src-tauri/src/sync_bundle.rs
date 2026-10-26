@@ -130,13 +130,6 @@ pub fn validate_ui(ui: &UiState) -> Result<(), SyncError> {
                             }
                         }
                     }
-                    let overrides = parsed["overrides"].as_object().ok_or_else(|| error("项目绑定格式无效"))?;
-                    for (key, value) in overrides {
-                        if !(key.starts_with("server:") || key.starts_with("tmux:"))
-                            || !value.as_str().is_some_and(crate::taskboard::identifier) {
-                            return Err(error("项目绑定无效"));
-                        }
-                    }
                 }
                 "dssh.settings" => {
                     let size = parsed["fontSize"].as_u64().unwrap_or(0);
@@ -197,9 +190,7 @@ pub fn validate_ui(ui: &UiState) -> Result<(), SyncError> {
     }
     Ok(())
 }
-pub async fn collect(app: &AppHandle, mut ui_state: UiState) -> Result<Bundle, SyncError> {
-    strip_retired_ai(&mut ui_state);
-    validate_ui(&ui_state)?;
+pub async fn collect(app: &AppHandle, ui_state: UiState) -> Result<Bundle, SyncError> {
     let team_service = app.state::<crate::team_service::TeamService>().backup().await.map_err(|_| error("无法读取团队服务配置或凭据，已停止备份"))?;
     let records = servers::read_all(app).map_err(|e| error(&e.to_string()))?;
     let mut entries = Vec::new();
@@ -233,6 +224,21 @@ pub async fn collect(app: &AppHandle, mut ui_state: UiState) -> Result<Bundle, S
             private_key,
         });
     }
+    assemble(entries, ui_state, team_service)
+}
+
+// Pure assembly shared by production collection and boundary regression tests.
+fn assemble(
+    entries: Vec<Entry>,
+    mut ui_state: UiState,
+    team_service: Option<crate::team_service::sync_config::Backup>,
+) -> Result<Bundle, SyncError> {
+    strip_retired_ui(&mut ui_state);
+    validate_ui(&ui_state)?;
+    if team_service.as_ref().is_some_and(|service| !service.token.is_empty()
+        && ui_state.values().any(|value| value.contains(&service.token))) {
+        return Err(error("界面配置包含团队服务凭据，已停止备份"));
+    }
     Ok(Bundle {
         team_service,
         entries,
@@ -245,22 +251,7 @@ pub async fn collect(app: &AppHandle, mut ui_state: UiState) -> Result<Bundle, S
 fn remap_team_connections(ui: &mut UiState, ids: &BTreeMap<String, String>) -> Result<(), SyncError> {
     if let Some(raw) = ui.get_mut("dssh.task-lookup.v1") {
         let mut settings: serde_json::Value = serde_json::from_str(raw).map_err(|_| error("任务查询配置无效"))?;
-        let overrides = settings["overrides"].as_object().ok_or_else(|| error("项目绑定格式无效"))?;
-        let mut mapped = serde_json::Map::new();
-        for (key, value) in overrides {
-            let mut parts = key.splitn(3, ':');
-            let kind = parts.next().unwrap_or("");
-            let source = parts.next().unwrap_or("");
-            if let Some(id) = ids.get(source) {
-                let target = match (kind, parts.next()) {
-                    ("server", None) => format!("server:{id}"),
-                    ("tmux", Some(name)) => format!("tmux:{id}:{name}"),
-                    _ => continue,
-                };
-                mapped.insert(target, value.clone());
-            }
-        }
-        settings["overrides"] = serde_json::Value::Object(mapped);
+        settings.as_object_mut().ok_or_else(|| error("任务查询配置无效"))?.remove("overrides");
         *raw = settings.to_string();
     }
     if let Some(raw) = ui.get_mut("dssh.collaboration.v2") {
@@ -332,9 +323,17 @@ pub(crate) fn write_key(path: &Path, bytes: &[u8]) -> Result<(), SyncError> {
     file.sync_all().map_err(|_| error("私钥文件保存失败"))
 }
 
-fn strip_retired_ai(ui: &mut UiState) {
+fn strip_retired_ui(ui: &mut UiState) {
     ui.remove("dssh.team-ai.v1");
     ui.remove("dssh.team-ai.profiles.v1");
+    if let Some(raw) = ui.get_mut("dssh.task-lookup.v1") {
+        if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(raw) {
+            if let Some(settings) = value.as_object_mut() {
+                settings.remove("overrides");
+                *raw = value.to_string();
+            }
+        }
+    }
 }
 
 pub async fn restore(app: &AppHandle, bundle: Bundle) -> Result<RestoreResult, SyncError> {
@@ -380,7 +379,7 @@ pub(crate) fn sample_bundle() -> Bundle {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn task_lookup_sync_validates_and_remaps_server_bindings() {
+    fn task_lookup_sync_validates_and_discards_retired_manual_bindings() {
         let mut ui = std::collections::BTreeMap::from([("dssh.task-lookup.v1".into(), serde_json::json!({
             "boardUrl":"http://board.test:8091/", "terminalLinks":false, "lockedProject":"demo",
             "overrides":{"server:old":"demo","tmux:old:lead:one":"docs","server:missing":"unused"}
@@ -388,7 +387,7 @@ mod tests {
         super::validate_ui(&ui).unwrap();
         super::remap_team_connections(&mut ui, &std::collections::BTreeMap::from([("old".into(),"new".into())])).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&ui["dssh.task-lookup.v1"]).unwrap();
-        assert_eq!(settings["overrides"], serde_json::json!({"server:new":"demo","tmux:new:lead:one":"docs"}));
+        assert!(settings.get("overrides").is_none());
         assert_eq!(settings["terminalLinks"], false);
         let mut bad = settings;
         bad["boardUrl"] = "javascript:alert(1)".into();
@@ -396,6 +395,50 @@ mod tests {
         assert!(super::validate_ui(&ui).is_err());
     }
     use super::*;
+    #[test]
+    fn retired_manual_overrides_are_discarded_during_collection_and_restore() {
+        let scope=serde_json::json!(["service","https://team.example.invalid/api/v1","demo"]).to_string();
+        for retired in [serde_json::json!({"server:old":"old-project"}),serde_json::json!(42),serde_json::json!(["invalid"]),serde_json::Value::Null] {
+            let settings=serde_json::json!({"boardUrl":"https://board.example.invalid","terminalLinks":true,"lockedProject":"global","teamLocks":{scope.clone():"team-project"},"overrides":retired});
+            let ui=UiState::from([("dssh.task-lookup.v1".into(),settings.to_string())]);
+            let collected=assemble(vec![],ui.clone(),None).unwrap();
+            let clean:serde_json::Value=serde_json::from_str(&collected.ui_state["dssh.task-lookup.v1"]).unwrap();
+            assert!(clean.get("overrides").is_none());
+            assert_eq!(clean["lockedProject"],"global");assert_eq!(clean["teamLocks"],settings["teamLocks"]);
+            let mut old=sample_bundle();old.entries.clear();old.ui_state=ui;
+            let dir=std::env::temp_dir().join(format!("sync-retired-bindings-{}",random_id()));fs::create_dir(&dir).unwrap();
+            let restored=restore_at(&dir.join("servers.json"),old).unwrap();
+            assert_eq!(restored.ui_state,collected.ui_state);
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+    #[test]
+    fn collection_assembly_keeps_team_token_only_in_native_team_section() {
+        let token = "synthetic-assembly-team-token";
+        let team = crate::team_service::sync_config::Backup {
+            endpoint: "https://team.example.invalid/api/v1".into(),
+            projects: vec!["example-project".into()], token: token.into(),
+        };
+        let mut ui = sample_bundle().ui_state;
+        ui.insert("dssh.team-ai.v1".into(), "retired-invalid-json".into());
+        let bundle = assemble(sample_bundle().entries, ui, Some(team.clone())).unwrap();
+        assert!(!bundle.ui_state.is_empty());
+        assert!(bundle.ui_state.keys().all(|key| UI_KEYS.contains(&key.as_str())));
+        assert!(bundle.ui_state.values().all(|value| !value.contains(token)));
+        assert_eq!(bundle.team_service.as_ref().unwrap().token, token);
+        let mut serialized = serde_json::to_value(&bundle).unwrap();
+        let service = serialized.as_object_mut().unwrap().remove("teamService").unwrap();
+        assert_eq!(service["token"], token);
+        assert!(!serialized.to_string().contains(token));
+        assert!(bundle.entries[0].password.is_some());
+        let mut unexpected = UiState::new();
+        unexpected.insert("unapproved-key".into(), "{}".into());
+        assert!(assemble(vec![], unexpected, Some(team.clone())).is_err());
+        let mut contaminated = UiState::new();
+        contaminated.insert("dssh.sftp.application".into(), token.into());
+        assert!(assemble(vec![], contaminated, Some(team)).is_err());
+        assert!(assemble(vec![], UiState::new(), None).unwrap().team_service.is_none());
+    }
     #[test]
     fn retired_ai_fields_are_ignored_even_when_malformed() {
         let mut bundle = sample_bundle();
@@ -427,7 +470,7 @@ mod tests {
         let remapped:serde_json::Value=serde_json::from_str(&ui["dssh.task-lookup.v1"]).unwrap();
         assert_eq!(remapped["teamLocks"],original["teamLocks"]);
         assert_eq!(remapped["lockedProject"],"global-project");
-        assert_eq!(remapped["overrides"],serde_json::json!({"server:new":"global-project"}));
+        assert!(remapped.get("overrides").is_none());
         let mut old=original.clone();old.as_object_mut().unwrap().remove("teamLocks");
         validate_ui(&ui_for(&old)).unwrap();
         for invalid in [serde_json::json!([]),serde_json::Value::Null,serde_json::json!({"__proto__":"demo"}),serde_json::json!({service.clone():42}),serde_json::json!({service.clone():"bad/project"})] {
@@ -542,7 +585,7 @@ fn restore_at(path: &Path, bundle: Bundle) -> Result<RestoreResult, SyncError> {
 }
 
 pub(crate) fn restore_at_with(path: &Path, mut bundle: Bundle, before_commit: impl FnOnce() -> Result<(), SyncError>) -> Result<RestoreResult, SyncError> {
-    strip_retired_ai(&mut bundle.ui_state);
+    strip_retired_ui(&mut bundle.ui_state);
     bundle.ai_keys.clear();
     validate_ui(&bundle.ui_state)?;
     let mut ids = HashSet::new();

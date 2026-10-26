@@ -74,13 +74,13 @@ it("accepts 「项目 编号」 when unlocked and shows clear errors", async () 
 it("explains how to configure when no board is reachable", () => {
   render(<TaskLookup/>);
   typeAndSubmit("T1");
-  expect(screen.getAllByText(/未配置看板地址/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/填写本机可访问的看板地址/).length).toBeGreaterThan(0);
   expect(mocks.invoke).not.toHaveBeenCalled();
 });
 
 it("shows the inferred project and browses tasks with filters", async () => {
-  render(<TaskLookup source={source} inferred={{ project: "smart-table", reason: "collaboration" }}/>);
-  expect(screen.getByText(/当前终端项目：smart-table（Agent 协作绑定）/)).toBeTruthy();
+  render(<TaskLookup source={source} inferred={{ project: "smart-table", reason: "team" }}/>);
+  expect(screen.getByText(/当前终端项目：smart-table（团队服务名单）/)).toBeTruthy();
   const browser = screen.getByText(/浏览 smart-table 的任务/).closest("details")!;
   await act(async () => { browser.open = true; fireEvent(browser, new Event("toggle")); });
   await screen.findByLabelText("按状态筛选");

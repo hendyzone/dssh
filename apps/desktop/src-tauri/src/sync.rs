@@ -421,7 +421,7 @@ mod tests {
     fn team_locks_encrypted_roundtrip_and_old_global_only_restore() {
         let mut payload=bundle::sample_bundle();payload.entries.clear();
         let identity=serde_json::json!(["service","https://team.example.invalid/api/v1","example-project"]).to_string();
-        let settings=serde_json::json!({"boardUrl":"","terminalLinks":true,"lockedProject":"global-default","overrides":{},"teamLocks":{identity.clone():""}});
+        let settings=serde_json::json!({"boardUrl":"","terminalLinks":true,"lockedProject":"global-default","teamLocks":{identity.clone():""}});
         payload.ui_state.insert("dssh.task-lookup.v1".into(),settings.to_string());
         bundle::validate_ui(&payload.ui_state).unwrap();
         let encrypted=encrypt_bundle(&payload,"test-sync-password").unwrap();

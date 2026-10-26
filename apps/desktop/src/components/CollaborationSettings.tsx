@@ -2,20 +2,12 @@ import { useEffect, useState } from "react";
 import { collaborationKey, collaborationMailHome, emptyProfile, loadCollaboration, resolveWorktree, saveCollaboration, useCollaboration, type CollaborationSession, type CollaborationProfile } from "../lib/collaboration";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { configureTeamService, subscribeTeamService, useTeamService, ProjectValidationError } from "../lib/teamService";
+import TeamServiceSettings from "./TeamServiceSettings";
+import TaskLookupSettings from "./TaskLookupSettings";
 import AgentGuide from "./AgentGuide";
 import "./Collaboration.css";
 
 export default function CollaborationSettings({sessions=[]}: {sessions?:CollaborationSession[]}) {
-  const service = useTeamService();
-  const [serviceUrl, setServiceUrl] = useState(service.url);
-  const [serviceToken, setServiceToken] = useState("");
-  const [serviceProjects, setServiceProjects] = useState(service.projects.join(", "));
-  const [serviceBusy, setServiceBusy] = useState(false);
-  const [serviceMessage, setServiceMessage] = useState("");
-  useEffect(() => { setServiceUrl(service.url); }, [service.url]);
-  useEffect(() => { setServiceProjects(service.projects.join(", ")); }, [service.projects]);
-  const selection = () => serviceProjects.split(/[\s,，]+/).filter(Boolean);
   const choices=sessions.filter(s=>s.pane.tmux && s.backendId);
   const [paneId,setPaneId]=useState(choices[0]?.pane.id ?? "");
   const selected=choices.find(s=>s.pane.id===paneId);
@@ -33,29 +25,12 @@ export default function CollaborationSettings({sessions=[]}: {sessions?:Collabor
     <label className="collaboration-field" key={key}>{label}<Input value={String(profile[key])} placeholder={placeholder} onChange={e=>update({[key]:e.target.value})}/></label>
   );
   return <div className="collaboration-settings">
-    <fieldset><legend>团队服务</legend>
-      <p>按服务地址和项目订阅团队，不依赖终端或 Lead 会话。</p>
-      <label className="collaboration-field">团队服务地址<Input value={serviceUrl} disabled={serviceBusy} placeholder="https://team.example.invalid/api/v1" onChange={e=>setServiceUrl(e.target.value)}/></label>
-      <label className="collaboration-field">团队服务令牌<Input type="password" autoComplete="new-password" value={serviceToken} disabled={serviceBusy} onChange={e=>setServiceToken(e.target.value)}/></label>
-      <p>令牌：{service.status.token_configured ? "已配置" : "未配置"}</p>
-      <label className="collaboration-field">订阅项目<Input value={serviceProjects} disabled={serviceBusy} placeholder="example-project, another-project" onChange={e=>setServiceProjects(e.target.value)}/></label>
-      <Button disabled={serviceBusy || !serviceUrl.trim() || !serviceToken} onClick={async()=>{
-        const token = serviceToken;
-        setServiceToken(""); setServiceBusy(true); setServiceMessage("");
-        try { await configureTeamService(serviceUrl, token, selection()); setServiceMessage("团队服务已配置。"); }
-        catch (error) { setServiceMessage(error instanceof ProjectValidationError ? error.message : "团队服务配置失败，请检查地址和令牌。"); }
-        finally { setServiceBusy(false); }
-      }}>保存团队服务</Button>
-      <Button disabled={serviceBusy || !service.status.token_configured} onClick={async()=>{
-        setServiceBusy(true); setServiceMessage("");
-        try { await subscribeTeamService(selection()); setServiceMessage("已更新订阅项目。"); }
-        catch (error) { setServiceMessage(error instanceof ProjectValidationError ? error.message : "更新订阅失败，请检查项目编号和服务连接。"); }
-        finally { setServiceBusy(false); }
-      }}>更新项目订阅</Button>
-      {serviceMessage && <p role="status">{serviceMessage}</p>}
-    </fieldset>
+    <TeamServiceSettings/>
+    <TaskLookupSettings/>
+    <fieldset><legend>项目自动判定</legend><p>当前团队锁定优先，否则按在线团队名单中的精确终端身份匹配；多项目匹配时不识别。</p></fieldset>
+    <details><summary>高级：按会话的 Agent 协作（邮件）</summary>
     <AgentGuide profile={selected?profile:undefined}/>
-    <p>可选功能，默认关闭。每个 tmux 会话 + worktree 独立绑定项目和邮箱。</p>
+    <p>按会话绑定工作目录、远端看板和邮箱。</p>
     {!choices.length ? <p>请先连接并打开一个 tmux 会话，再配置它的 worktree 协作。</p> : <>
       <label className="collaboration-field">tmux 会话<select disabled={busy} value={paneId} onChange={e=>{setPaneId(e.target.value);setProfile(bound(e.target.value));setMessage("");}}>
         {choices.map(s=><option key={s.pane.id} value={s.pane.id}>{s.pane.server.name} · {s.pane.tmux?.name} ({s.pane.tmux?.id})</option>)}
@@ -87,5 +62,6 @@ export default function CollaborationSettings({sessions=[]}: {sessions?:Collabor
       {message&&<p role="status">{message}</p>}
       <p>关闭并保存后停止后续查询；已提交的操作可能仍在远端完成。配置仅保存在本机，不随连接备份自动开启。</p>
     </>}
+    </details>
   </div>;
 }

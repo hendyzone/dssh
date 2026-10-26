@@ -1,13 +1,12 @@
+import type { TeamServiceState } from "./teamService";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { collaborationKey, type CollaborationProfile } from "./collaboration";
+import { type CollaborationProfile } from "./collaboration";
 import type { ServerEntry, SessionInfo } from "../types";
 
 /** Read-only taskboard lookups: find a task by project + code, index codes for the terminal. */
 
-export type BoardRoute =
-  | { kind: "direct"; url: string }
-  | { kind: "ssh"; sessionId: string; profile: CollaborationProfile };
+export type BoardRoute = { kind: "direct"; url: string };
 export interface BoardSource {
   route: BoardRoute;
   /** Cache key: one board, regardless of which session reaches it. */
@@ -41,15 +40,13 @@ export interface TaskLookupSettings {
   lockedProject: string;
   /** Missing scope is uninitialized; an empty value is an explicit unlock. */
   teamLocks?: Record<string, string>;
-  /** Manual project per `server:<id>` or `tmux:<serverId>:<session name>`. */
-  overrides: Record<string, string>;
 }
 export const TASK_LOOKUP_KEY = "dssh.task-lookup.v1";
 export const TASK_LOOKUP_EVENT = "dssh-task-lookup-changed";
 const EVENT = TASK_LOOKUP_EVENT;
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export const isIdentifier = (value: string) => identifier.test(value);
-export const defaultLookupSettings = (): TaskLookupSettings => ({ boardUrl: "", terminalLinks: true, lockedProject: "", overrides: {} });
+export const defaultLookupSettings = (): TaskLookupSettings => ({ boardUrl: "", terminalLinks: true, lockedProject: "" });
 
 export function boardUrlError(value: string): string {
   if (!value.trim()) return "";
@@ -64,6 +61,10 @@ export function loadLookupSettings(): TaskLookupSettings {
   try {
     const raw = JSON.parse(localStorage.getItem(TASK_LOOKUP_KEY) ?? "{}") as Record<string, unknown>;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return settings;
+    if (Object.prototype.hasOwnProperty.call(raw,"overrides")) {
+      delete raw.overrides;
+      try { localStorage.setItem(TASK_LOOKUP_KEY,JSON.stringify(raw)); } catch { /* Read-only storage still ignores retired overrides. */ }
+    }
     if (typeof raw.boardUrl === "string" && !boardUrlError(raw.boardUrl)) settings.boardUrl = raw.boardUrl.trim();
     if (typeof raw.terminalLinks === "boolean") settings.terminalLinks = raw.terminalLinks;
     if (typeof raw.lockedProject === "string" && isIdentifier(raw.lockedProject)) settings.lockedProject = raw.lockedProject;
@@ -71,14 +72,14 @@ export function loadLookupSettings(): TaskLookupSettings {
       const entries = Object.entries(raw.teamLocks);
       if (entries.length <= 256) settings.teamLocks = Object.fromEntries(entries.filter(([key,value]) => validTeamLockKey(key) && typeof value === "string" && (!value || isIdentifier(value))));
     }
-    if (raw.overrides && typeof raw.overrides === "object" && !Array.isArray(raw.overrides))
-      for (const [key, value] of Object.entries(raw.overrides as Record<string, unknown>))
-        if (typeof value === "string" && isIdentifier(value) && /^(server|tmux):/.test(key)) settings.overrides[key] = value;
+
   } catch { /* corrupt settings fall back to defaults */ }
   return settings;
 }
 export function saveLookupSettings(patch: Partial<TaskLookupSettings>): TaskLookupSettings {
-  const next = { ...loadLookupSettings(), ...patch };
+  const merged = { ...loadLookupSettings(), ...patch };
+  const next: TaskLookupSettings = {boardUrl:merged.boardUrl,terminalLinks:merged.terminalLinks,lockedProject:merged.lockedProject,
+    ...(merged.teamLocks ? {teamLocks:merged.teamLocks} : {})};
   const error = boardUrlError(next.boardUrl);
   if (error) throw new Error(error);
   if (next.lockedProject && !isIdentifier(next.lockedProject)) throw new Error("项目编号格式无效");
@@ -98,9 +99,6 @@ export function useLookupSettings(): TaskLookupSettings {
   }, []);
   return settings;
 }
-export const serverOverrideKey = (serverId: string) => `server:${serverId}`;
-export const tmuxOverrideKey = (serverId: string, tmuxName: string) => `tmux:${serverId}:${tmuxName}`;
-
 export interface TeamLookupScope { key: string; project: string }
 export function validTeamLockKey(key: string): boolean {
   const within = (value: string, max: number) => new TextEncoder().encode(value).length <= max && !/[\u0000-\u001f\u007f-\u009f]/.test(value);
@@ -131,48 +129,33 @@ export function saveTeamLock(scope: TeamLookupScope, project: string): void {
 }
 
 // ---------- which board, which project ----------
-/**
- * The desktop URL wins when configured. Otherwise a tmux binding with the task board enabled
- * is queried from its SSH server, as the existing collaboration panel does. No silent fallback.
- */
-export function boardSource(settings: TaskLookupSettings, profile?: CollaborationProfile, sessionId?: string): BoardSource | undefined {
-  if (settings.boardUrl && !boardUrlError(settings.boardUrl)) {
-    const url = settings.boardUrl.replace(/\/+$/, "");
-    return { route: { kind: "direct", url }, key: `direct:${url}`, webUrl: url, label: `本机直连 ${url}` };
-  }
-  if (profile?.enabled && profile.taskboardEnabled && sessionId && !boardUrlError(profile.taskboardUrl) && profile.taskboardUrl) {
-    const url = profile.taskboardUrl.replace(/\/+$/, "");
-    return { route: { kind: "ssh", sessionId, profile }, key: `ssh:${url}`, webUrl: url, label: `经 SSH 服务器访问 ${url}` };
-  }
-  return undefined;
+/** Task lookup always uses the desktop's direct board connection. */
+export function boardSource(settings: TaskLookupSettings): BoardSource | undefined {
+  if (!settings.boardUrl || boardUrlError(settings.boardUrl)) return;
+  const url = settings.boardUrl.replace(/\/+$/, "");
+  return {route:{kind:"direct",url},key:`direct:${url}`,webUrl:url,label:`本机直连 ${url}`};
 }
-export const NO_SOURCE = "未配置看板地址：在「设置 → 任务查询」填写本机可访问的看板地址，或在「设置 → Agent 协作」为此 tmux 会话开启任务看板。";
-
-export type ProjectReason = "locked" | "collaboration" | "tmux" | "server";
-export const projectReasonLabel: Record<ProjectReason, string> = {
-  locked: "全局锁定", collaboration: "Agent 协作绑定", tmux: "手动指定（tmux 会话）", server: "手动指定（服务器）",
-};
-/** Collaboration bindings that belong to this pane's tmux incarnation. */
-export function paneProfiles(profiles: Record<string, CollaborationProfile>, pane?: SessionInfo): CollaborationProfile[] {
-  if (!pane?.tmux) return [];
-  return Object.entries(profiles).filter(([key, p]) => p.enabled && key === collaborationKey(pane.server.id, p) && p.tmuxId === pane.tmux!.id && p.tmuxCreated === pane.tmux!.created).map(([, p]) => p);
-}
-/**
- * Project of a terminal: the locked project first, then this session's collaboration binding
- * (the verified worktree when known; otherwise only when all bindings agree), then a manual
- * per-session or per-server choice. Undefined disables terminal code recognition.
- */
-export function inferProject(settings: TaskLookupSettings, pane: SessionInfo | undefined, profiles: Record<string, CollaborationProfile>, verified?: CollaborationProfile): { project: string; reason: ProjectReason } | undefined {
-  if (settings.lockedProject) return { project: settings.lockedProject, reason: "locked" };
-  if (!pane) return undefined;
-  if (verified?.enabled && isIdentifier(verified.project)) return { project: verified.project, reason: "collaboration" };
-  const projects = [...new Set(paneProfiles(profiles, pane).map(p => p.project).filter(isIdentifier))];
-  if (projects.length === 1) return { project: projects[0], reason: "collaboration" };
-  const tmux = pane.tmux ? settings.overrides[tmuxOverrideKey(pane.server.id, pane.tmux.name)] : undefined;
-  if (tmux) return { project: tmux, reason: "tmux" };
-  const server = settings.overrides[serverOverrideKey(pane.server.id)];
-  if (server) return { project: server, reason: "server" };
-  return undefined;
+export const NO_SOURCE = "请在「设置 → 团队」填写本机可访问的看板地址。";
+export type ProjectReason = "locked" | "team";
+export const projectReasonLabel: Record<ProjectReason, string> = {locked:"当前团队锁定",team:"团队服务名单"};
+/** Only the active team scope or a unique current roster identity may identify a terminal. */
+export function inferProject(settings: TaskLookupSettings, pane: SessionInfo | undefined,
+  service: Pick<TeamServiceState,"url"|"projects"|"status"|"snapshots">, scope?: TeamLookupScope): {project:string;reason:ProjectReason} | undefined {
+  if (scope && validTeamLockKey(scope.key)) {
+    const [kind,url,project] = JSON.parse(scope.key);
+    const current = kind !== "service" || (url === service.url && service.projects.includes(project));
+    const locked = current ? settings.teamLocks?.[scope.key] : undefined;
+    if (locked) return {project:locked,reason:"locked"};
+  }
+  if (!pane?.tmux || service.status.state !== "online") return;
+  const matches = service.projects.filter(project => {
+    const snapshot = service.snapshots[project];
+    return snapshot && !snapshot.offline && snapshot.members.some(member =>
+      member.project === project && member.tmux.id === pane.tmux!.id && member.tmux.created === pane.tmux!.created &&
+      member.host.trim().toLowerCase() === pane.server.host.trim().toLowerCase() && member.port === pane.server.port && member.username === pane.server.username);
+  });
+  const unique = [...new Set(matches)];
+  return unique.length === 1 ? {project:unique[0],reason:"team"} : undefined;
 }
 
 // ---------- transport + cache ----------

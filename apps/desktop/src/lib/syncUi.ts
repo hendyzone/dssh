@@ -1,5 +1,5 @@
 import { defaultSettings } from "../store";
-import { TASK_LOOKUP_KEY, TASK_LOOKUP_EVENT, defaultLookupSettings, clearBoardCache } from "./taskLookup";
+import { loadLookupSettings, TASK_LOOKUP_KEY, TASK_LOOKUP_EVENT, defaultLookupSettings, clearBoardCache } from "./taskLookup";
 
 const DEFAULTS: Record<string, string> = {
   [TASK_LOOKUP_KEY]: JSON.stringify(defaultLookupSettings()),
@@ -24,7 +24,7 @@ export function collectSyncUi(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(DEFAULTS).map(([key, value]) => [
       key,
-      localStorage.getItem(key) ??
+      (key === TASK_LOOKUP_KEY ? JSON.stringify(loadLookupSettings()) : localStorage.getItem(key)) ??
         (key === "dssh.settings" ? JSON.stringify(defaultSettings()) : value),
     ]),
   );
@@ -42,7 +42,13 @@ export function restoreSyncUi(values: Record<string, string>): void {
     throw new Error("界面备份包含不支持的配置");
   const old = entries.map(([key]) => [key, localStorage.getItem(key)] as const);
   try {
-    entries.forEach(([key, value]) => localStorage.setItem(key, value));
+    entries.forEach(([key, value]) => {
+      if (key === TASK_LOOKUP_KEY) {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) delete parsed.overrides;
+        localStorage.setItem(key,JSON.stringify(parsed));
+      } else localStorage.setItem(key,value);
+    });
   } catch (error) {
     old.forEach(([key, value]) => {
       try {

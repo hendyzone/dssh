@@ -4,7 +4,7 @@ import { defaultLookupSettings, loadLookupSettings, TASK_LOOKUP_KEY, TASK_LOOKUP
 
 it("round-trips every task lookup preference and notifies mounted consumers", () => {
   const settings = { boardUrl:"http://board.test:8091/", terminalLinks:false, lockedProject:"demo",
-    overrides:{"server:srv":"demo","tmux:srv:lead:one":"docs"} };
+    teamLocks:{[JSON.stringify(["service","https://team.example.invalid/api/v1","demo"])]:"demo"} };
   localStorage.setItem(TASK_LOOKUP_KEY, JSON.stringify(settings));
   const backup = collectSyncUi();
   localStorage.removeItem(TASK_LOOKUP_KEY);
@@ -81,4 +81,11 @@ it("includes team bindings and restores them with an immediate refresh notificat
   expect(localStorage.getItem("dssh.collaboration.v2")).toBe("{}");
   expect(listener).toHaveBeenCalledOnce();
   window.removeEventListener("dssh-collaboration-changed",listener);
+});
+
+it("drops retired manual project overrides when collecting and restoring old UI preferences",()=>{
+ localStorage.setItem(TASK_LOOKUP_KEY,JSON.stringify({...defaultLookupSettings(),overrides:{"server:legacy":"old-project"}}));
+ expect(JSON.parse(collectSyncUi()[TASK_LOOKUP_KEY])).not.toHaveProperty("overrides");
+ restoreSyncUi({[TASK_LOOKUP_KEY]:JSON.stringify({...defaultLookupSettings(),overrides:{"tmux:legacy:lead":"old-project"}})});
+ expect(JSON.parse(localStorage.getItem(TASK_LOOKUP_KEY)!)).not.toHaveProperty("overrides");
 });

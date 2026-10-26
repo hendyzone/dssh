@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { emptyProfile, type CollaborationProfile } from "../lib/collaboration";
 import { useTeamService } from "../lib/teamService";
 import type { SessionInfo } from "../types";
@@ -8,9 +8,10 @@ import { IconClose } from "./Icons";
 import "./Collaboration.css";
 import TaskLookup from "./TaskLookup";
 import type { OfficeSnapshot } from "../lib/teamOffice";
-import { teamLookupScope, type BoardSource, type ProjectReason } from "../lib/taskLookup";
+import { teamLookupScope, type BoardSource, type ProjectReason, type TeamLookupScope } from "../lib/taskLookup";
 
-export default function TeamPanel({sessionId, profile, navigation, onClose, taskLookup, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange}: {
+export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange, navigation, onClose, taskLookup, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange}: {
+  onLookupScopeChange?: (paneId:string,scope?:TeamLookupScope)=>void;
   sessionId: string; pane: SessionInfo; profile?: CollaborationProfile; navigation: TeamNavigation; onClose: () => void;
   taskLookup?: { source?: BoardSource; inferred?: { project: string; reason: ProjectReason } };
   onRoomOpenChange?: (open: boolean) => void;
@@ -22,6 +23,7 @@ export default function TeamPanel({sessionId, profile, navigation, onClose, task
     : profile && service.projects.includes(profile.project) ? profile.project : service.projects[0];
   // A local terminal is only a navigation destination; it never identifies this team.
   const lookupScope = teamLookupScope(service.url, project ?? profile?.project ?? "", navigation.server, profile);
+  useEffect(()=>{onLookupScopeChange?.(pane.id,lookupScope);return()=>onLookupScopeChange?.(pane.id,undefined);},[pane.id,lookupScope?.key,onLookupScopeChange]);
   const active = {...emptyProfile(), ...(profile?.project===project?profile:{}), enabled:true, membersEnabled:true, project:project??""};
   return <aside className="workspace-panel collaboration-panel">
     <header data-panel-drag-handle tabIndex={0}><strong>团队{project ? ` · ${project}` : ""}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭团队" onClick={onClose}><IconClose/></Button></header>

@@ -12,6 +12,7 @@ beforeEach(()=>{vi.mocked(invoke).mockReset();writeText.mockReset();Object.defin
 
 it("offers the offline guide before connection or activation and only copies on request",async()=>{
   render(<CollaborationSettings/>);
+  fireEvent.click(screen.getByText("高级：按会话的 Agent 协作（邮件）"));
   expect(writeText).not.toHaveBeenCalled();expect(invoke).not.toHaveBeenCalled();
   writeText.mockResolvedValue(undefined);
   fireEvent.click(screen.getByRole("button",{name:"复制给 Agent"}));

@@ -202,9 +202,11 @@ it("submits a settings token once then clears the input and stores only configur
   await waitFor(() => expect(bridge.invoke).toHaveBeenCalledWith("team_service_read"));
   fireEvent.change(screen.getByLabelText("团队服务地址"), { target: { value: "https://settings-service.example.invalid" } });
   fireEvent.change(screen.getByLabelText("团队服务令牌"), { target: { value: "settings-secret-value" } });
-  fireEvent.change(screen.getByLabelText("订阅项目"), { target: { value: "demo, another" } });
-  fireEvent.click(screen.getByRole("button", { name: "保存团队服务" }));
-  await screen.findByText("团队服务已配置。");
+  fireEvent.click(screen.getByRole("button", {name:"读取可见项目"}));
+  fireEvent.click(await screen.findByRole("checkbox",{name:"demo"}));
+  fireEvent.click(screen.getByRole("checkbox",{name:"another"}));
+  fireEvent.click(screen.getByRole("button", { name: "保存团队订阅" }));
+  await screen.findByText("已保存团队订阅。");
   expect((screen.getByLabelText("团队服务令牌") as HTMLInputElement).value).toBe("");
   expect(screen.getByText("令牌：已配置")).toBeTruthy();
   const calls = bridge.invoke.mock.calls.filter(([name]) => name === "team_service_configure");
@@ -330,15 +332,19 @@ it("does not let an earlier capability read undo a newer ai_disabled response", 
   expect(state().status.ai_enabled).toBe(false);
 });
 
-function fillServiceSettings(projects="typo") {
+function fillServiceSettings() {
   fireEvent.change(screen.getByLabelText("团队服务地址"),{target:{value:"https://candidate.example.invalid"}});
   fireEvent.change(screen.getByLabelText("团队服务令牌"),{target:{value:"candidate-secret"}});
-  fireEvent.change(screen.getByLabelText("订阅项目"),{target:{value:projects}});
 }
 it("blocks settings save for an invisible project without configuring credentials", async () => {
   await boot();render(<CollaborationSettings/>);bridge.invoke.mockClear();
-  fillServiceSettings();fireEvent.click(screen.getByRole("button",{name:"保存团队服务"}));
-  await screen.findByText("团队服务中没有项目 typo，或当前令牌无权访问。");
+  fillServiceSettings();fireEvent.click(screen.getByRole("button",{name:"读取可见项目"}));
+  fireEvent.click(await screen.findByRole("checkbox",{name:"demo"}));
+  expect(screen.queryByLabelText("订阅项目")).toBeNull();
+  const original=bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async(command,args)=>command==="team_service_projects"?{projects:[]}:original(command,args));
+  fireEvent.click(screen.getByRole("button",{name:"保存团队订阅"}));
+  await screen.findByText("团队服务中没有项目 demo，或当前令牌无权访问。");
   expect(bridge.invoke).toHaveBeenCalledWith("team_service_projects",{url:"https://candidate.example.invalid/api/v1",token:"candidate-secret"});
   expect(bridge.invoke.mock.calls.some(([command])=>command==="team_service_configure")).toBe(false);
   expect(bridge.invoke.mock.calls.some(([command])=>command==="team_service_subscribe")).toBe(false);
@@ -352,7 +358,7 @@ it.each([401,403,0])("does not treat project lookup failure %s as an empty proje
     if(command==="team_service_projects")throw {status,code:"private-server-body-secret"};
     return original(command,args);
   });
-  fillServiceSettings("demo");fireEvent.click(screen.getByRole("button",{name:"保存团队服务"}));
+  fillServiceSettings();fireEvent.click(screen.getByRole("button",{name:"读取可见项目"}));
   await screen.findByText(status?"无权读取团队服务项目，请检查令牌权限。":"无法读取团队服务项目，请检查连接后重试。");
   expect(screen.queryByText(/团队服务中没有项目/)).toBeNull();
   expect(document.body.textContent).not.toContain("private-server-body-secret");
@@ -360,9 +366,11 @@ it.each([401,403,0])("does not treat project lookup failure %s as an empty proje
 });
 it("checks subscription changes using saved Rust credentials and leaves a missing selection unsaved",async()=>{
   await boot();render(<CollaborationSettings/>);bridge.invoke.mockClear();
-  fireEvent.change(screen.getByLabelText("订阅项目"),{target:{value:"missing"}});
-  fireEvent.click(screen.getByRole("button",{name:"更新项目订阅"}));
-  await screen.findByText("团队服务中没有项目 missing，或当前令牌无权访问。");
+  fireEvent.click(await screen.findByRole("checkbox",{name:"another"}));
+  const original=bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async(command,args)=>command==="team_service_projects"?{projects:["demo"]}:original(command,args));
+  fireEvent.click(screen.getByRole("button",{name:"保存团队订阅"}));
+  await screen.findByText("团队服务中没有项目 another，或当前令牌无权访问。");
   expect(bridge.invoke).toHaveBeenCalledWith("team_service_projects",undefined);
   expect(bridge.invoke.mock.calls.some(([command])=>command==="team_service_subscribe")).toBe(false);
   expect(state().projects).toEqual(["demo"]);
@@ -412,4 +420,44 @@ it("adopts safe restored configuration while rejecting old service lookup respon
   await act(async()=>{finish({projects:[]});await previous;});
   expect(state().catalog.projects).toContain("another");
   expect(JSON.stringify(localStorage)).not.toMatch(/test-credential|candidate-secret/);
+});
+
+it("releases a pending settings read when restored configuration replaces its identity", async () => {
+  await boot();
+  render(<CollaborationSettings/>);
+  const original = bridge.invoke.getMockImplementation()!;
+  let finish!: (value: unknown) => void;
+  let first = true;
+  bridge.invoke.mockImplementation(async (command, args) => {
+    if (command === "team_service_projects" && first) {
+      first = false;
+      return new Promise(resolve => { finish = resolve; });
+    }
+    return original(command, args);
+  });
+  fireEvent.click(screen.getByRole("button", {name: "读取可见项目"}));
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  expect((screen.getByRole("button", {name: "读取可见项目"}) as HTMLButtonElement).disabled).toBe(true);
+  native = {url:"wss://replacement.example.invalid/api/v1/team/ws", projects:["another"], status:{state:"online",token_configured:true}, snapshots:{}};
+  await emit("team://configuration", {url:native.url, projects:native.projects});
+  await waitFor(() => expect((screen.getByRole("button", {name:"读取可见项目"}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", {name:"读取可见项目"}));
+  await screen.findByRole("checkbox", {name:"another"});
+  await act(async () => {finish({projects:["obsolete"]});});
+  expect(screen.queryByRole("checkbox", {name:"obsolete"})).toBeNull();
+  expect((screen.getByLabelText("团队服务地址") as HTMLInputElement).value).toContain("replacement.example.invalid");
+});
+
+it("combines team controls and keeps remote agent configuration collapsed", async () => {
+  const {default: SettingsModal} = await import("../src/components/SettingsModal");
+  const {defaultSettings} = await import("../src/store");
+  render(<SettingsModal settings={defaultSettings()} onChange={vi.fn()} onClose={vi.fn()}/>);
+  fireEvent.mouseDown(screen.getByRole("tab", {name:"团队"}), {button:0, ctrlKey:false});
+  fireEvent.click(screen.getByRole("tab", {name:"团队"}));
+  expect(await screen.findByLabelText("团队服务地址")).toBeTruthy();
+  expect(screen.getByText("项目自动判定")).toBeTruthy();
+  expect(screen.queryByRole("tab", {name:"任务查询"})).toBeNull();
+  expect(screen.queryByRole("tab", {name:"Agent 协作"})).toBeNull();
+  const advanced = screen.getByText("高级：按会话的 Agent 协作（邮件）").closest("details")!;
+  expect(advanced.open).toBe(false);
 });

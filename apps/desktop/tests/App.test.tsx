@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {defaultLookupSettings,saveLookupSettings,teamLookupScope} from "../src/lib/taskLookup";
+import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "../src/App";
 import { deleteServer, loadServers } from "../src/store";
@@ -57,7 +58,9 @@ vi.mock("../src/components/TerminalView", () => ({
     session,
     onBackendReady,
     onOpenPage,
+    taskLinks,
   }: {
+    taskLinks?: {project:string};
     active: boolean;
     inputEnabled?: boolean;
     session: { id: string };
@@ -68,7 +71,7 @@ vi.mock("../src/components/TerminalView", () => ({
       if (terminalMock.connected) onBackendReady(session.id, `ssh-${session.id}`);
     }, [session.id, onBackendReady]);
     return (
-    <div className="terminal-view">
+    <div className="terminal-view" data-testid={`terminal-${session.id}`} data-task-project={taskLinks?.project??""}>
       <button onClick={() => onOpenPage?.({ kind: "html", path: "/tmp/核心机制.html" }, `ssh-${session.id}`)}>预览测试 HTML</button>
       <textarea
         aria-label="Terminal input"
@@ -84,7 +87,7 @@ vi.mock("../src/components/SftpPanel", () => ({ default: () => null }));
 vi.mock("../src/components/ForwardPanel", () => ({ default: () => null }));
 
 beforeEach(() => {
-  teamServiceMock.url="";teamServiceMock.projects=[];
+  teamServiceMock.url="";teamServiceMock.projects=[];teamServiceMock.snapshots={};
   terminalMock.connected = false;
   officeMock.exists=false;officeMock.visible=true;officeMock.collect.mockClear();officeMock.mail.mockClear();officeMock.publish.mockClear();
   vi.mocked(invoke).mockReset().mockResolvedValue([]);
@@ -574,4 +577,25 @@ it.each(["ssh","local"])("opens the service room without a Lead binding or tmux 
  fireEvent.click(screen.getByRole("button",{name:"房间"}));expect(enabled()).toBe(false);
  officeMock.exists=true;view.rerender(<App/>);expect(enabled()).toBe(true);
  officeMock.visible=false;view.rerender(<App/>);expect(enabled()).toBe(false);view.unmount();
+});
+
+it("follows the active team lock and releases it on pane switches and panel close",async()=>{
+ localStorage.clear();terminalMock.connected=true;
+ const servers=await loadServers();const server=servers[0];
+ const one={id:"$21",created:21,name:"worker-alpha"};const two={id:"$22",created:22,name:"worker-beta"};
+ const member=(project:string,tmux:typeof one)=>({project,email:`${project}@example.invalid`,role:project,host:server.host,port:server.port,username:server.username,workdir:"/srv/example",tmux});
+ teamServiceMock.url="https://team.example.invalid/api/v1";teamServiceMock.projects=["alpha","beta"];
+ teamServiceMock.snapshots=Object.fromEntries([["alpha",one],["beta",two]].map(([project,tmux])=>[project,{project,seq:1,lseq:1,members:[member(project as string,tmux as typeof one)],ai:{},live:{},machines:{},offline:false,status:"online",identity:project}]));
+ saveLookupSettings({...defaultLookupSettings(),boardUrl:"https://board.example.invalid",lockedProject:"old-global",teamLocks:{[teamLookupScope(teamServiceMock.url,"alpha")!.key]:"shared"}});
+ vi.mocked(invoke).mockImplementation(async command=>command==="taskboard_get"?{status:200,body:JSON.stringify({projects:[{slug:"alpha",name:"Alpha"},{slug:"beta",name:"Beta"},{slug:"shared",name:"Shared"}]})}:[]);
+ saveWorkspace({tabs:[{id:"first",activePane:0,panes:[{id:"first-pane",server,tmux:one}]},{id:"second",activePane:0,panes:[{id:"second-pane",server,tmux:two}]}],activeTabId:"first",groups:[],cwds:{}});
+ const {container}=render(<App/>);await act(async()=>{});
+ const first=()=>screen.getByTestId("terminal-first-pane").getAttribute("data-task-project");
+ const second=()=>screen.getByTestId("terminal-second-pane").getAttribute("data-task-project");
+ expect(first()).toBe("alpha");expect(second()).toBe("beta");
+ fireEvent.click(screen.getByRole("button",{name:"团队 · 打开成员终端"}));await waitFor(()=>expect(first()).toBe("shared"));
+ fireEvent.change(screen.getByLabelText("团队项目"),{target:{value:"beta"}});await waitFor(()=>expect(first()).toBe("beta"));
+ fireEvent.click(container.querySelectorAll(".tab")[1]);await waitFor(()=>expect(first()).toBe("alpha"));expect(second()).toBe("beta");
+ fireEvent.click(container.querySelectorAll(".tab")[0]);await waitFor(()=>expect(first()).toBe("shared"));
+ fireEvent.click(screen.getByRole("button",{name:"关闭团队"}));await waitFor(()=>expect(first()).toBe("alpha"));
 });

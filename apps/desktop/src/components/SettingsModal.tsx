@@ -7,7 +7,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { THEMES, getTheme, themeCategory } from "../themes";
 import SyncGuide from "./SyncGuide";
 import CollaborationSettings from "./CollaborationSettings";
-import TaskLookupSettings from "./TaskLookupSettings";
 import type { CollaborationSession } from "../lib/collaboration";
 import {
   collectSyncUi,
@@ -50,7 +49,7 @@ export default function SettingsModal({
   onClose,
   onServersChanged,
 }: Props) {
-  const [section, setSection] = useState<"appearance" | "sync" | "collaboration" | "task-lookup">("appearance");
+  const [section, setSection] = useState<"appearance" | "sync" | "team">("appearance");
   const [themeFilter, setThemeFilter] = useState("all");
   const [themeQuery, setThemeQuery] = useState("");
   const visibleThemes = THEMES.filter(
@@ -146,18 +145,16 @@ export default function SettingsModal({
         <h3 id="settings-title">设置</h3>
         <Tabs
           value={section}
-          onValueChange={(value) => setSection(value as "appearance" | "sync" | "collaboration")}
+          onValueChange={(value) => setSection(value as "appearance" | "sync" | "team")}
           className="settings-tabs"
         >
           <TabsList className="settings-nav" aria-label="设置分类">
             <TabsTrigger value="appearance">外观</TabsTrigger>
             <TabsTrigger value="sync">同步</TabsTrigger>
-            <TabsTrigger value="collaboration">Agent 协作</TabsTrigger>
-            <TabsTrigger value="task-lookup">任务查询</TabsTrigger>
+            <TabsTrigger value="team">团队</TabsTrigger>
           </TabsList>
           <div className="settings-scroll">
-            <TabsContent value="collaboration"><CollaborationSettings sessions={collaborationSessions}/></TabsContent>
-            <TabsContent value="task-lookup"><TaskLookupSettings sessions={collaborationSessions} servers={servers}/></TabsContent>
+            <TabsContent value="team"><CollaborationSettings sessions={collaborationSessions}/></TabsContent>
             <TabsContent
               forceMount
               value="appearance"
@@ -416,12 +413,12 @@ export default function SettingsModal({
               <div className="sync-action-notes">
                 <p>
                   <strong>上传备份：</strong>
-                  用本机连接、凭据、私钥、团队绑定、任务查询设置、云端模型配置及 API Key 和界面配置的加密备份替换仓库已有的 dssh
+                  用本机连接、凭据、私钥、团队绑定、任务查询设置、团队服务配置及凭据 和界面配置的加密备份替换仓库已有的 dssh
                   备份，不改动仓库其他文件。
                 </p>
                 <p>
                   <strong>下载恢复：</strong>
-                  用仓库备份整体替换本机连接列表并恢复凭据、私钥、团队绑定、任务查询设置、云端模型配置及 API Key 和界面配置，不合并；替换前会保留一份本机列表备份。团队成员和备注仍从 Lead 的远端工作区读取，旧备份需要在原设备重新上传才会包含团队入口和任务查询设置。
+                  用仓库备份整体替换本机连接列表并恢复凭据、私钥、团队绑定、任务查询设置、团队服务配置及凭据 和界面配置，不合并；替换前会保留一份本机列表备份。团队成员和备注由团队服务同步，旧备份需要在原设备重新上传才会包含团队入口和任务查询设置。
                 </p>
               </div>
               <details className="sync-troubleshoot">

@@ -19,7 +19,7 @@ import { useTeamOffice } from "./lib/useTeamOffice";
 import { useOfficePublisher, openOfficeWindow, useMainWindowVisibility, useOfficePresence } from "./lib/officeWindowSync";
 import QuotaPanel, { type QuotaServer } from "./components/QuotaPanel";
 import { collaborationKey, useActiveCollaboration, useCollaboration } from "./lib/collaboration";
-import { boardSource, inferProject, paneProfiles, useLookupSettings } from "./lib/taskLookup";
+import { boardSource, inferProject, useLookupSettings, type TeamLookupScope } from "./lib/taskLookup";
 import { connectedMemberTab, type TeamMember } from "./lib/teamMembers";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWindowClose } from "./lib/useWindowClose";
@@ -396,6 +396,11 @@ export default function App() {
   const collaborationPane=tabs.find(t=>t.id===activeTabId)?.panes[tabs.find(t=>t.id===activeTabId)?.activePane??0];
   const activeCollaboration=useActiveCollaboration(collaborationProfiles,collaborationPane,backendIds[collaborationPane?.id??""],paneCwds[collaborationPane?.id??""]);
   const lookupSettings = useLookupSettings();
+  const [activeTeamLookup, setActiveTeamLookup] = useState<{paneId:string;scope:TeamLookupScope}>();
+  const onLookupScopeChange = useCallback((paneId:string,scope?:TeamLookupScope) => {
+    setActiveTeamLookup(current => scope ? (current?.paneId===paneId && current.scope.key===scope.key ? current : {paneId,scope})
+      : current?.paneId===paneId ? undefined : current);
+  },[]);
   const officeMainVisible = useMainWindowVisibility();
   const officeExists = useOfficePresence();
   const [inlineRoomOpen, setInlineRoomOpen] = useState(false);
@@ -408,15 +413,11 @@ export default function App() {
   const officeMail = useOfficeMail({profiles:collaborationProfiles,servers,sessions:officeSessions,enabled:(inlineRoomOpen || officeExists) && officeMainVisible,directory:officeMailDirectory});
   const officeSnapshot = useMemo(()=>({...officeRoomSnapshot,mail:officeMail}),[officeRoomSnapshot,officeMail]);
   useOfficePublisher(officeSnapshot, officeExists);
-  /** Board route and project for one pane: lock > collaboration binding > manual choice. */
-  const paneTaskContext = (pane: SessionInfo) => {
-    const verified = pane.id === collaborationPane?.id ? activeCollaboration : undefined;
-    const boardProfile = verified?.taskboardEnabled ? verified : paneProfiles(collaborationProfiles, pane).find((p) => p.taskboardEnabled);
-    return {
-      source: boardSource(lookupSettings, boardProfile, backendIds[pane.id] ?? undefined),
-      inferred: inferProject(lookupSettings, pane, collaborationProfiles, verified),
-    };
-  };
+  const paneTaskContext = (pane: SessionInfo) => ({
+    source: boardSource(lookupSettings),
+    inferred: inferProject(lookupSettings,pane,teamService,
+      activeTeamLookup?.paneId===pane.id && collaborationPane?.id===pane.id && ["team","collaboration"].includes(sidePanels[activeTabId??""]??"") ? activeTeamLookup.scope : undefined),
+  });
   const paneTaskLinks = (pane: SessionInfo) => {
     if (!lookupSettings.terminalLinks) return undefined;
     const { source, inferred } = paneTaskContext(pane);
@@ -1146,11 +1147,11 @@ export default function App() {
                     </PanelDock>
                   )}
                   {panel === "team" && t.id === activeTabId && (serviceTeamsEnabled || t.panes[t.activePane]?.tmux) && <PanelDock kind="team">
-                    <TeamPanel officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                    <TeamPanel onLookupScopeChange={onLookupScopeChange} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
                     <PanelDock kind="collaboration">
-                      <CollaborationPanel key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                      <CollaborationPanel lookupPaneId={t.panes[t.activePane].id} onLookupScopeChange={onLookupScopeChange} key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (
