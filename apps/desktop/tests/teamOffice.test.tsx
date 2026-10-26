@@ -14,7 +14,7 @@ const profiles=()=>({[collaborationKey(server.id,profile)]:profile});
 const context=()=>({servers:[server],sessions:[session()],themeId:"one-light",animationEnabled:true});
 const sources=()=>officeTeamSources(profiles(),[server],[session()]);
 const ready=(members=[member]):OfficeRoster=>({availability:"ready",notice:"",members});
-afterEach(()=>vi.restoreAllMocks());
+afterEach(()=>{vi.restoreAllMocks();localStorage.clear();});
 it("enumerates registered teams only and deduplicates exact endpoint/worktree/project aliases",()=>{
  const alias={...server,id:"alias",host:" EXAMPLE.TEST "};const p2={...profile,tmuxId:"$3",tmuxCreated:300};
  const input={...profiles(),[collaborationKey(alias.id,p2)]:p2};
@@ -41,8 +41,8 @@ it("serializes only display fields, never server credentials, profiles, handles 
  expect(JSON.parse(JSON.stringify(result))).toEqual(result);
  expect(Object.keys(result).sort()).toEqual(["animationEnabled","mailAvailability","projects","themeId","version"]);
  const station=result.projects[0].sources[0].members[0];
- expect(Object.keys(station).sort()).toEqual(["ai","aiEnabled","id","isLead","name","paletteKey","status","taskSource","taskText"]);
- expect(station).toMatchObject({name:"Worker",taskText:"manual task",taskSource:"manual",status:{state:"unknown",source:"activity"}});
+ expect(Object.keys(station).sort()).toEqual(["ai","aiEnabled","detail","id","isLead","liveState","machine","machineOnline","machineVersion","match","model","name","paletteKey","responsibilities","role","since","status","taskFull","taskSource","taskText","tool","updatedAt"]);
+ expect(station).toMatchObject({name:"worker",role:"Worker",taskText:"manual task",taskSource:"manual",status:{state:"unknown",source:"activity"}});
  const wire=JSON.stringify(result);for(const secret of [server.password,"private-backend",profile.workdir,profile.tokenFile,profile.mailctlPath,member.email])expect(wire).not.toContain(secret);
  expect(result.mailAvailability).toBe("unavailable");
 });
@@ -50,7 +50,7 @@ it("keeps stable unique workstations across additions/removals, puts registered 
  const found=sources(),id=found[0].id;const lead={...member,email:"lead@example.test",role:"Lead"};
  const first=buildOfficeSnapshot(found,{[id]:ready()},context());expect(first.projects[0].sources[0].members).toHaveLength(1);expect(first.projects[0].sources[0].members[0].isLead).toBe(false);
  const expanded=buildOfficeSnapshot(found,{[id]:ready([member,lead])},context()).projects[0].sources[0].members;
- expect(expanded.map(m=>m.name)).toEqual(["Lead","Worker"]);expect(expanded[1].id).toBe(first.projects[0].sources[0].members[0].id);expect(expanded[0].id).not.toBe(expanded[1].id);
+ expect(expanded.map(m=>m.name)).toEqual(["lead","worker"]);expect(expanded[1].id).toBe(first.projects[0].sources[0].members[0].id);expect(expanded[0].id).not.toBe(expanded[1].id);
  expect(buildOfficeSnapshot(found,{[id]:ready([])},context()).projects[0].sources[0].members).toEqual([]);
 });
 it("uses current board task over handwritten notes but falls back when board is offline",()=>{
@@ -62,7 +62,7 @@ const room=():OfficeSnapshot=>({version:1,themeId:"one-light",animationEnabled:t
 it("renders multiple project areas and six states with a static unavailable-mail notice",()=>{
  const view=render(<TeamOffice snapshot={room()}/>);
  expect(screen.getByRole("region",{name:"公司办公室"})).toBeTruthy();expect(screen.getByRole("region",{name:"项目 Alpha"})).toBeTruthy();expect(screen.getByRole("region",{name:"项目 Beta"})).toBeTruthy();
- expect(view.container.querySelectorAll("[data-member-id]")).toHaveLength(6);expect(screen.getByText("邮件动态不可用")).toBeTruthy();expect(screen.getByText("Disconnected")).toBeTruthy();
+ expect(view.container.querySelectorAll("[data-member-id]")).toHaveLength(6);expect(screen.getByText(/邮件动态未配置/)).toBeTruthy();expect(screen.getByText("Disconnected")).toBeTruthy();
  for(const state of ["working","idle","unknown","done","blocked","error"])expect(view.container.querySelector(`[data-state="${state}"]`)).toBeTruthy();
 });
 it("collapses project without unmounting its avatars and resumes only when visible",()=>{

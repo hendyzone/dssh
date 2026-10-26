@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { CollaborationProfile } from "../lib/collaboration";
 import { useTeamService } from "../lib/teamService";
 import { matchingServers, memberKey } from "../lib/teamMembers";
+import { memberDisplay } from "../lib/memberDisplay";
 import TeamMemberNotes from "./TeamMemberNotes";
 import TeamServiceBanner from "./TeamServiceBanner";
 import type { SessionInfo } from "../types";

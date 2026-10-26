@@ -38,7 +38,7 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
     else if(state==="offline"||team?.offline)notice=`团队服务离线 · ${team?.receivedAt ? `数据截至 ${new Date(team.receivedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false})}`:"数据时间未知"}`;
     else if(state==="error")notice="团队服务暂不可用，请检查服务配置";
     else if(!team)notice="正在读取团队服务…";
-    return [source.id,{members:team?.members??[],live:team?.live??{},ai:team?.ai??{},aiEnabled:service.status.ai_enabled,availability:team?(state==="online"?"ready":"offline"):state==="error"?"error":"loading",notice} satisfies OfficeRoster];
+    return [source.id,{members:team?.members??[],live:team?.live??{},ai:team?.ai??{},machines:team?.machines??{},aiEnabled:service.status.ai_enabled,availability:team?(state==="online"?"ready":"offline"):state==="error"?"error":"loading",notice} satisfies OfficeRoster];
   })),[sources,rosterKey,service.status.state,service.status.ai_enabled]);
   const boardKey=active?JSON.stringify([sources,lookupSettings,Object.values(rosters).map(roster=>roster.members)]):"";
   useEffect(()=>{
@@ -80,11 +80,13 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
     const timer=window.setInterval(()=>void refresh(),60_000);
     return()=>{disposed=true;window.clearInterval(timer);};
   },[enabled,boardKey]);
-  const buildKey=active?JSON.stringify([sources,rosters,boards,themeId,animationEnabled]):"";
+  const serviceAt=Object.values(service.snapshots).reduce((latest,team)=>Math.max(latest,team.receivedAt??0),0)||undefined;
+  const officeService={state:service.status.state,at:serviceAt,tokenConfigured:service.status.token_configured};
+  const buildKey=active?JSON.stringify([sources,rosters,boards,themeId,animationEnabled,officeService]):"";
   const result=useMemo(()=>{
     if(!active)return stable.current.snapshot;
     if(mailDirectoryRef)mailDirectoryRef.current=buildOfficeMailDirectory(sources,rosters);
-    return buildOfficeSnapshot(sources,rosters,{servers,sessions,boards,themeId,animationEnabled});
+    return buildOfficeSnapshot(sources,rosters,{servers,sessions,boards,themeId,animationEnabled,service:officeService});
   },[buildKey,active]);
   const content=active?JSON.stringify(result):stable.current.content;
   if(stable.current.content!==content)stable.current={content,snapshot:result};

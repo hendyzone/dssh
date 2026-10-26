@@ -6,6 +6,7 @@ import {useEffect,useRef,useState,type ReactNode} from "react";
 import {ExternalLink,Plus,RefreshCw} from "lucide-react";
 import {type CollaborationProfile} from "../lib/collaboration";
 import {memberConnection,memberKey,type TeamMember} from "../lib/teamMembers";
+import {memberDisplay} from "../lib/memberDisplay";
 import type {TeamNavigation} from "./TeamMembers";
 import {Button} from "./ui/button";
 import type {BoardSource} from "../lib/taskLookup";
@@ -23,18 +24,6 @@ const FILTER_KEYS:readonly StatusGroup[]=["attention","waitLead","available"];
 const GROUP_ORDER:readonly {key:StatusGroup;label:string;title?:string}[]=[
   ...STATUS_GROUPS.filter(g=>g.key!=="lead"), ...STATUS_GROUPS.filter(g=>g.key==="lead"),
 ];
-
-/** `worker-<project>-<short>` → `<short>`; names that do not follow the convention stay whole. */
-function shortTmuxName(member:TeamMember){
-  const prefix=`worker-${member.project}-`;
-  return member.tmux.name.startsWith(prefix)?member.tmux.name.slice(prefix.length):member.tmux.name;
-}
-
-/** Role is the primary name; the tmux short name is appended only when the role repeats in this team. */
-function displayName(member:TeamMember,members:TeamMember[]){
-  const duplicated=members.filter(m=>m.role===member.role).length>1;
-  return {role:member.role,suffix:duplicated?shortTmuxName(member):""};
-}
 
 /** `live`: the panel's shared collector data (so the merged view shows one snapshot); polled here when omitted. */
 export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,board,live:shared,
@@ -63,8 +52,6 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   const ranked=rankMembers(rosterMembers,snapshot,isLead).map(row=>serviceLive === undefined || serviceLive[memberKey(row.member)]?.match === "no_agent" ? row : {
     ...row,...serviceMemberStatus(row.member,serviceLive[memberKey(row.member)],row.session,snapshot?.now??Date.now()/1000,isLead(row.member)),
   }).sort((a,b)=>a.status.rank-b.status.rank||a.index-b.index);
-  // Display names only depend on the roster, so compute them once (was O(n²) per row).
-  const names=new Map(rosterMembers.map(m=>[memberKey(m),displayName(m,rosterMembers)]));
   const pinned=new Set(pinnedKeys??[]);
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState("");
@@ -112,16 +99,16 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     const {member:m,session,status}=row;
     const compact=COMPACT_GROUPS.has(status.group);
     const key=memberKey(m);
-    const {role,suffix}=names.get(key)!;
+    const display=memberDisplay(m,{model:session?.model,host:session?.host});
     const ai=serviceAi(aiMap[key]);
     const aiTarget=serviceIdentity ? {project:profile.project,key,identity:serviceIdentity} : undefined;
     const open=memberOpen(key);
     const {server}=connection(m);
     const brief=session?.taskCode?live.briefs[briefKey(session.project,session.taskCode)]:undefined;
     const now=snapshot?.now??Math.floor(Date.now()/1000);
-    const identity=<strong className="team-ai-identity" title={`${m.role} · ${m.tmux.name}`}>{role}{suffix&&<span className="team-live-suffix"> · {suffix}</span>}</strong>;
+    const identity=<strong className="team-ai-identity" title={`${display.title} · ${m.tmux.name}`}>{display.title}{display.subtitle&&<small className="team-live-subtitle">{display.subtitle}</small>}</strong>;
     const actions=<span className="team-ai-row-actions">
-      <Button size="icon-sm" variant="ghost" disabled={!server||busy} aria-label={`打开 · ${m.role} · ${m.tmux.name}`} title={server?"打开终端":"未找到对应连接"} onClick={e=>{e.preventDefault();e.stopPropagation();if(server)void perform(()=>navigation.onOpen(m,server));}}><ExternalLink size={14}/></Button>
+      <Button size="icon-sm" variant="ghost" disabled={!server||busy} aria-label={`打开 · ${display.title}`} title={server?"打开终端":"未找到对应连接"} onClick={e=>{e.preventDefault();e.stopPropagation();if(server)void perform(()=>navigation.onOpen(m,server));}}><ExternalLink size={14}/></Button>
     </span>;
     // 只有确实有上一张卡时才占一格；没有就不放空信息（同「无当前卡」不渲染的理由）。
     const rosterNote=!session&&m.currentTask?.trim()?m.currentTask.trim().split(/\r?\n/)[0]:"";
@@ -132,7 +119,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       {session&&<p className="team-live-detail">分支 {session.branch||"—"} · {session.commitHash||"—"}{session.lastLine&&<><br/>最后一行：{session.lastLine}</>}</p>}
       <TeamServiceAi ai={ai} enabled={aiEnabled}/>
       {open&&renderMemberAdmin?.(m)}
-      <Button size="sm" aria-label={`打开终端 · ${m.role}`} disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(m,server))}>打开终端</Button>
+      <Button size="sm" aria-label={`打开终端 · ${display.title}`} disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(m,server))}>打开终端</Button>
     </div>;
     if(compact){
       return <details className={`team-compact-row team-live-row${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={key} open={open} onToggle={e=>toggleMember(key,(e.currentTarget as HTMLDetailsElement).open)} data-state={session?.state??"none"} data-group={status.group}>
@@ -163,7 +150,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
           ?<div className="team-card-line3" title={[session?.commitHash,session?.branch].filter(Boolean).join(" · ")}>
             {session&&session.commitTime>0&&<span>提交 {ago(session.commitTime,now)}前 · {session.commitSubject}</span>}
             {session?.model&&<span>{session.model}</span>}
-            <span>{session?.host||m.host}</span>
+            {display.machine&&<span>{display.machine}</span>}
             {session&&session.dirty>0&&<span className="team-live-dirty">未提交 {session.dirty} 个文件</span>}
           </div>
           :null}
