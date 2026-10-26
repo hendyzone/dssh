@@ -31,13 +31,14 @@ export function serviceMemberAvatar(member: TeamMember, report: TeamLive | undef
   return {state:avatar,source:"program",label:`${labels[avatar]}（${report?.match === "no_agent" ? "看板状态" : "团队服务"}）`};
 }
 
-/** Use only an already bound collector card; never derive a task from branch text. */
+/** Roster assignments and idle intent override already bound collector cards. */
 export function memberTaskTarget(member: Pick<TeamMember,"currentTask">, session?: AgentSession): {project:string;code:string;manual:boolean}|undefined {
+  const manual=member.currentTask?.match(/^工作中\s*·\s*([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?=\s|$)/);
+  if(manual)return {project:manual[1],code:manual[2],manual:true};
+  if(member.currentTask?.startsWith("空闲"))return;
   const valid=(value:string)=>/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value);
   if (session && !session.stale && session.hostOk && session.state !== "gone" && valid(session.project) && valid(session.taskCode))
     return {project:session.project,code:session.taskCode,manual:false};
-  const manual=member.currentTask?.match(/^工作中\s*·\s*([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?=\s|$)/);
-  if(manual)return {project:manual[1],code:manual[2],manual:true};
 }
 /** Collector has names, not tmux incarnation IDs: require host/name and reject ambiguity. */
 export function memberTaskSession(member:TeamMember,sessions:AgentSession[]):AgentSession|undefined {

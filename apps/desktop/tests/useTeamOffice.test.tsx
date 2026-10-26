@@ -136,3 +136,21 @@ it("drops old board titles immediately when switching the board route",async()=>
  await act(async()=>resolve(sessions));
  await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe("T1 · Board B title"));
 });
+
+it.each([
+ ["工作中·dssh/T53","T53 · Assigned title","manual"],
+ ["空闲","","none"],
+ ["","DC-15 · Assigned title","board"],
+ ["待确认·等用户","DC-15 · Assigned title","board"],
+])("uses the same roster-first task policy in office nameplates: %s",async(currentTask,expected,source)=>{
+ service.current.snapshots.alpha.members=[{...member,currentTask}];
+ vi.mocked(boardSource).mockReturnValue({key:"board",route:{kind:"direct",url:"https://board.example.invalid"}} as any);
+ vi.mocked(fetchAgentSessions).mockResolvedValue(parseAgentSessions({sessions:[{host:member.host,session:member.tmux.name,project:"other",task_code:"DC-15",host_ok:true,state:"running"}]}));
+ vi.mocked(taskBrief).mockImplementation(async(_source,_project,code)=>({code,title:"Assigned title",brief:""}));
+ const view=renderHook(()=>useTeamOffice(options()));
+ await act(async()=>{await Promise.resolve();await Promise.resolve();});
+ await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe(expected));
+ expect(currentSource(view).members[0].taskSource).toBe(source);
+ if(currentTask.startsWith("空闲"))expect(taskBrief).not.toHaveBeenCalled();
+ else expect(taskBrief).toHaveBeenCalledWith(expect.anything(),currentTask.startsWith("工作中")?"dssh":"other",currentTask.startsWith("工作中")?"T53":"DC-15");
+});
