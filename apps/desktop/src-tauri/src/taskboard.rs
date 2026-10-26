@@ -1,14 +1,9 @@
 //! Read-only taskboard lookups: task cards, code index and status columns.
 //!
-//! Two explicit routes, never a silent fallback between them:
-//! - `direct`: the desktop reaches the board URL configured under 设置 → 任务查询.
-//! - `ssh`: the board URL saved in a tmux + worktree collaboration binding is reachable
-//!   from that SSH server, so the GET runs there through a separate exec channel.
+//! Queries use only the desktop's configured HTTP(S) board address.
 //! Only GET requests on a fixed set of read-only paths are possible.
-use crate::{collaboration::Profile, local_shell::LocalState, ssh::SshState};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tauri::State;
 
 /// Fields kept in the code index; enough for terminal hover cards and the task list.
 pub(crate) const INDEX_FIELDS: [&str; 5] = ["code", "title", "status_key", "assignee", "updated_at"];
@@ -91,8 +86,6 @@ pub(crate) fn project_index(body: &str) -> Result<String, String> {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Route {
     Direct { url: String },
-    #[serde(rename_all = "camelCase")]
-    Ssh { session_id: String, profile: Profile },
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -136,8 +129,6 @@ async fn direct(url: &str, path: &str) -> Result<BoardResponse, String> {
 
 #[tauri::command]
 pub async fn taskboard_get(
-    ssh: State<'_, SshState>,
-    local: State<'_, LocalState>,
     route: Route,
     path: String,
     index: bool,
@@ -148,20 +139,6 @@ pub async fn taskboard_get(
     }
     let mut response = match route {
         Route::Direct { url } => direct(&url, &path).await?,
-        Route::Ssh { session_id, profile } => {
-            let command = crate::collaboration::board_command(&profile, &path, index)?;
-            let output = crate::tmux::execute_session(
-                &ssh,
-                &local,
-                &session_id,
-                &command,
-                Duration::from_secs(30),
-            )
-            .await
-            .map_err(|e| e.replace("tmux 操作失败：", "").replace("tmux", "看板查询"))?;
-            serde_json::from_str::<BoardResponse>(output.trim())
-                .map_err(|_| "远端看板查询返回格式无效".to_string())?
-        }
     };
     if index && response.status == 200 {
         response.body = project_index(&response.body)?;
@@ -266,7 +243,7 @@ mod tests {
         assert!(tasks[0].get("detail").is_none());
         assert_eq!(tasks[0].as_object().unwrap().len(), INDEX_FIELDS.len());
         assert!(project_index("[]").is_err());
-        // Idempotent: the SSH route may already have reduced the list remotely.
+        // Reducing an already indexed response preserves its fields.
         assert_eq!(project_index(&project_index(body).unwrap()).unwrap(), project_index(body).unwrap());
     }
 
@@ -274,11 +251,9 @@ mod tests {
     fn routes_deserialize_from_frontend_shape() {
         let direct: Route = serde_json::from_str(r#"{"kind":"direct","url":"http://b"}"#).unwrap();
         assert!(matches!(direct, Route::Direct { .. }));
-        let ssh: Route = serde_json::from_str(
-            r#"{"kind":"ssh","sessionId":"s1","profile":{"tmuxId":"$1","tmuxCreated":1,"enabled":true}}"#,
-        )
-        .unwrap();
-        assert!(matches!(ssh, Route::Ssh { .. }));
+        assert!(serde_json::from_str::<Route>(
+            r#"{"kind":"ssh","sessionId":"s1","profile":{"enabled":true}}"#,
+        ).is_err());
     }
 
     /// `TASKBOARD_LIVE_URL=http://host:8091 cargo test live_board -- --ignored`

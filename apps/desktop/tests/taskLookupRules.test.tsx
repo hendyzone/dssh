@@ -6,7 +6,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 
 import {
   BoardError, boardSource, buildIndex, clearBoardCache, defaultLookupSettings, findTaskCodes, formatAge, inferProject, loadLookupSettings,
-  lookupTask, parseQuery, resolveCode, saveLookupSettings, serverOverrideKey, shortName, TASK_LOOKUP_KEY, taskIndex, tmuxOverrideKey,
+  lookupTask, parseQuery, resolveCode, saveLookupSettings, shortName, TASK_LOOKUP_KEY, taskIndex,
   type IndexTask,
 } from "../src/lib/taskLookup";
 import { collaborationKey, emptyProfile, type CollaborationProfile } from "../src/lib/collaboration";
@@ -97,36 +97,20 @@ describe("settings, source and project", () => {
     localStorage.setItem(TASK_LOOKUP_KEY, "{oops");
     expect(loadLookupSettings()).toEqual(defaultLookupSettings());
     localStorage.setItem(TASK_LOOKUP_KEY, JSON.stringify({ boardUrl: "ftp://x", lockedProject: "a b", overrides: { "server:x": "ok", bogus: "y", "tmux:a:b": "bad slug" } }));
-    expect(loadLookupSettings()).toEqual({ ...defaultLookupSettings(), overrides: { "server:x": "ok" } });
+    expect(loadLookupSettings()).toEqual(defaultLookupSettings());
   });
   it("persists the lock and rejects bad URLs", () => {
     saveLookupSettings({ lockedProject: "smart-table" });
     expect(loadLookupSettings().lockedProject).toBe("smart-table");
     expect(() => saveLookupSettings({ boardUrl: "http://u:p@x" })).toThrow();
   });
-  it("prefers the desktop URL, else the session's board binding, never guessing", () => {
-    const settings = defaultLookupSettings();
+  it("uses only the explicit desktop URL, never a legacy SSH binding", () => {
+    const settings=defaultLookupSettings();
     expect(boardSource(settings)).toBeUndefined();
-    expect(boardSource(settings, profile(), "ssh-1")?.route).toMatchObject({ kind: "ssh", sessionId: "ssh-1" });
-    expect(boardSource(settings, profile({ taskboardEnabled: false }), "ssh-1")).toBeUndefined();
-    expect(boardSource(settings, profile(), undefined)).toBeUndefined();
-    expect(boardSource({ ...settings, boardUrl: "http://b:1" }, profile(), "ssh-1")?.route).toEqual({ kind: "direct", url: "http://b:1" });
+    expect(boardSource(settings,profile(),"old-backend")).toBeUndefined();
+    expect(boardSource({...settings,boardUrl:"https://board.example.invalid"})?.route).toEqual({kind:"direct",url:"https://board.example.invalid"});
   });
-  it("infers project: lock > collaboration > tmux override > server override", () => {
-    const settings = defaultLookupSettings();
-    const p = profile();
-    const profiles = { [collaborationKey("srv", p)]: p };
-    expect(inferProject(settings, pane, {})).toBeUndefined();
-    expect(inferProject({ ...settings, overrides: { [serverOverrideKey("srv")]: "dssh" } }, pane, {})).toEqual({ project: "dssh", reason: "server" });
-    expect(inferProject({ ...settings, overrides: { [serverOverrideKey("srv")]: "dssh", [tmuxOverrideKey("srv", "lead")]: "cw" } }, pane, {})).toEqual({ project: "cw", reason: "tmux" });
-    expect(inferProject({ ...settings, overrides: { [tmuxOverrideKey("srv", "lead")]: "cw" } }, pane, profiles)).toEqual({ project: "amail", reason: "collaboration" });
-    expect(inferProject({ ...settings, lockedProject: "smart-table" }, pane, profiles)).toEqual({ project: "smart-table", reason: "locked" });
-    // Two bindings of the same tmux session with different projects: ambiguous unless verified.
-    const q = profile({ workdir: "/other", project: "dssh" });
-    const both = { ...profiles, [collaborationKey("srv", q)]: q };
-    expect(inferProject(settings, pane, both)).toBeUndefined();
-    expect(inferProject(settings, pane, both, q)).toEqual({ project: "dssh", reason: "collaboration" });
-  });
+
 });
 
 describe("lookupTask", () => {

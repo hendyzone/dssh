@@ -97,6 +97,7 @@ describe("optional collaboration",()=>{
   });
   it("saving disabled configuration never calls a service",()=>{
     render(<CollaborationSettings sessions={[{pane:{id:"pane",server,tmux:{id:"$1",created:123,name:"claude"}},backendId:"ssh"}]}/>);
+    fireEvent.click(screen.getByText("高级：按会话的 Agent 协作（邮件）"));
     expect((screen.getByLabelText("开启此会话 + worktree 的 Agent 协作") as HTMLInputElement).checked).toBe(false);
     fireEvent.change(screen.getByLabelText("worktree 根目录"),{target:{value:"/repo"}});
     fireEvent.click(screen.getByRole("button",{name:"保存协作配置"}));

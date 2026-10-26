@@ -50,7 +50,7 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
       try {
         const routes=new Map<string,{source:NonNullable<ReturnType<typeof boardSource>>;teams:OfficeTeamSource[]}>();
         for(const team of sources){
-          const source=boardSource(lookupSettings,team.profile,team.backendId);
+          const source=boardSource(lookupSettings);
           if(!source)continue;
           const route=routes.get(source.key)??{source,teams:[]};
           route.teams.push(team);routes.set(source.key,route);
