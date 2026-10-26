@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { boardLink, formatAge, openBoard, shortName, type BoardSource, type TaskCardData } from "../lib/taskLookup";
 import { Button } from "./ui/button";
 import "./TaskLookup.css";
@@ -8,18 +8,19 @@ export function StatusBadge({ name, color }: { name: string; color?: string }) {
 }
 
 /** Full card of one task. Read-only; dependencies open the next card in place. */
-export default function TaskCard({ card, source, onOpenCode, now = Date.now() }: {
-  card: TaskCardData; source: BoardSource; onOpenCode?: (project: string, code: string) => void; now?: number;
+export default function TaskCard({ card, source, onOpenCode, onClose, now = Date.now() }: {
+  card: TaskCardData; source: BoardSource; onClose?: () => void; onOpenCode?: (project: string, code: string) => void; now?: number;
 }) {
   const { task, status, project } = card;
   const [openError, setOpenError] = useState("");
   const who = shortName(task.assignee, [project, ...card.slugs]);
   const blocked = task.status_key === "blocked";
-  return <article className={`tb-card${blocked ? " is-blocked" : ""}`} aria-label={`任务 ${task.code}`}>
+  return <article className={`tb-card${onClose ? " tb-card-bounded" : ""}${blocked ? " is-blocked" : ""}`} aria-label={`任务 ${task.code}`}>
     <header className="tb-card-head">
       <strong className="tb-card-code">{task.code}</strong>
       <StatusBadge name={status?.name ?? (task.status_key || "未知状态")} color={status?.color}/>
       <span className="tb-card-project">{project}</span>
+      {onClose && <button type="button" className="tb-card-close" aria-label="关闭任务详情" onClick={onClose}>×</button>}
     </header>
     <h4 className="tb-card-title">{task.title || "（无标题）"}</h4>
     <dl className="tb-card-meta">
@@ -31,7 +32,7 @@ export default function TaskCard({ card, source, onOpenCode, now = Date.now() }:
       <strong>阻塞原因</strong>{task.blocked_reason || "未填阻塞原因"}
     </p>}
     {task.summary && <p className="tb-card-summary"><strong>摘要</strong>{task.summary}</p>}
-    {task.acceptance && <p className="tb-card-acceptance"><strong>验收结论</strong>{task.acceptance}</p>}
+    {task.acceptance && <Acceptance key={task.acceptance} text={task.acceptance}/>}
     {card.dependencies.length > 0 && <div className="tb-card-deps">
       <strong>前置依赖</strong>
       <ul>{card.dependencies.map(dep => <li key={dep.code}>
@@ -48,4 +49,26 @@ export default function TaskCard({ card, source, onOpenCode, now = Date.now() }:
     </footer>
     {openError && <p role="alert" className="collaboration-error">{openError}</p>}
   </article>;
+}
+
+function Acceptance({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflow, setOverflow] = useState(text.split("\n").length > 4);
+  const content = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const element = content.current;
+    if (!element) return;
+    const measure = () => {
+      if (!expanded && element.clientHeight > 0) setOverflow(element.scrollHeight > element.clientHeight);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
+    observer?.observe(element);
+    return () => observer?.disconnect();
+  }, [expanded]);
+  return <div className="tb-card-acceptance">
+    <strong>验收结论</strong>
+    <span ref={content} className={`tb-card-acceptance-text${expanded ? " is-expanded" : " is-collapsed"}`}>{text}</span>
+    {(overflow || expanded) && <button type="button" className="tb-card-expand" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "收起" : "展开全部"}</button>}
+  </div>;
 }

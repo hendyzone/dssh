@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Lock, LockOpen, Search } from "lucide-react";
 import {
   BoardError, listProjects, listStatuses, loadCard, lookupTask, NO_SOURCE, projectReasonLabel, saveLookupSettings, shortName, taskIndex,
@@ -18,24 +18,31 @@ export function useTaskLookup(source?: BoardSource) {
   const [error, setError] = useState<{ message: string; kind: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
+  const activeCard = useRef<string | null>(null);
+  const clear = () => { generation.current++; activeCard.current = null; setResult(null); setError(null); setBusy(false); };
   const run = async (load: (s: BoardSource) => Promise<LookupResult>) => {
     const id = ++generation.current;
     if (!source) { setResult(null); setError({ message: NO_SOURCE, kind: "config" }); return; }
     setBusy(true); setError(null);
-    try { const value = await load(source); if (id === generation.current) setResult(value); }
+    try { const value = await load(source); if (id === generation.current) { setResult(value); activeCard.current = value.kind === "task" ? JSON.stringify([value.card.project, value.card.task.code]) : null; } }
     catch (e) { if (id === generation.current) { setResult(null); setError({ message: errorText(e), kind: errorKind(e) }); } }
     finally { if (id === generation.current) setBusy(false); }
   };
-  useEffect(() => () => { generation.current++; }, []);
+  useEffect(() => { clear(); return () => { generation.current++; }; }, [source?.key]);
+  const open = (project: string, code: string) => {
+    activeCard.current = JSON.stringify([project, code]);
+    return run(async s => ({ kind: "task", card: await loadCard(s, project, code) }));
+  };
   return {
     result, error, busy,
     lookup: (input: string, project?: string) => run(s => lookupTask(s, input, project)),
-    open: (project: string, code: string) => run(async s => ({ kind: "task", card: await loadCard(s, project, code) })),
-    clear: () => { generation.current++; setResult(null); setError(null); setBusy(false); },
+    open,
+    toggle: (project: string, code: string) => activeCard.current === JSON.stringify([project, code]) ? clear() : void open(project, code),
+    clear,
   };
 }
 
-export function LookupOutcome({ state, source }: { state: ReturnType<typeof useTaskLookup>; source?: BoardSource }) {
+export function LookupOutcome({ state, source, dismissible = false }: { state: ReturnType<typeof useTaskLookup>; source?: BoardSource; dismissible?: boolean }) {
   const { result, error, busy } = state;
   return <>
     {busy && <p role="status">正在查询看板…</p>}
@@ -46,7 +53,7 @@ export function LookupOutcome({ state, source }: { state: ReturnType<typeof useT
         <span className="tb-card-code">{c.task.code}</span><span className="task-list-title">{c.task.title}</span><span className="tb-card-project">{c.project}</span>
       </button>)}
     </div>}
-    {result?.kind === "task" && source && <TaskCard card={result.card} source={source} onOpenCode={(p, c) => void state.open(p, c)}/>}
+    {result?.kind === "task" && source && <TaskCard key={`${result.card.project}/${result.card.task.code}`} card={result.card} source={source} onClose={dismissible ? state.clear : undefined} onOpenCode={(p, c) => void state.open(p, c)}/>}
   </>;
 }
 
@@ -68,6 +75,25 @@ function ScopedTaskLookup({ source, inferred, teamScope }: TaskLookupProps) {
   const [input, setInput] = useState("");
   const [settingsError, setSettingsError] = useState("");
   const state = useTaskLookup(source);
+  const section = useRef<HTMLElement>(null);
+  const [detailHeight, setDetailHeight] = useState<number>();
+  useEffect(() => {
+    const panel = section.current?.closest(".workspace-panel");
+    if (!panel || typeof ResizeObserver === "undefined") return;
+    const update = () => { if (panel.clientHeight > 0) setDetailHeight(panel.clientHeight / 2); };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!state.result && !state.busy) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.stopPropagation(); state.clear(); }
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [state.result, state.busy]);
   useEffect(() => {
     let live = true;
     setProjectsError("");
@@ -89,7 +115,7 @@ function ScopedTaskLookup({ source, inferred, teamScope }: TaskLookupProps) {
     try { if (teamScope) saveTeamLock(teamScope,value); else saveLookupSettings({ lockedProject: value }); setSettingsError(""); if (!value) setSelected(locked); }
     catch (e) { setSettingsError(String(e)); }
   };
-  return <section className="task-lookup" aria-label="任务查询">
+  return <section ref={section} className="task-lookup" aria-label="任务查询" style={detailHeight ? {"--task-detail-max-height": `${detailHeight}px`} as CSSProperties : undefined}>
     <div className="task-lookup-project">
       {locked ? <span className="task-lookup-locked" title={teamScope ? "仅锁定当前团队的任务查询" : "锁定后只需输入编号；终端编号识别也使用此项目"}>
         <Lock size={13}/><strong>{lockedName ?? locked}</strong>{lockedName && lockedName !== locked && <small>{locked}</small>}
@@ -104,15 +130,18 @@ function ScopedTaskLookup({ source, inferred, teamScope }: TaskLookupProps) {
     </div>
     {!teamScope && !locked && inferred && <p className="task-lookup-hint">当前终端项目：{inferred.project}（{projectReasonLabel[inferred.reason]}）</p>}
     <form className="task-lookup-form" onSubmit={e => { e.preventDefault(); submit(); }}>
-      <Input aria-label="任务编号" value={input} placeholder={project ? `编号，如 T1090 或 1090` : "项目 编号，如 smart-table T1090；或只输编号"} onChange={e => setInput(e.target.value)}/>
+      <Input aria-label="任务编号" value={input} placeholder={project ? `编号，如 T1090 或 1090` : "项目 编号，如 smart-table T1090；或只输编号"} onChange={e => { setInput(e.target.value); if (!e.target.value.trim()) state.clear(); }}/>
       <Button size="sm" type="submit" disabled={!input.trim() || state.busy}><Search size={13}/>查询</Button>
     </form>
     {!source && <p role="status" className="task-lookup-hint">{NO_SOURCE}</p>}
     {source && <p className="task-lookup-hint">{source.label} · 只读</p>}
     {projectsError && <p role="alert" className="collaboration-error">{projectsError}</p>}
     {settingsError && <p role="alert" className="collaboration-error">{settingsError}</p>}
-    <LookupOutcome state={state} source={source}/>
-    {source && project && <TaskBrowser key={`${source.key}|${project}`} source={source} project={project} slugs={projects.map(p => p.slug)} onOpen={code => void state.open(project, code)}/>}
+    <div className="task-lookup-outcome">
+      {((state.busy && state.result?.kind !== "task") || state.error || state.result?.kind === "choices") && <button type="button" className="tb-card-close" aria-label="关闭任务详情" onClick={state.clear}>×</button>}
+      <LookupOutcome state={state} source={source} dismissible/>
+    </div>
+    {source && project && <TaskBrowser key={`${source.key}|${project}`} source={source} project={project} slugs={projects.map(p => p.slug)} onOpen={code => state.toggle(project, code)}/>}
   </section>;
 }
 
@@ -157,10 +186,10 @@ export function TaskBrowser({ source, project, slugs, onOpen }: { source: BoardS
       </div>
       <p className="task-lookup-hint">{filtered.length} 条{filtered.length > LIST_LIMIT ? `，显示前 ${LIST_LIMIT} 条` : ""}；列表每 5 分钟更新</p>
       <div className="task-list">{filtered.slice(0, LIST_LIMIT).map(t => <button type="button" key={t.code} className="task-list-row" title={t.title} onClick={() => onOpen(t.code)}>
-        <span className="tb-card-code">{t.code}</span>
-        <StatusBadge name={byKey.get(t.status_key)?.name ?? t.status_key} color={byKey.get(t.status_key)?.color}/>
-        <span className="task-list-title">{t.title}</span>
-        <span className="task-list-who">{names.get(t.assignee) || "未指派"}</span>
+        <span className="task-list-status"><StatusBadge name={byKey.get(t.status_key)?.name ?? t.status_key} color={byKey.get(t.status_key)?.color}/></span>
+        <span className="tb-card-code task-list-code" title={t.code}>{t.code}</span>
+        <span className="task-list-title" title={t.title}>{t.title}</span>
+        <span className="task-list-who" title={t.assignee || "未指派"}>{names.get(t.assignee) || "未指派"}</span>
       </button>)}</div>
     </>}
   </details>;

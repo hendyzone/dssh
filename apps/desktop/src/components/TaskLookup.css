@@ -52,3 +52,32 @@
 .task-overlay{position:absolute;z-index:6;top:12px;right:12px;width:min(440px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--ui-border);border-radius:10px;background:var(--ui-panelAlt,var(--ui-panel));color:var(--ui-fg);box-shadow:0 10px 32px rgba(0,0,0,.4);font-size:12px}
 .task-overlay>header{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .task-overlay p{margin:0}
+
+/* Size the task rows from the panel, independently of the application viewport. */
+.task-browser{container:task-browser / inline-size;min-width:0}
+.task-browser[open]>summary{margin-bottom:8px}
+.task-browser-filters{gap:8px;margin-bottom:8px}
+.task-browser>.task-lookup-hint{margin:0 0 8px}
+.task-list{gap:3px;overflow-anchor:none}
+.task-list>.task-list-row{display:grid;grid-template-columns:92px 76px minmax(0,1fr) minmax(0,100px);grid-template-areas:"status code title who";align-items:center;min-height:32px;padding:5px 8px;column-gap:8px;row-gap:2px;flex:none;line-height:1.4}
+.task-list-status{grid-area:status;min-width:0;overflow:hidden}
+.task-list-status .tb-status{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.task-list-code{grid-area:code;overflow:hidden;text-overflow:ellipsis}
+.task-list-title{grid-area:title;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-list-who{grid-area:who;max-width:100px;min-width:0;width:100%;text-align:right;justify-self:end}
+@container task-browser (max-width:360px){
+  .task-list>.task-list-row{grid-template-columns:92px 68px minmax(0,1fr);grid-template-areas:"status code title" ". . who"}
+  .task-list-who{max-width:100%;text-align:left;justify-self:start;font-size:10px}
+}
+.task-lookup-outcome:empty{display:none}
+.task-lookup-outcome{position:relative;min-width:0;flex:none}
+.tb-card-bounded{max-height:var(--task-detail-max-height,50vh);overflow:auto;overscroll-behavior:contain}
+.tb-card-bounded>*{flex:none}
+.tb-card-close{flex:none;margin-left:auto;align-self:flex-start;width:26px;height:26px;padding:0;border:1px solid var(--ui-border);border-radius:5px;background:var(--ui-panel);color:var(--ui-fg);font-size:18px;line-height:24px;cursor:pointer}
+.tb-card-close:hover,.tb-card-expand:hover{border-color:var(--ui-accent)}
+.task-lookup-outcome>.tb-card-close{float:right}
+.tb-card-acceptance>strong{display:block;font-size:11px;color:var(--ui-muted);font-weight:500;margin-bottom:2px}
+.tb-card-acceptance-text{white-space:pre-wrap;line-height:1.55;overflow-wrap:anywhere}
+.tb-card-acceptance-text.is-collapsed{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.tb-card-acceptance-text.is-expanded{display:block}
+.tb-card-expand{display:block;margin-top:4px;padding:2px 6px;border:1px solid var(--ui-border);border-radius:4px;background:var(--ui-panel);color:var(--ui-fg);font:inherit;cursor:pointer}
