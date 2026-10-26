@@ -562,6 +562,7 @@ Live item fields ([`team-snapshot.json#/$defs/liveItem`](schemas/team-snapshot.j
 | `detail` | classifier detail, e.g. a stuck category; may be empty |
 | `since` | when `state` last changed |
 | `ctx_pct`, `model`, `last_line` | context usage 0–100, model name, last visible line (clipped by the agent) |
+| `tool` | Optional agent-observed process tool: `claude`, `codex`, `pi`, `dsh`, `cursor`, or `agy`. Omitted when unknown; never inferred from member roles or mailbox names. |
 | `at` | time of the agent observation this item reflects |
 | `stale` | `true` when the machine's agent has not reported for 30 s; values are the last known ones |
 

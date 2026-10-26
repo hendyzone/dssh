@@ -177,6 +177,10 @@
             }
           ]
         },
+        "tool": {
+          "type": "string",
+          "enum": ["claude", "codex", "pi", "dsh", "cursor", "agy"]
+        },
         "model": {
           "type": "string",
           "maxLength": 128
