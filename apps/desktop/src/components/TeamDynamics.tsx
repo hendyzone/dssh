@@ -1,7 +1,7 @@
 import TeamServiceAi from "./TeamServiceAi";
 import {serviceAi} from "../lib/serviceAi";
 import type { TeamLive } from "../lib/teamService";
-import { serviceMemberStatus } from "../lib/teamServicePresentation";
+import { memberTaskTarget, memberTaskSession, serviceMemberStatus } from "../lib/teamServicePresentation";
 import {useEffect,useRef,useState,type ReactNode} from "react";
 import {ExternalLink,Plus,RefreshCw} from "lucide-react";
 import {type CollaborationProfile} from "../lib/collaboration";
@@ -10,7 +10,8 @@ import {memberDisplay} from "../lib/memberDisplay";
 import type {TeamNavigation} from "./TeamMembers";
 import {Button} from "./ui/button";
 import type {BoardSource} from "../lib/taskLookup";
-import {STATUS_GROUPS,ago,briefKey,isLeadMember,liveSnapshot,rankMembers,summarizeTeam,useAgentSessions,type LiveSessions,type LiveStatus,type StatusGroup} from "../lib/agentSessions";
+import {STATUS_GROUPS,ago,briefKey,taskBrief,type TaskBrief,isLeadMember,liveSnapshot,rankMembers,summarizeTeam,useAgentSessions,type LiveSessions,type LiveStatus,type StatusGroup} from "../lib/agentSessions";
+import {useTaskLookup,LookupOutcome} from "./TaskLookup";
 import TeamLiveSummary from "./TeamLiveSummary";
 import TeamOffice from "./TeamOffice";
 import type { OfficeSnapshot } from "../lib/teamOffice";
@@ -52,6 +53,20 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   const ranked=rankMembers(rosterMembers,snapshot,isLead).map(row=>serviceLive === undefined || serviceLive[memberKey(row.member)]?.match === "no_agent" ? row : {
     ...row,...serviceMemberStatus(row.member,serviceLive[memberKey(row.member)],row.session,snapshot?.now??Date.now()/1000,isLead(row.member)),
   }).sort((a,b)=>a.status.rank-b.status.rank||a.index-b.index);
+  const taskLookup = useTaskLookup(board);
+  const [serviceBriefs,setServiceBriefs] = useState<{scope:string;values:Record<string,TaskBrief>}>({scope:"",values:{}});
+  const targetOf = (member:TeamMember,session?:ReturnType<typeof rankMembers>[number]["session"]) => serviceLive === undefined ? (session?.taskCode ? {project:session.project,code:session.taskCode} : undefined) : memberTaskTarget(member,memberTaskSession(member,snapshot?.sessions??[]));
+  const taskTargets = [...new Map(ranked.flatMap(row=>{const target=targetOf(row.member,row.session);return target?[[briefKey(target.project,target.code),target] as const]:[];})).values()];
+  const taskScope = JSON.stringify([serviceIdentity,board?.key,taskTargets]);
+  useEffect(()=>{
+    taskLookup.clear();
+    if (!board || serviceLive === undefined) return;
+    let active=true;
+    void Promise.all(taskTargets.map(async target=>{
+      try{return [briefKey(target.project,target.code),await taskBrief({...board,key:JSON.stringify([board.key,serviceIdentity])},target.project,target.code)] as const;}catch{return undefined;}
+    })).then(items=>{if(active)setServiceBriefs({scope:taskScope,values:Object.fromEntries(items.filter((item): item is readonly [string,TaskBrief]=>!!item?.[1])) as Record<string,TaskBrief>});});
+    return()=>{active=false;};
+  },[taskScope]);
   const pinned=new Set(pinnedKeys??[]);
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState("");
@@ -104,13 +119,19 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     const aiTarget=serviceIdentity ? {project:profile.project,key,identity:serviceIdentity} : undefined;
     const open=memberOpen(key);
     const {server}=connection(m);
-    const brief=session?.taskCode?live.briefs[briefKey(session.project,session.taskCode)]:undefined;
+    const target=targetOf(m,session);
+    const brief=target ? serviceLive !== undefined ? (serviceBriefs.scope===taskScope?serviceBriefs.values[briefKey(target.project,target.code)]:undefined) : live.briefs[briefKey(target.project,target.code)] : undefined;
     const now=snapshot?.now??Math.floor(Date.now()/1000);
     const identity=<strong className="team-ai-identity" title={`${display.title} · ${m.tmux.name}`}>{display.title}{display.subtitle&&<small className="team-live-subtitle">{display.subtitle}</small>}</strong>;
     const actions=<span className="team-ai-row-actions">
       <Button size="icon-sm" variant="ghost" disabled={!server||busy} aria-label={`打开 · ${display.title}`} title={server?"打开终端":"未找到对应连接"} onClick={e=>{e.preventDefault();e.stopPropagation();if(server)void perform(()=>navigation.onOpen(m,server));}}><ExternalLink size={14}/></Button>
     </span>;
     // 只有确实有上一张卡时才占一格；没有就不放空信息（同「无当前卡」不渲染的理由）。
+    const taskLine=target?<button type="button" className="team-card-line2 team-task-link" disabled={!board}
+      title={[target.code,brief?.title||brief?.brief].filter(Boolean).join(" · ")}
+      onClick={event=>{event.preventDefault();event.stopPropagation();void taskLookup.open(target.project,target.code);}}>
+      <b>{target.code}</b>{(brief?.title||brief?.brief)&&<span className="team-card-brief"> · {brief.title||brief.brief}</span>}
+    </button>:null;
     const rosterNote=!session&&m.currentTask?.trim()?m.currentTask.trim().split(/\r?\n/)[0]:"";
     const lastCard=session?.taskCode
       ?<span className="team-compact-card" title={`上一张卡 ${session.taskCode}${brief?.brief||brief?.title?` · ${brief.brief||brief.title}`:""}`}>{session.taskCode} ✓</span>
@@ -127,7 +148,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
           <span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>
           {identity}
           <span className="team-compact-state"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}</span>
-          {lastCard}
+          {serviceLive === undefined ? lastCard : taskLine}
           <TeamServiceAi ai={ai} enabled={aiEnabled} target={aiTarget} compact/>
           {actions}
         </summary>
@@ -140,7 +161,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
         {identity}
         <span className="team-live-status"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}</span>
         {actions}
-        {session?.taskCode
+        {serviceLive !== undefined ? taskLine : session?.taskCode
           ?<div className="team-card-line2"><b>{session.taskCode}</b>{session.taskStatus&&<em>{live.statusNames[briefKey(session.project,session.taskStatus)]??session.taskStatus}</em>}{(brief?.brief||brief?.title)&&<span className="team-card-brief">{brief.brief||brief.title}</span>}</div>
           :!session&&m.currentTask?.trim()
             ?<div className="team-card-line2 is-roster" title={m.currentTask}><b>Lead 备注</b><span className="team-card-brief">{m.currentTask.trim().split(/\r?\n/)[0]}</span></div>
@@ -180,6 +201,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
           }:undefined}/>
         </div>
       : <>
+    <LookupOutcome state={taskLookup} source={board} dismissible/>
     {addForm}
     {GROUP_ORDER.map(group=>{
       if(filtered&&group.key!==activeFilter)return null;

@@ -258,6 +258,10 @@
         "stale"
       ],
       "properties": {
+        "branch": {
+          "type": "string",
+          "maxLength": 200
+        },
         "key": {
           "$ref": "#/$defs/memberKey"
         },

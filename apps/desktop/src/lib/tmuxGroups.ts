@@ -67,7 +67,7 @@ export const workerSubgroupKey = (project: string) => `${WORKER_GROUP}\u0000${pr
 
 export interface PaneTeamService {
   projects: string[];
-  snapshots: Record<string, { members: { project: string; tmux: { id: string; created: number } }[] } | undefined>;
+  snapshots: Record<string, { members: { project: string; host?: string; port?: number; username?: string; tmux: { id: string; created: number } }[] } | undefined>;
 }
 
 /**
@@ -78,7 +78,7 @@ export interface PaneTeamService {
  * The selection is keyed by pane id by the caller, so two tabs never share a manual choice.
  */
 export function paneTeamProject(
-  pane: { tmux?: { id: string; created: number; name: string } } | undefined,
+  pane: ProjectPane | undefined,
   selected: string | undefined,
   profileProject: string | undefined,
   service: PaneTeamService,
@@ -86,19 +86,26 @@ export function paneTeamProject(
   const projects = service.projects ?? [];
   const usable = (project: string | undefined): project is string => !!project && projects.includes(project);
   if (usable(selected)) return selected;
-  const tmux = pane?.tmux;
-  if (tmux) {
-    if (isLeadSession(tmux.name)) {
-      const lead = leadProject(tmux.name);
-      if (usable(lead)) return lead;
-    }
-    for (const project of projects) {
-      const members = service.snapshots?.[project]?.members ?? [];
-      if (members.some((member) => member.project === project && member.tmux.id === tmux.id && member.tmux.created === tmux.created)) {
-        return project;
-      }
-    }
-  }
+  const matched = sessionTeamProject(pane, service);
+  if (matched) return matched;
   if (usable(profileProject)) return profileProject;
   return projects[0];
+}
+
+type ProjectPane = { server?: {host:string;port:number;username:string}; tmux?: {id:string;created:number;name:string} };
+/** Strict shared identity mapping; UI selection/fallback belongs to the caller. */
+export function sessionTeamProject(pane: ProjectPane | undefined, service: PaneTeamService): string | undefined {
+  if (!pane?.tmux) return;
+  if (isLeadSession(pane.tmux.name)) {
+    const project = leadProject(pane.tmux.name);
+    return service.projects.includes(project) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(project) ? project : undefined;
+  }
+  if (!pane.server) return;
+  const endpoint = pane.server;
+  const projects = service.projects.filter(project => service.snapshots[project]?.members.some(member =>
+    member.project === project && member.tmux.id === pane.tmux!.id && member.tmux.created === pane.tmux!.created &&
+    member.host?.trim().toLowerCase() === endpoint.host.trim().toLowerCase() &&
+    member.port === endpoint.port && member.username === endpoint.username));
+  const unique = [...new Set(projects)];
+  return unique.length === 1 ? unique[0] : undefined;
 }

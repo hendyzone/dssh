@@ -23,6 +23,7 @@ export interface ServiceLive {
   ctx_pct?: number | null;
   model?: string;
   last_line?: string;
+  branch?: string;
   stale?: boolean;
 }
 export type TeamLive = ServiceLive;

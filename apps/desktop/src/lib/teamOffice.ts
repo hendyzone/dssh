@@ -1,6 +1,6 @@
 import {serviceAi, type ServiceAi} from "./serviceAi";
 import type { TeamServiceState, TeamLive } from "./teamService";
-import { serviceMemberAvatar } from "./teamServicePresentation";
+import { memberTaskTarget, memberTaskSession, serviceMemberAvatar } from "./teamServicePresentation";
 import { memberDisplay } from "./memberDisplay";
 import { collaborationKey, type CollaborationProfile, type CollaborationSession } from "./collaboration";
 import { briefKey, matchSession, type SessionsSnapshot, type TaskBrief } from "./agentSessions";
@@ -8,23 +8,9 @@ import { resolveTeamAvatar, type TeamAvatarStatus } from "./teamAvatar";
 import { matchingServers, memberKey, type TeamMember } from "./teamMembers";
 import { sameSshEndpoint } from "./tmuxTabs";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
-import { isLeadSession, leadProject } from "./tmuxGroups";
-import type { ServerEntry, SessionInfo } from "../types";
+import type { ServerEntry } from "../types";
 
-/** Resolve the focused terminal locally; only the resulting project name crosses the office wire. */
-export function officeActiveProject(pane: SessionInfo | undefined, service: Pick<TeamServiceState, "projects" | "snapshots">): string | undefined {
-  if (!pane?.tmux) return;
-  if (isLeadSession(pane.tmux.name)) {
-    const project = leadProject(pane.tmux.name);
-    return service.projects.includes(project) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(project) ? project : undefined;
-  }
-  const projects = service.projects.filter(project => service.snapshots[project]?.members.some(member =>
-    member.project === project && member.tmux.id === pane.tmux!.id && member.tmux.created === pane.tmux!.created &&
-    member.host.trim().toLowerCase() === pane.server.host.trim().toLowerCase() &&
-    member.port === pane.server.port && member.username === pane.server.username));
-  const unique = [...new Set(projects)];
-  return unique.length === 1 ? unique[0] : undefined;
-}
+export { sessionTeamProject as officeActiveProject } from "./tmuxGroups";
 
 export type OfficeMailEndpoint = {kind:"station";sourceId:string;memberId:string} | {kind:"edge"};
 export interface OfficeMailEvent { id:string; uid:number; kind:string|null; from:OfficeMailEndpoint; to:OfficeMailEndpoint; }
@@ -137,7 +123,14 @@ export function officeTeamSources(profiles: Record<string, CollaborationProfile>
   return [...result.values()];
 }
 const shortText = (value: string) => value.trim().split(/\r?\n/)[0].slice(0, 100);
-function taskText(member: TeamMember, board?: OfficeBoard): Pick<OfficeMember, "taskText" | "taskSource" | "taskFull"> {
+function taskText(member: TeamMember, board?: OfficeBoard, live?: TeamLive, service = false): Pick<OfficeMember, "taskText" | "taskSource" | "taskFull"> {
+  if (service) {
+    const target = memberTaskTarget(member,board&&!board.offline?memberTaskSession(member,board.snapshot?.sessions??[]):undefined);
+    if (!target) return {taskText:"",taskFull:"",taskSource:"none"};
+    const brief = board?.briefs[briefKey(target.project, target.code)];
+    const full = [target.code, brief?.title || brief?.brief].filter(Boolean).join(" · ");
+    return {taskText:shortText(full),taskFull:full,taskSource:target.manual?"manual":"board"};
+  }
   const session = board && !board.offline && board.snapshot ? matchSession(member, board.snapshot.sessions) : undefined;
   if (session && !session.stale && session.hostOk) {
     if (!session.taskCode) return { taskText: "暂无当前任务", taskSource: "board", taskFull: "" };
@@ -197,7 +190,7 @@ export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record
       return {
         id: officeKey(JSON.stringify([source.id, memberKey(member)])), name: display.title,
         isLead: /^lead\b/i.test(member.role.trim()) || boundLead,
-        status: source.service ? serviceMemberAvatar(member, live, context.boards?.[source.id]?.offline ? undefined : matchSession(member, context.boards?.[source.id]?.snapshot?.sessions??[])) : resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id]),
+        status: source.service ? serviceMemberAvatar(member, live, context.boards?.[source.id]?.offline ? undefined : matchSession(member, context.boards?.[source.id]?.snapshot?.sessions??[])) : resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id], live, source.service),
         paletteKey: officeKey(memberKey(member)),
         ai: serviceAi(roster.ai?.[memberKey(member)]), aiEnabled: roster.aiEnabled,
         responsibilities: member.responsibilities?.slice(0, 500),
