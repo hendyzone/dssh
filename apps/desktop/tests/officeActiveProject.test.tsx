@@ -28,3 +28,16 @@ it("rejects cross-project ambiguity and unsubscribed member matches",()=>{
  expect(officeActiveProject(pane,ambiguous)).toBeUndefined();
  expect(officeActiveProject(pane,{...service(),projects:["beta"]})).toBeUndefined();
 });
+
+it("shares strict identity mapping with the team panel while keeping only its explicit UI fallback",async()=>{
+ const {sessionTeamProject,paneTeamProject}=await import("../src/lib/tmuxGroups");
+ expect(officeActiveProject).toBe(sessionTeamProject);
+ const current=service([]);current.snapshots.beta.members=[member("beta")];
+ expect(paneTeamProject(pane,undefined,undefined,current)).toBe("beta");
+ current.snapshots.beta.members=[member("beta",{host:"wrong.example.invalid"})];
+ expect(officeActiveProject(pane,current)).toBeUndefined();
+ expect(paneTeamProject(pane,undefined,undefined,current)).toBe("alpha");
+ expect(paneTeamProject(pane,"beta",undefined,current)).toBe("beta");
+ current.snapshots.beta.members=[member("beta")];current.snapshots.alpha.members=[member()];
+ expect(officeActiveProject(pane,current)).toBeUndefined();
+});

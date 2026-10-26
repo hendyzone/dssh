@@ -103,3 +103,36 @@ it.each([undefined,report("exact","unknown"),report("replaced","unknown"),report
  const view=renderHook(()=>useTeamOffice(options()));await waitFor(()=>expect(fetchAgentSessions).toHaveBeenCalled());
  expect(currentSource(view).members[0].status.state).toBe("unknown");
 });
+it("uses a bound collector task and its title in the service office nameplate",async()=>{
+ vi.mocked(boardSource).mockReturnValue({key:"board",route:{kind:"direct",url:"https://board.example.invalid"}} as any);
+ vi.mocked(fetchAgentSessions).mockResolvedValue(parseAgentSessions({sessions:[{host:member.host,session:member.tmux.name,project:"beta",task_code:"T8",host_ok:true,state:"running"}]}));
+ vi.mocked(taskBrief).mockResolvedValue({code:"T8",title:"Bound task title",brief:"Different brief"});
+ const view=renderHook(()=>useTeamOffice(options()));
+ await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe("T8 · Bound task title"));
+ expect(taskBrief).toHaveBeenCalledWith(expect.anything(),"beta","T8");
+});
+it("queries the roster task title even if the collector is unavailable",async()=>{
+ service.current.snapshots.alpha.members=[{...member,currentTask:"工作中·beta/T9"}];
+ vi.mocked(boardSource).mockReturnValue({key:"board",route:{kind:"direct",url:"https://board.example.invalid"}} as any);
+ vi.mocked(fetchAgentSessions).mockRejectedValue(new Error("offline"));
+ vi.mocked(taskBrief).mockResolvedValue({code:"T9",title:"Roster task title",brief:""});
+ const view=renderHook(()=>useTeamOffice(options()));
+ await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe("T9 · Roster task title"));
+});
+
+it("drops old board titles immediately when switching the board route",async()=>{
+ const a={key:"board-a",route:{kind:"direct",url:"https://board-a.example.invalid"}};
+ const b={key:"board-b",route:{kind:"direct",url:"https://board-b.example.invalid"}};
+ const sessions=parseAgentSessions({sessions:[{host:member.host,session:member.tmux.name,project:"alpha",task_code:"T1",state:"running"}]});
+ vi.mocked(boardSource).mockReturnValue(a as any);vi.mocked(fetchAgentSessions).mockResolvedValue(sessions);
+ vi.mocked(taskBrief).mockResolvedValue({code:"T1",title:"Board A title",brief:""});
+ let settings={boardUrl:"https://board-a.example.invalid"} as any;
+ const view=renderHook(()=>useTeamOffice({...options(),lookupSettings:settings}));
+ await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe("T1 · Board A title"));
+ let resolve!:(value:any)=>void;vi.mocked(fetchAgentSessions).mockReturnValueOnce(new Promise(r=>{resolve=r;}));
+ vi.mocked(boardSource).mockReturnValue(b as any);vi.mocked(taskBrief).mockResolvedValue({code:"T1",title:"Board B title",brief:""});
+ settings={boardUrl:"https://board-b.example.invalid"};view.rerender();
+ expect(currentSource(view).members[0].taskFull).not.toContain("Board A title");
+ await act(async()=>resolve(sessions));
+ await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe("T1 · Board B title"));
+});

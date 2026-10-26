@@ -802,3 +802,7 @@ the prose above.
   `resync`+快照；之后总发一次 live 全量作为确认。25s 心跳、60s 无消息重连、队列 64 满即断。
 - agent 上报每会话一条，启动/每 60s/resync 发全量，变化发增量，空闲 10s 发空增量当心跳；
   `want_content` 只含名单成员，非成员面板内容永不离机；30s 无上报标 stale；低于 `min_agent` 回 426。
+
+### Live branch metadata
+
+A live item may include `branch` (string, at most 200 characters) for an exact matched agent session. Empty or unmatched values are omitted. This is display-only metadata: clients must not derive task IDs from branch text. Task titles use the taskboard collector’s existing bound task and brief queries, with the roster current task as fallback.

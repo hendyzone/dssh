@@ -349,7 +349,7 @@ const teamSessions = () => payload([
   row("worker-demo-free", { task_code: "T5", task_status: "done" }),
   row("worker-demo-stuck", { state: "stuck", state_detail: "429" }),
   row("demo-lead"),
-]);
+].map(session=>({...session,host:"192.0.2.6"})));
 function fakeTeam(command: string, args: { path?: string; request?: { operation: string } }) {
   if (command === "collaboration_request") return Promise.resolve(JSON.stringify(team));
   return fakeBoard(command, args as { path: string });
@@ -365,7 +365,7 @@ it("the merged list shows live status, groups and the clickable summary; Lead is
   mocks.invoke.mockImplementation(fakeTeam);
   render(<TeamMembers sessionId="ssh" profile={rosterProfile} navigation={rosterNavigation} board={board}/>);
   await waitFor(() => expect(document.querySelectorAll(".team-live-row")).toHaveLength(6));
-  await screen.findAllByText("告警带设备标识时主动去查");
+  await screen.findAllByText(/长标题/);
   const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
   const expected = {
     "demo-lead": ["lead", "空闲"], "demo-stuck": ["attention", "卡住：429"], "demo-wait": ["waitLead", "等 Lead"],
@@ -389,7 +389,7 @@ it("the merged list shows live status, groups and the clickable summary; Lead is
     .find(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent === name) as HTMLElement;
   const openRow = (row: HTMLElement) => { row.open = true; fireEvent(row, new Event("toggle")); };
   expect(within(rowOf("demo-run")).getByText("T0504")).toBeTruthy();
-  expect(within(rowOf("demo-run")).getByText("告警带设备标识时主动去查")).toBeTruthy();
+  expect(within(rowOf("demo-run")).getByRole("button",{name:"T0504 · 长标题"})).toBeTruthy();
   expect(within(rowOf("demo-wait")).getByText("T7")).toBeTruthy();
   // 管理/备注区只在展开时渲染
   openRow(rowOf("demo-wait"));
@@ -415,6 +415,5 @@ it("the merged list falls back to the hand-written state and says 「看板离�
   // 看板离线时不显示实时计数块
   expect(document.querySelectorAll(".team-live-counts")).toHaveLength(0);
   // 看板离线时用 Lead 备注顶替实时信息
-  expect([...document.querySelectorAll(".team-dynamics .team-compact-card.is-roster")].map(e => e.textContent))
-    .toEqual(["工作中·T7 等合入", "工作中·T5", "工作中·协调"]);
+  expect(document.querySelectorAll(".team-dynamics .team-task-link")).toHaveLength(0);
 });

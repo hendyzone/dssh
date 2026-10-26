@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "rea
 import { emptyProfile, type CollaborationProfile, type CollaborationSession } from "./collaboration";
 import { briefKey, fetchAgentSessions, matchSession, taskBrief } from "./agentSessions";
 import { boardSource, isIdentifier, type TaskLookupSettings } from "./taskLookup";
+import {memberTaskTarget,memberTaskSession} from "./teamServicePresentation";
 import { useTeamService } from "./teamService";
 import { buildOfficeMailDirectory, type OfficeMailDirectory, buildOfficeSnapshot, officeTeamSources, officeKey, type OfficeTeamSource, type OfficeBoard, type OfficeRoster, type OfficeSnapshot } from "./teamOffice";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
@@ -17,6 +18,7 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
   const active=enabled||officeExists;
   const stable=useRef<{content:string;snapshot:OfficeSnapshot}>({content:"",snapshot:{version:1,themeId,animationEnabled,mailAvailability:"unavailable",projects:[]}});
   const [boards,setBoards]=useState<Record<string,OfficeBoard>>({});
+  const [boardsScope,setBoardsScope]=useState("");
   const routeKey=active?JSON.stringify([profiles,servers,sessions,service.url,service.projects]):"";
   const sources=useMemo<OfficeTeamSource[]>(()=>{
     if(!active||!service.url)return [];
@@ -41,6 +43,7 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
     return [source.id,{members:team?.members??[],live:team?.live??{},ai:team?.ai??{},machines:team?.machines??{},aiEnabled:service.status.ai_enabled,availability:team?(state==="online"?"ready":"offline"):state==="error"?"error":"loading",notice} satisfies OfficeRoster];
   })),[sources,rosterKey,service.status.state,service.status.ai_enabled]);
   const boardKey=active?JSON.stringify([sources,lookupSettings,Object.values(rosters).map(roster=>roster.members)]):"";
+  const currentBoards = boardsScope === boardKey ? boards : {};
   useEffect(()=>{
     if(!enabled)return;
     let disposed=false,pending=false;
@@ -58,21 +61,23 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
         await Promise.all([...routes.values()].map(async ({source,teams})=>{
           let board:OfficeBoard;
           try {
-            const snapshot=await fetchAgentSessions(source);
+            const snapshot=await fetchAgentSessions(source).catch(()=>undefined);
             const briefs:OfficeBoard["briefs"]={};
             const targets=new Map<string,{project:string;code:string}>();
             for(const team of teams)for(const member of rosters[team.id]?.members??[]){
-              const session=matchSession(member,snapshot.sessions);
-              if(session?.taskCode&&isIdentifier(session.taskCode)&&isIdentifier(session.project)&&!session.stale&&session.hostOk)
+              const task=memberTaskTarget(member,memberTaskSession(member,snapshot?.sessions??[]));
+              if(task)targets.set(briefKey(task.project,task.code),task);
+              const session=matchSession(member,snapshot?.sessions??[]);
+              if(!team.service&&!task&&session?.taskCode&&isIdentifier(session.taskCode)&&isIdentifier(session.project)&&!session.stale&&session.hostOk)
                 targets.set(briefKey(session.project,session.taskCode),{project:session.project,code:session.taskCode});
             }
             await Promise.all([...targets].map(async([key,target])=>{
               if(disposed)return;
-              try{const brief=await taskBrief(source,target.project,target.code);if(brief)briefs[key]=brief;}catch{/* Deleted tasks need no caption. */}
+              try{const brief=await taskBrief({...source,key:JSON.stringify([source.key,service.url])},target.project,target.code);if(brief)briefs[key]=brief;}catch{/* Deleted tasks need no caption. */}
             }));
             board={snapshot,briefs,offline:false};
           }catch{board={briefs:{},offline:true};}
-          if(!disposed)setBoards(previous=>({...previous,...Object.fromEntries(teams.map(team=>[team.id,board]))}));
+          if(!disposed){setBoards(previous=>({...previous,...Object.fromEntries(teams.map(team=>[team.id,board]))}));setBoardsScope(boardKey);}
         }));
       }finally{pending=false;}
     };
@@ -82,11 +87,11 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
   },[enabled,boardKey]);
   const serviceAt=Object.values(service.snapshots).reduce((latest,team)=>Math.max(latest,team.receivedAt??0),0)||undefined;
   const officeService={state:service.status.state,at:serviceAt,tokenConfigured:service.status.token_configured};
-  const buildKey=active?JSON.stringify([sources,rosters,boards,themeId,animationEnabled,officeService]):"";
+  const buildKey=active?JSON.stringify([sources,rosters,currentBoards,themeId,animationEnabled,officeService]):"";
   const result=useMemo(()=>{
     if(!active)return stable.current.snapshot;
     if(mailDirectoryRef)mailDirectoryRef.current=buildOfficeMailDirectory(sources,rosters);
-    return buildOfficeSnapshot(sources,rosters,{servers,sessions,boards,themeId,animationEnabled,service:officeService});
+    return buildOfficeSnapshot(sources,rosters,{servers,sessions,boards:currentBoards,themeId,animationEnabled,service:officeService});
   },[buildKey,active]);
   const content=active?JSON.stringify(result):stable.current.content;
   if(stable.current.content!==content)stable.current={content,snapshot:result};

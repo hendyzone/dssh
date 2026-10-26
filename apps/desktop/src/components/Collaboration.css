@@ -183,3 +183,7 @@
 .team-live-offline{color:var(--ui-danger,#e06c75)}
 .team-note-age{font-size:10px;color:var(--ui-muted)}
 .team-note-age.is-stale{color:#d19a66}
+
+/* A member’s current task sits below its name, before the AI summary. */
+.team-dynamics .team-task-link{grid-column:1/-1;grid-row:2;justify-content:flex-start;text-align:left;color:var(--ui-accent);padding:2px 0;border:0;background:transparent;cursor:pointer}
+.team-dynamics .team-task-link:disabled{color:var(--ui-muted);cursor:default}
