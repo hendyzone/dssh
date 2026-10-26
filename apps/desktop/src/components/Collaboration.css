@@ -76,6 +76,8 @@
 .team-dynamics .team-live-dot.is-idle,.team-dynamics .team-live-dot.is-gone,
 .team-dynamics .team-live-dot.is-offline,.team-dynamics .team-live-dot.is-none{background:var(--ui-muted)}
 .team-dynamics .team-ai-identity{font-size:13px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+/* 副标题（工具 · 模型）与旧的后缀样式保持一致：小一号、弱化色、不抢主标题。 */
+.team-dynamics .team-live-subtitle{font-size:11px;font-weight:400;color:var(--ui-muted);margin-left:4px}
 .team-dynamics .team-live-status{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
 .team-dynamics .team-live-status small{font-variant-numeric:tabular-nums;white-space:nowrap}
 .team-dynamics .team-live-badge{font-size:11px;border:1px solid currentColor;border-radius:3px;
