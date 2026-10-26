@@ -5,7 +5,7 @@
 <h1 align="center">dssh</h1>
 
 <p align="center">Remote terminals, files and dev tasks in one workspace.</p>
-<p align="center"><strong>v1.2.24</strong> · Tauri SSH client · Windows / macOS / Linux</p>
+<p align="center"><strong>v1.2.25</strong> · Tauri SSH client · Windows / macOS / Linux</p>
 <p align="center"><strong>English</strong> | <a href="README.zh-CN.md">简体中文</a></p>
 
 dssh is built for everyday remote development and server administration: connect to servers, keep long jobs running in tmux, edit remote files, review code diffs, and paste screenshot paths into remote tools such as Codex and Claude. For projects run by a team of coding agents, it also shows member status, task cards and model quota in the same window.
@@ -94,6 +94,8 @@ Optional **Agent collaboration** (「Agent 协作」) is configured per tmux ses
 
 **Team panel** (「团队」): configure a team service URL and project subscriptions in Settings → Agent collaboration. Members and their live state arrive through WebSocket independently of the current terminal's tmux session. Open a registered member's tmux session across servers in one click ([details](docs/agent-collaboration.md#从-lead-跳转到成员终端)).
 The "Activity" (「动态」) and "Members" (「成员」) pages use service status. Only members explicitly reported as `no_agent` fall back to the configured taskboard's read-only session collector (`GET /api/v1/agent-sessions`); taskboard data also provides current cards and recent commits.
+
+**v1.2.25:** Member cards in the team panel keep the name right next to the status dot; the AI summary now sits on its own row instead of widening the first column.
 
 **v1.2.24:** Following the focused terminal now also works for Lead sessions whose name differs from the project name: the session is matched against the team roster instead.
 
