@@ -70,3 +70,11 @@ it('does not expose pane A\'s lock when pane A and pane B infer different projec
   // pane B 自己的 scope 没锁，不应出现 locked
   expect(inferProject({ ...settings, teamLocks: { [scopeA.key]: 'gamma' } }, paneB, service.current, scopeB)?.reason).not.toBe('locked');
 });
+
+it.each(["host.example.invalid","alias.example.invalid"])("selects a renamed Lead's roster project in the real panel: %s",host=>{
+ const lead={id:"lead",server:{...server,host:"host.example.invalid"},tmux:{id:"$10",created:1234,name:"smart-table-lead"}};
+ service.current={...service.current,projects:["alpha","new_smart_table"],snapshots:{alpha:{members:[]},new_smart_table:{members:[{...member("new_smart_table","$10",1234,"smart-table-lead"),host}]}}};
+ render(panel(lead));
+ expect(screen.getByText("团队 · new_smart_table")).toBeTruthy();
+ expect(screen.getByLabelText("团队项目")).toHaveProperty("value","new_smart_table");
+});

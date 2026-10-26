@@ -67,7 +67,7 @@ export const workerSubgroupKey = (project: string) => `${WORKER_GROUP}\u0000${pr
 
 export interface PaneTeamService {
   projects: string[];
-  snapshots: Record<string, { members: { project: string; host?: string; port?: number; username?: string; tmux: { id: string; created: number } }[] } | undefined>;
+  snapshots: Record<string, { members: { project: string; host?: string; port?: number; username?: string; tmux: { id: string; created: number; name?: string } }[] } | undefined>;
 }
 
 /**
@@ -98,14 +98,18 @@ export function sessionTeamProject(pane: ProjectPane | undefined, service: PaneT
   if (!pane?.tmux) return;
   if (isLeadSession(pane.tmux.name)) {
     const project = leadProject(pane.tmux.name);
-    return service.projects.includes(project) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(project) ? project : undefined;
+    if (service.projects.includes(project) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(project)) return project;
   }
-  if (!pane.server) return;
   const endpoint = pane.server;
   const projects = service.projects.filter(project => service.snapshots[project]?.members.some(member =>
     member.project === project && member.tmux.id === pane.tmux!.id && member.tmux.created === pane.tmux!.created &&
-    member.host?.trim().toLowerCase() === endpoint.host.trim().toLowerCase() &&
+    endpoint && member.host?.trim().toLowerCase() === endpoint.host.trim().toLowerCase() &&
     member.port === endpoint.port && member.username === endpoint.username));
   const unique = [...new Set(projects)];
-  return unique.length === 1 ? unique[0] : undefined;
+  if (unique.length) return unique.length === 1 ? unique[0] : undefined;
+  const byName = service.projects.filter(project => service.snapshots[project]?.members.some(member =>
+    member.project === project && member.tmux.name === pane.tmux!.name &&
+    member.tmux.id === pane.tmux!.id && member.tmux.created === pane.tmux!.created));
+  const fallback = [...new Set(byName)];
+  return fallback.length === 1 ? fallback[0] : undefined;
 }
