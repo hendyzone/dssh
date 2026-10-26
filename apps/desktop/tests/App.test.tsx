@@ -593,9 +593,13 @@ it("follows the active team lock and releases it on pane switches and panel clos
  const first=()=>screen.getByTestId("terminal-first-pane").getAttribute("data-task-project");
  const second=()=>screen.getByTestId("terminal-second-pane").getAttribute("data-task-project");
  expect(first()).toBe("alpha");expect(second()).toBe("beta");
+ expect(officeMock.publish.mock.lastCall?.[0].activeProject).toBe("alpha");
  fireEvent.click(screen.getByRole("button",{name:"团队 · 打开成员终端"}));await waitFor(()=>expect(first()).toBe("shared"));
  fireEvent.change(screen.getByLabelText("团队项目"),{target:{value:"beta"}});await waitFor(()=>expect(first()).toBe("beta"));
  fireEvent.click(container.querySelectorAll(".tab")[1]);await waitFor(()=>expect(first()).toBe("alpha"));expect(second()).toBe("beta");
+ expect(officeMock.publish.mock.lastCall?.[0].activeProject).toBe("beta");
+ expect(JSON.stringify(officeMock.publish.mock.lastCall?.[0])).not.toContain(server.host);
  fireEvent.click(container.querySelectorAll(".tab")[0]);await waitFor(()=>expect(first()).toBe("shared"));
  fireEvent.click(screen.getByRole("button",{name:"关闭团队"}));await waitFor(()=>expect(first()).toBe("alpha"));
+ expect(officeMock.publish.mock.lastCall?.[0].activeProject).toBe("alpha");
 });

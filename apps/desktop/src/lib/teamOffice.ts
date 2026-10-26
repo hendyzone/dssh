@@ -1,5 +1,5 @@
 import {serviceAi, type ServiceAi} from "./serviceAi";
-import type { TeamLive } from "./teamService";
+import type { TeamServiceState, TeamLive } from "./teamService";
 import { serviceMemberAvatar } from "./teamServicePresentation";
 import { memberDisplay } from "./memberDisplay";
 import { collaborationKey, type CollaborationProfile, type CollaborationSession } from "./collaboration";
@@ -8,7 +8,23 @@ import { resolveTeamAvatar, type TeamAvatarStatus } from "./teamAvatar";
 import { matchingServers, memberKey, type TeamMember } from "./teamMembers";
 import { sameSshEndpoint } from "./tmuxTabs";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
-import type { ServerEntry } from "../types";
+import { isLeadSession, leadProject } from "./tmuxGroups";
+import type { ServerEntry, SessionInfo } from "../types";
+
+/** Resolve the focused terminal locally; only the resulting project name crosses the office wire. */
+export function officeActiveProject(pane: SessionInfo | undefined, service: Pick<TeamServiceState, "projects" | "snapshots">): string | undefined {
+  if (!pane?.tmux) return;
+  if (isLeadSession(pane.tmux.name)) {
+    const project = leadProject(pane.tmux.name);
+    return service.projects.includes(project) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(project) ? project : undefined;
+  }
+  const projects = service.projects.filter(project => service.snapshots[project]?.members.some(member =>
+    member.project === project && member.tmux.id === pane.tmux!.id && member.tmux.created === pane.tmux!.created &&
+    member.host.trim().toLowerCase() === pane.server.host.trim().toLowerCase() &&
+    member.port === pane.server.port && member.username === pane.server.username));
+  const unique = [...new Set(projects)];
+  return unique.length === 1 ? unique[0] : undefined;
+}
 
 export type OfficeMailEndpoint = {kind:"station";sourceId:string;memberId:string} | {kind:"edge"};
 export interface OfficeMailEvent { id:string; uid:number; kind:string|null; from:OfficeMailEndpoint; to:OfficeMailEndpoint; }
@@ -66,6 +82,7 @@ export interface OfficeSource {
 export interface OfficeProject { id: string; name: string; sources: OfficeSource[] }
 /** Presentation-only allowlist: never send server records, profiles, handles or mail bodies. */
 export interface OfficeSnapshot {
+  activeProject?: string;
   version: 1; themeId: string; animationEnabled: boolean;
   mailAvailability: "unavailable"; projects: OfficeProject[]; mail?:OfficeMailView;
   /** Team-service connection shown at the top of the room (no addresses/tokens). */

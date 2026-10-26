@@ -6,6 +6,10 @@ import TeamMemberAvatar from "./TeamMemberAvatar";
 import { officeStatusCounts, type OfficeMember, type OfficeService, type OfficeSnapshot } from "../lib/teamOffice";
 import "./TeamOffice.css";
 
+const FOLLOW_KEY = "dssh.office.follow.v1";
+function readFollow() {
+  try { return localStorage.getItem(FOLLOW_KEY) !== "false"; } catch { return true; }
+}
 const SCALE_KEY = "dssh.office.scale.v1";
 type OfficeScale = number;
 type ScaleMode = "auto" | "1" | "2" | "3";
@@ -161,12 +165,46 @@ function DetailCard({member, now, id}: {member: OfficeMember; now: number; id: s
 }
 
 /** The same presentation component serves the inline room and the isolated popup. */
-export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMember}: {
+export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMember, fullscreen = false, onFullscreenChange}: {
   snapshot: OfficeSnapshot; visible?: boolean; onPopOut?: () => void;
+  fullscreen?: boolean; onFullscreenChange?: (value: boolean) => Promise<void>;
   /** Optional: click/Enter on a station opens that member's terminal in the main window. */
   onOpenMember?: (paletteKey: string) => void;
 }) {
   const mailContainer=useRef<HTMLDivElement>(null);
+  const projectElements = useRef(new Map<string, HTMLElement>());
+  const [follow, setFollow] = useState(readFollow);
+  const lastFollow = useRef("");
+  const [scrollProject, setScrollProject] = useState("");
+  const [manualHidden, setManualHidden] = useState(false);
+  const [peek, setPeek] = useState(false);
+  const [windowError, setWindowError] = useState("");
+  const topHidden = (fullscreen || manualHidden) && !peek;
+  const wasFullscreen = useRef(fullscreen);
+  useEffect(() => {
+    setPeek(false);
+    if (wasFullscreen.current && !fullscreen) setManualHidden(false);
+    wasFullscreen.current = fullscreen;
+  }, [fullscreen]);
+  const requestFullscreen = async (value: boolean) => {
+    setWindowError("");
+    try { await onFullscreenChange?.(value); }
+    catch { setWindowError("无法切换全屏，请重试。"); }
+  };
+  useEffect(() => {
+    if (!onFullscreenChange || !visible) return;
+    const keydown = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      if (event.key === "F11") { event.preventDefault(); void requestFullscreen(!fullscreen); }
+      else if (event.key === "Escape" && fullscreen) { event.preventDefault(); void requestFullscreen(false); }
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [fullscreen, onFullscreenChange, visible]);
+  const changeFollow = (enabled: boolean) => {
+    setFollow(enabled);
+    try { localStorage.setItem(FOLLOW_KEY, String(enabled)); } catch { /* storage is optional */ }
+  };
   const [scaleMode, setScaleMode] = useState<ScaleMode>(readScale);
   const [roomSize, setRoomSize] = useState({width: 0, height: 0});
   const compactWall = roomSize.height < 520;
@@ -177,10 +215,25 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
     knownProjects.current = new Set(snapshot.projects.map(project => project.id));
     if (newClosed.length) setCollapsed(previous => new Set([...previous, ...newClosed.map(project => project.id)]));
   }, [snapshot.projects]);
+  useEffect(() => {
+    if (!follow) { lastFollow.current = ""; setScrollProject(""); return; }
+    const matches = snapshot.projects.filter(project => project.name === snapshot.activeProject);
+    if (!matches.length) { lastFollow.current = ""; setScrollProject(""); return; }
+    const identity = JSON.stringify(matches.map(project => project.id));
+    if (identity === lastFollow.current) return;
+    lastFollow.current = identity;
+    const ids = new Set(matches.map(project => project.id));
+    setCollapsed(new Set(snapshot.projects.filter(project => !ids.has(project.id)).map(project => project.id)));
+    setScrollProject(matches[0].id);
+  }, [follow, snapshot.activeProject, snapshot.projects]);
+  useEffect(() => {
+    const project = projectElements.current.get(scrollProject);
+    if (project && mailContainer.current) mailContainer.current.scrollTo?.({top: project.offsetTop, behavior: "auto"});
+  }, [scrollProject]);
   const openProjects = snapshot.projects.filter(project => !collapsed.has(project.id));
   const activeMembers = openProjects.flatMap(project => project.sources.flatMap(source => source.members));
   const furnitureFactor = activeMembers.some(member => member.isLead) ? 1.12 : 1;
-  const wallHeight = compactWall ? 32 : Math.min(120, Math.max(48, window.innerHeight * .14));
+  const wallHeight = topHidden ? 0 : compactWall ? 32 : Math.min(120, Math.max(48, window.innerHeight * .14));
   // Reserve project signs and the existing project/floor padding before fitting every station.
   const groups = openProjects.flatMap(project => project.sources.filter(source => source.members.length));
   const sourceOverhead = openProjects.reduce((sum, project) => sum + project.sources.reduce((height, source) => height +
@@ -242,13 +295,24 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
     return next;
   });
   return <section className="team-office" aria-label="公司办公室" data-paused={String(paused)} data-motion={motion?"on":"off"} data-phase={phase}
+    data-follow={String(follow)} data-fullscreen={String(fullscreen)} data-top-hidden={String(topHidden)}
+    onMouseMove={event => {
+      const y = event.clientY - event.currentTarget.getBoundingClientRect().top;
+      if ((fullscreen || manualHidden) && y >= 0 && y < 8) setPeek(true);
+      else if (peek && y > 32 + (compactWall ? 32 : Math.min(120, Math.max(48, window.innerHeight * .14))) + 24) setPeek(false);
+    }}
     data-scale={scale} data-columns={grid.columns} data-rows={grid.rows} data-scale-mode={scaleMode} data-compact-wall={String(compactWall)} data-compact-label={String(scale < 1.75)}
     style={{"--office-text": textScale(scale), "--office-columns": scaleMode === "auto" ? grid.columns : undefined, "--office-station-width": `${Math.max(160, 96 * scale * furnitureFactor)}px`} as CSSProperties}>
+    {topHidden && <button className="office-top-reveal" aria-label="显示顶部" onFocus={() => setPeek(true)} onClick={() => setPeek(true)}/>}
     <header className="office-toolbar"><span className="office-overview"><span className="office-service-dot" data-online={String(snapshot.service?.state === "online")} aria-label={snapshot.service?.state === "online" ? "服务在线" : "服务未连接"}/><span>工作中 {totals.running} · 卡住 {totals.stuck} · 等待 {totals.waiting}</span></span><div>
+      <label><input type="checkbox" checked={follow} onChange={event => changeFollow(event.target.checked)}/>跟随当前窗口</label>
+      <button type="button" onClick={() => {setManualHidden(value => !value);setPeek(false);}}>{manualHidden ? "显示顶部" : "隐藏顶部"}</button>
+      {onFullscreenChange && <button type="button" onClick={() => void requestFullscreen(!fullscreen)}>{fullscreen ? "退出全屏" : "全屏"}</button>}
       <label><select aria-label="房间像素缩放" value={scaleMode} onChange={event => changeScale(event.target.value as ScaleMode)}>
         <option value="auto">自适应</option><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option>
       </select></label>{onPopOut && <Button size="sm" variant="outline" onClick={onPopOut}>弹出窗口</Button>}
     </div></header>
+    {windowError && <p className="office-window-error" role="alert">{windowError}</p>}
     {serviceWarning && <p className="office-coverage" role="status">{serviceNote(snapshot.service)}</p>}
     <div className="office-projects" ref={mailContainer}>
       <UpperWall phase={phase} clock={clockText(now)}/>
@@ -257,7 +321,7 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
         const closed = collapsed.has(project.id);
         const members = project.sources.flatMap(source => source.members);
         const counts = officeStatusCounts(members);
-        return <section className="office-project" aria-label={`项目 ${project.name}`} key={project.id} data-paused={String(paused || closed)}>
+        return <section className="office-project" aria-label={`项目 ${project.name}`} key={project.id} ref={element => {if(element)projectElements.current.set(project.id, element);else projectElements.current.delete(project.id);}} data-paused={String(paused || closed)}>
           <button className="office-project-sign" aria-label={`${closed?"展开":"折叠"}项目 ${project.name}`} aria-expanded={!closed} onClick={() => toggle(project.id)}>
             <span aria-hidden="true">{closed?"▸":"▾"}</span> {project.name}
             <span className="office-project-counts" aria-label="团队状态计数">{[["运行中", counts.running], ["等待", counts.waiting], ["卡住", counts.stuck], ["空闲", counts.idle], ["离线", counts.offline]].filter(([, count]) => Number(count) > 0).map(([label, count]) => `${label} ${count}`).join(" · ")}</span>
