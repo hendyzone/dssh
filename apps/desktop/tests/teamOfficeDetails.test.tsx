@@ -180,3 +180,27 @@ it("does not render a second team name for a single-source project", () => {
   render(<TeamOffice snapshot={twoSources}/>);
   expect(screen.getByText("alpha · other")).toBeTruthy();
 });
+
+it("puts the ? and ! badges under the bubble slot, inside the desk box", () => {
+  const view = render(<TeamOffice snapshot={snapshot([
+    member("wait", { liveState: "waiting_input", ai: { status: "waiting", summary: "等 Lead 批真机验证", evidence: "", model: "m", updatedAt: new Date().toISOString() } }),
+    member("stuck", { liveState: "stuck", status: { state: "error", source: "program", label: "卡住" } }),
+  ])}/>);
+  const wait = view.container.querySelector('[data-member-id="wait"]')!;
+  const slot = wait.querySelector(".office-ai-slot")!;
+  const badge = wait.querySelector(".office-state-badge")!;
+  expect(badge.textContent).toBe("?");
+  expect(wait.querySelector(".office-pixels")?.contains(badge)).toBe(true);
+  expect(slot.contains(badge)).toBe(false);
+  const stuck = view.container.querySelector('[data-member-id="stuck"]')!;
+  expect(stuck.querySelector(".office-state-badge")?.textContent).toBe("!");
+});
+
+it("draws an offline station once: one desk, one dark screen and one empty chair", () => {
+  const view = render(<TeamOffice snapshot={snapshot([member("gone", { liveState: "unknown", match: "gone", status: { state: "unknown", source: "program", label: "会话已结束" } })])}/>);
+  const station = view.container.querySelector('[data-member-id="gone"]')!;
+  expect(station.querySelectorAll(".office-furniture")).toHaveLength(1);
+  expect(station.querySelectorAll(".office-monitor-frame")).toHaveLength(1);
+  expect(station.querySelectorAll(".office-empty-chair")).toHaveLength(1);
+  expect(station.querySelectorAll(".office-empty-desk")).toHaveLength(0);
+});

@@ -196,6 +196,9 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                   const open = () => onOpenMember?.(member.paletteKey);
                   const factor = member.isLead ? 1.12 : 1;
                   const stateClass = `office-state-${member.liveState ?? member.status.state}`;
+                  // One placement for both prompts: inside the desk box, below the bubble slot.
+                  const badge = ["waiting_input", "input_pending"].includes(member.liveState ?? "") || member.status.state === "blocked"
+                    ? "warn" : member.liveState === "stuck" || member.status.state === "error" ? "alert" : "";
                   return <article className={`office-station${member.isLead?" is-lead":""}${ended?" is-ended":""}${grey?" is-grey":""}${member.liveState==="stuck"||member.status.state==="error"?" is-stuck":""} ${stateClass}`}
                     key={member.id} data-member-id={member.id} data-office-station={officeStationAnchor(source.id,member.id)}
                     data-state={member.status.state} data-live-state={member.liveState ?? ""} data-match={member.match ?? ""}
@@ -213,8 +216,9 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                         <Desk scale={scale} lead={member.isLead}/>
                       </div>
                       {ended
-                        ? <div className="office-empty-chair" aria-hidden="true"><EmptyDesks scale={scale}/></div>
+                        ? <div className="office-empty-chair" aria-hidden="true"><svg width={20*scale} height={18*scale} viewBox="0 0 20 18" shapeRendering="crispEdges"><path className="office-chair" d="M3 1h14v8H3zm2 8h10v6H5zm-2 6h14v3H3z"/></svg></div>
                         : <div className="office-person" style={{left:20*scale*factor,top:14*scale*factor}}><TeamMemberAvatar memberId={member.paletteKey} status={member.status} scale={scale} motionEnabled={motion} paused={paused || closed}/></div>}
+                      {badge && <span className={`office-state-badge is-${badge}`} aria-hidden="true">{badge === "warn" ? "?" : "!"}</span>}
                       <div className="office-desk-label" style={{top:51*scale*factor,left:6*scale,right:6*scale}}>
                         <div className="office-station-name">
                           {member.isLead && <span className="office-lead-label">Lead</span>}

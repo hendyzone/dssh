@@ -53,9 +53,14 @@
 .office-station{position:relative;cursor:pointer;outline:none}
 .office-station:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--ui-accent) 60%,transparent);border-radius:4px}
 .office-furniture-scale{position:absolute;inset:0;transform-origin:bottom center}
-.office-empty-chair{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:center;opacity:.55}
+.office-empty-chair{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);opacity:.6;filter:saturate(.2)}
 .office-empty-chair .office-empty-desks{padding:0}
 .office-station.is-grey{filter:grayscale(1);opacity:.55}
+.office-state-badge{position:absolute;top:2px;right:8px;width:18px;height:18px;line-height:18px;text-align:center;
+ font-weight:700;font-size:13px;border-radius:50%;z-index:2}
+.office-state-badge.is-warn{color:#2a2418;background:#f2d489;border:2px solid #77501d}
+.office-state-badge.is-alert{color:#fff;background:#b3403a;border:2px solid #5c1f1b}
+.office-station.is-ended{filter:saturate(.35)}
 .office-station.is-ended .office-monitor-screen{fill:#2b3336}
 .office-station.is-ended .office-screen-code{visibility:hidden}
 /* Screen and posture give a second, colour-independent cue for the state. */
@@ -71,11 +76,6 @@
 .office-station[data-live-state="input_pending"] .office-screen-code,
 .office-station[data-state="blocked"] .office-screen-code{opacity:.15}
 .office-station[data-live-state="stuck"] .office-screen-code,.office-station[data-state="error"] .office-screen-code{opacity:.1}
-/* ? and ! bubbles: text so the state is not colour-only. */
-.office-station[data-live-state="waiting_input"]::after,
-.office-station[data-live-state="input_pending"]::after,
-.office-station[data-state="blocked"]::after{content:"?";position:absolute;left:calc(50% + 26px);top:2px;width:18px;height:18px;line-height:18px;text-align:center;font-weight:700;font-size:13px;color:#2a2418;background:#f2d489;border:2px solid #77501d;border-radius:50%}
-.office-station[data-live-state="stuck"]::after,.office-station[data-state="error"]::after{content:"!";position:absolute;left:calc(50% + 26px);top:2px;width:18px;height:18px;line-height:18px;text-align:center;font-weight:700;font-size:13px;color:#fff;background:#b3403a;border:2px solid #5c1f1b;border-radius:50%}
 /* AI bubble */
 /* The bubble lives in a reserved row above each desk so no overflow container can clip it. */
 .office-ai-slot{display:flex;align-items:flex-end;justify-content:center;width:100%;height:24px;flex:none;overflow:visible}
