@@ -68,7 +68,7 @@ afterEach(() => { cleanup(); });
 it("renders a service snapshot without a Lead tmux binding or SSH roster request", async () => {
   await boot();
   await emit("team://snapshot", snapshot());
-  expect(await screen.findByRole("button", { name: "打开 · worker-a · worker-a" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "打开 · worker-a" })).toBeTruthy();
   expect(state().snapshots.demo.seq).toBe(1);
   expect(bridge.invoke.mock.calls.every(([name]) => String(name).startsWith("team_service_"))).toBe(true);
   expect(screen.getByText("AI 摘要由团队服务生成")).toBeTruthy();
@@ -77,12 +77,12 @@ it("renders a service snapshot without a Lead tmux binding or SSH roster request
 it("applies contiguous deltas and ignores duplicate or older updates", async () => {
   await boot(); await emit("team://snapshot", snapshot());
   await emit("team://delta", { type: "delta", project: "demo", seq: 2, ops: [{ op: "upsert", member: member("worker-b") }] });
-  expect(await screen.findByRole("button", { name: "打开 · worker-b · worker-b" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "打开 · worker-b" })).toBeTruthy();
   for (const seq of [1, 2]) await emit("team://delta", { type: "delta", project: "demo", seq, ops: [{ op: "remove", key: member().key }] });
   expect(state().snapshots.demo.seq).toBe(2);
-  expect(screen.getByRole("button", { name: "打开 · worker-a · worker-a" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "打开 · worker-a" })).toBeTruthy();
   await emit("team://delta", { type: "delta", project: "demo", seq: 3, ops: [{ op: "remove", key: member().key }] });
-  expect(screen.queryByRole("button", { name: "打开 · worker-a · worker-a" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "打开 · worker-a" })).toBeNull();
 });
 
 it("does not apply a sequence gap and requests the native authoritative view", async () => {
@@ -92,7 +92,7 @@ it("does not apply a sequence gap and requests the native authoritative view", a
   await emit("team://delta", { type: "delta", project: "demo", seq: 3, ops: [{ op: "remove", key: member().key }] });
   expect(state().snapshots.demo.seq).toBe(1);
   await waitFor(() => expect(bridge.invoke.mock.calls.filter(([name]) => name === "team_service_read").length).toBeGreaterThan(reads));
-  expect(screen.getByRole("button", { name: "打开 · worker-a · worker-a" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "打开 · worker-a" })).toBeTruthy();
 });
 
 it("service live state wins, while no_agent uses the existing collector fallback", async () => {
@@ -158,8 +158,8 @@ it("does not let a delayed native read replace a newer event snapshot", async ()
   await emit("team://snapshot", snapshot(8, ["worker-new"]));
   await act(async () => { resolve({ ...native, snapshots: { demo: snapshot(1) } }); await updating; });
   expect(state().snapshots.demo.seq).toBe(8);
-  expect(screen.getByRole("button", { name: "打开 · worker-new · worker-new" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "打开 · worker-a · worker-a" })).toBeNull();
+  expect(screen.getByRole("button", { name: "打开 · worker-new" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "打开 · worker-a" })).toBeNull();
 });
 
 it("separates identical project names when the configured service URL changes", async () => {
@@ -167,7 +167,7 @@ it("separates identical project names when the configured service URL changes", 
   const first = state().snapshots.demo.identity;
   await act(async () => { await configureTeamService("https://other-service.example.invalid", "replacement-credential", ["demo"]); });
   expect(state().snapshots.demo).toBeUndefined();
-  expect(screen.queryByRole("button", { name: "打开 · worker-a · worker-a" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "打开 · worker-a" })).toBeNull();
   await emit("team://snapshot", snapshot(1, ["worker-new"]));
   expect(state().snapshots.demo.identity).not.toBe(first);
   expect(state().snapshots.demo.identity).toContain("other-service.example.invalid");
@@ -238,9 +238,9 @@ it("restores a lower authoritative replacement missed while all views were unmou
   cleanup();
   native.snapshots.demo = snapshot(2, ["worker-new"]);
   render(<><Probe/><TeamMembers sessionId="other-pane" profile={profile} navigation={{ server, servers: [server], onOpen: vi.fn() }}/></>);
-  await screen.findByRole("button", { name: "打开 · worker-new · worker-new" });
+  await screen.findByRole("button", { name: "打开 · worker-new" });
   expect(state().snapshots.demo.seq).toBe(2);
-  expect(screen.queryByRole("button", { name: "打开 · worker-old · worker-old" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "打开 · worker-old" })).toBeNull();
 });
 
 it("opens a real team panel without a Lead profile or tmux binding and switches service projects", async () => {
@@ -249,13 +249,13 @@ it("opens a real team panel without a Lead profile or tmux binding and switches 
   await act(async () => { await configureTeamService("https://panel-service.example.invalid", "panel-credential", ["demo", "another"]); });
   await emit("team://snapshot", snapshot());
   await emit("team://snapshot", snapshot(1, ["other-worker"], "another"));
-  expect(await screen.findByRole("button", { name: "打开 · worker-a · worker-a" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "打开 · worker-a" })).toBeTruthy();
   expect(screen.getByText("团队 · demo")).toBeTruthy();
   expect(screen.queryByText("将当前窗口设为 Lead")).toBeNull();
   fireEvent.change(screen.getByLabelText("团队项目"), { target: { value: "another" } });
-  expect(await screen.findByRole("button", { name: "打开 · other-worker · other-worker" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "打开 · other-worker" })).toBeTruthy();
   expect(screen.getByText("团队 · another")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "打开 · worker-a · worker-a" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "打开 · worker-a" })).toBeNull();
 });
 
 it("keeps service AI until a real AI delta arrives after refresh", async () => {

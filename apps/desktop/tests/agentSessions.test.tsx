@@ -286,7 +286,7 @@ it("renders live status, card brief, last commit, dirty files and model without 
   expect(third.classList.contains("team-compact-row")).toBe(true);
   expect(screen.queryByText("无当前卡")).toBeNull();
   // AI summary stays on demand.
-  expect(screen.queryByRole("button", { name: "总结 · host-a-pi" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "总结 · demo-host-a-pi" })).toBeNull();
   expect(screen.getByText("AI 摘要由团队服务生成")).toBeTruthy();
   expect(mocks.invoke.mock.calls.every(([command]) => command === "taskboard_get")).toBe(true);
   expect(rows()).toHaveLength(3);
@@ -302,7 +302,7 @@ it("shows 「看板离线」 instead of an error when the board is unreachable, 
   // Falls back to the hand-written state instead of a blank 「unknown」.
   expect(screen.getAllByText("待确认（手写）")).toHaveLength(3);
   // Roster still shows, unranked, and terminal navigation stays available.
-  expect(rows().map(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent)).toEqual(["host-a-codex", "host-c-agy", "host-a-pi"]);
+  expect(rows().map(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent)).toEqual(["demo-host-a-codex", "demo-host-c-agy", "demo-host-a-pi"]);
   state.offline = false;
   await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
   await waitFor(() => expect(screen.queryByText(/看板离线/)).toBeNull());
@@ -368,8 +368,8 @@ it("the merged list shows live status, groups and the clickable summary; Lead is
   await screen.findAllByText("告警带设备标识时主动去查");
   const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
   const expected = {
-    Lead: ["lead", "空闲"], stuck: ["attention", "卡住：429"], wait: ["waitLead", "等 Lead"],
-    review: ["review", "已交付·待验收"], run: ["running", "运行中"], free: ["available", "空闲·可派活"],
+    "demo-lead": ["lead", "空闲"], "demo-stuck": ["attention", "卡住：429"], "demo-wait": ["waitLead", "等 Lead"],
+    "demo-review": ["review", "已交付·待验收"], "demo-run": ["running", "运行中"], "demo-free": ["available", "空闲·可派活"],
   };
   expect(dynamics).toEqual(expected);
   // 紧急度排序不变，Lead 组挪到最后（紧凑行）
@@ -388,15 +388,15 @@ it("the merged list shows live status, groups and the clickable summary; Lead is
   const rowOf = (name: string) => [...document.querySelectorAll(".team-dynamics .team-live-row")]
     .find(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent === name) as HTMLElement;
   const openRow = (row: HTMLElement) => { row.open = true; fireEvent(row, new Event("toggle")); };
-  expect(within(rowOf("run")).getByText("T0504")).toBeTruthy();
-  expect(within(rowOf("run")).getByText("告警带设备标识时主动去查")).toBeTruthy();
-  expect(within(rowOf("wait")).getByText("T7")).toBeTruthy();
+  expect(within(rowOf("demo-run")).getByText("T0504")).toBeTruthy();
+  expect(within(rowOf("demo-run")).getByText("告警带设备标识时主动去查")).toBeTruthy();
+  expect(within(rowOf("demo-wait")).getByText("T7")).toBeTruthy();
   // 管理/备注区只在展开时渲染
-  openRow(rowOf("wait"));
-  expect(within(rowOf("wait")).getByText("Lead 备注")).toBeTruthy();
-  expect(within(rowOf("wait")).getByText(/2 天前 · 可能过期/)).toBeTruthy();
-  openRow(rowOf("free"));
-  expect(within(rowOf("free")).getByText("1 小时前").classList.contains("is-stale")).toBe(false);
+  openRow(rowOf("demo-wait"));
+  expect(within(rowOf("demo-wait")).getByText("Lead 备注")).toBeTruthy();
+  expect(within(rowOf("demo-wait")).getByText(/2 天前 · 可能过期/)).toBeTruthy();
+  openRow(rowOf("demo-free"));
+  expect(within(rowOf("demo-free")).getByText("1 小时前").classList.contains("is-stale")).toBe(false);
   // 合并后只有一份采集
   expect(state.paths.filter(p => p.endsWith("/agent-sessions"))).toHaveLength(1);
 });
@@ -409,8 +409,8 @@ it("the merged list falls back to the hand-written state and says 「看板离�
   expect(screen.queryByRole("alert")).toBeNull();
   const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
   expect(dynamics).toEqual({
-    Lead: ["lead", "工作中（手写）"], run: ["rosterUnknown", "待确认（手写）"], wait: ["rosterWorking", "工作中（手写）"],
-    review: ["rosterUnknown", "待确认（手写）"], free: ["rosterWorking", "工作中（手写）"], stuck: ["rosterUnknown", "待确认（手写）"],
+    "demo-lead": ["lead", "工作中（手写）"], "demo-run": ["rosterUnknown", "待确认（手写）"], "demo-wait": ["rosterWorking", "工作中（手写）"],
+    "demo-review": ["rosterUnknown", "待确认（手写）"], "demo-free": ["rosterWorking", "工作中（手写）"], "demo-stuck": ["rosterUnknown", "待确认（手写）"],
   });
   // 看板离线时不显示实时计数块
   expect(document.querySelectorAll(".team-live-counts")).toHaveLength(0);

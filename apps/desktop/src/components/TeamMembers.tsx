@@ -13,6 +13,7 @@ import { Input } from "./ui/input";
 import TeamMemberNotes from "./TeamMemberNotes";
 import TeamDynamics from "./TeamDynamics";
 import { liveSnapshot, useAgentSessions } from "../lib/agentSessions";
+import { memberDisplay } from "../lib/memberDisplay";
 import type { OfficeSnapshot } from "../lib/teamOffice";
 
 export interface TeamNavigation {
@@ -143,7 +144,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
       localStorage.setItem(TEAM_MAPPING_KEY, JSON.stringify(next)); setMapping(next);
     } catch (e) {setError(`无法保存连接：${String(e)}`);}
   };
-  const connectionSelect = (member:TeamMember, server?:ServerEntry) => <label className="collaboration-field">本机连接 · {member.role}
+  const connectionSelect = (member:TeamMember, server?:ServerEntry) => <label className="collaboration-field">本机连接 · {memberDisplay(member).title}
     <select value={server?.id??""} disabled={busy} onChange={e=>setConnection(member,e.target.value)}>
       <option value="">选择对应服务器</option>{navigation.servers.map(s=><option value={s.id} key={s.id}>{s.name} · {s.username}@{s.host}:{s.port}</option>)}
     </select>
@@ -170,10 +171,11 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
         </div>
       </div>}
       <div className="team-card-extra team-manage team-manage-content">
+        <p><strong>{memberDisplay(member).title}</strong>{memberDisplay(member).role ? ` · 角色：${memberDisplay(member).role}` : ""}</p>
         <p>{member.username}@{member.host}:{member.port}</p><p>{member.workdir}</p>{member.email&&<p>{member.email}</p>}
         <p>信息更新：{member.updatedAt?new Date(member.updatedAt).toLocaleString():"未知"}（不代表在线）</p>
         {server?connectionSelect(member,server):<><p>为这位成员选择本机的 SSH 连接。</p>{connectionSelect(member)}{!navigation.servers.length&&<p>请先在左侧添加服务器。</p>}</>}
-        <div className="collaboration-actions"><Button size="sm" variant="ghost" disabled={disabled} aria-label={`编辑备注 · ${member.role}`} onClick={()=>{
+        <div className="collaboration-actions"><Button size="sm" variant="ghost" disabled={disabled} aria-label={`编辑备注 · ${memberDisplay(member).title}`} onClick={()=>{
           setNoteMember(key);setNoteDraft(noteValues(member));
         }}>编辑备注</Button><Button size="sm" variant="ghost" disabled={disabled} onClick={()=>startAdd(member)}>更新终端</Button>
           <Button size="sm" variant="ghost" disabled={disabled} onClick={()=>void run(async current=>{
@@ -184,7 +186,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
     </>;
   };
   const addForm = adding ? <div className="team-add" aria-label="添加成员表单" ref={addRef}>
-    <strong>{editing ? `更新 ${editing.role} 的终端` : "选择一个成员终端"}</strong>
+    <strong>{editing ? `更新 ${memberDisplay(editing).title} 的终端` : "选择一个成员终端"}</strong>
     <label className="collaboration-field">成员终端<select value={selected} disabled={busy} onChange={e=>{
       setSelected(e.target.value); const next=choices.find(s=>s.pane.id===e.target.value); if(!editing)setRole(next?.pane.tmux?.name??"");
     }}><option value="">选择已打开的终端</option>{choices.map(s=><option key={s.pane.id} value={s.pane.id}>{s.pane.tmux?.name} · {s.pane.server.name}</option>)}</select></label>

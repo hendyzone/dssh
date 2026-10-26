@@ -39,11 +39,11 @@ beforeEach(() => { serviceRoster([member]); localStorage.clear(); vi.mocked(invo
 it("renders the service roster and keeps navigation with service editing available",async()=>{
   const onOpen=vi.fn().mockResolvedValue(undefined);
   render(<TeamMembers sessionId="" profile={profile} navigation={{server,servers:[server],onOpen}}/>);
-  fireEvent.click(await screen.findByRole("button",{name:"打开 · host-b · worker"}));
+  fireEvent.click(await screen.findByRole("button",{name:"打开 · worker"}));
   await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(member,server));
   await expand(await screen.findByText("待确认（Lead 手写）"));
-  await expand(screen.getByRole("button",{name:"打开 · host-b · worker"}));
-  for(const name of ["编辑备注 · host-b","更新终端","从团队移除"])
+  await expand(screen.getByRole("button",{name:"打开 · worker"}));
+  for(const name of ["编辑备注 · worker","更新终端","从团队移除"])
     expect((screen.getByRole("button",{name}) as HTMLButtonElement).disabled).toBe(false);
   expect((screen.getByRole("button",{name:"添加成员"}) as HTMLButtonElement).disabled).toBe(false);
   expect(screen.getByText("AI 摘要由团队服务生成")).toBeTruthy();
@@ -52,7 +52,7 @@ it("renders the service roster and keeps navigation with service editing availab
 it.each([undefined,profile])("opens subscribed teams without a Lead binding (%s)",async binding=>{
   render(<TeamPanel sessionId="" pane={{id:"terminal",server}} profile={binding} navigation={{server,servers:[server],onOpen:vi.fn()}} onClose={vi.fn()}/>);
   expect(screen.getByText("团队 · demo")).toBeTruthy();
-  expect(await screen.findByRole("button",{name:"打开 · host-b · worker"})).toBeTruthy();
+  expect(await screen.findByRole("button",{name:"打开 · worker"})).toBeTruthy();
   expect(screen.queryByText("将当前窗口设为 Lead")).toBeNull();
   expect(invoke).not.toHaveBeenCalled();
 });
@@ -75,9 +75,9 @@ it("shows cached member notes with a service notes editor",async()=>{
   serviceRoster([{...member,responsibilities:"Backend",currentTask:"Task",notes:"Ready for review"}]);
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
   await expand(await screen.findByText("待确认（Lead 手写）"));
-  await expand(screen.getByRole("button",{name:"打开 · host-b · worker"}));
+  await expand(screen.getByRole("button",{name:"打开 · worker"}));
   expect(screen.getByLabelText("成员摘要").textContent).toContain("Task");
-  fireEvent.click(screen.getByRole("button",{name:"编辑备注 · host-b"}));
+  fireEvent.click(screen.getByRole("button",{name:"编辑备注 · worker"}));
   expect(screen.getByRole("button",{name:"保存备注"})).toBeTruthy();
   expect(invoke).not.toHaveBeenCalled();
 });
@@ -110,24 +110,24 @@ it("requires an explicit alias mapping when no endpoint matches and remembers it
   const props = {sessionId:"lead-ssh", profile, navigation:{server:leadOnly, servers:[alias], onOpen}};
   const view = render(<TeamMembers {...props}/>);
   await expand(await screen.findByText("待确认（Lead 手写）"));
-  const button = await screen.findByRole("button", {name:"打开 · host-b · worker"});
+  const button = await screen.findByRole("button", {name:"打开 · worker"});
   await expand(button);
   expect((button as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.change(screen.getByLabelText("本机连接 · host-b"), {target:{value:alias.id}});
+  fireEvent.change(screen.getByLabelText("本机连接 · worker"), {target:{value:alias.id}});
   fireEvent.click(button);
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(member, alias));
   view.unmount();
   render(<TeamMembers {...props}/>);
   await expand(await screen.findByText("待确认（Lead 手写）"));
-  await expand(await screen.findByRole("button", {name:"打开 · host-b · worker"}));
-  expect((await screen.findByLabelText("本机连接 · host-b") as HTMLSelectElement).value).toBe(alias.id);
+  await expand(await screen.findByRole("button", {name:"打开 · worker"}));
+  expect((await screen.findByLabelText("本机连接 · worker") as HTMLSelectElement).value).toBe(alias.id);
 });
 
 it("reports stale sessions and never silently retargets a member", async () => {
   const onOpen = vi.fn().mockRejectedValue(new Error("成员会话已结束"));
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server, servers:[server], onOpen}}/>);
   await expand(await screen.findByText("待确认（Lead 手写）"));
-  fireEvent.click(await screen.findByRole("button", {name:"打开 · host-b · worker"}));
+  fireEvent.click(await screen.findByRole("button", {name:"打开 · worker"}));
   // 合并后打开终端走面板内的状态提示（原成员页用的是 alert，行为等价）
   expect((await screen.findByRole("status")).textContent).toContain("成员会话已结束");
   expect(onOpen).toHaveBeenCalledTimes(1);
@@ -236,19 +236,21 @@ it("keeps idle members on one compact row while urgent groups stay cards", async
   expect(idleGroup.textContent).toContain("DC-16");
 });
 
-it("disambiguates repeated roles with the tmux short name", async () => {
+it("names every member by mailbox and never appends a role suffix", async () => {
   const a = worker({email:"a@example.test", role:"worker", tmux:{id:"$2", created:1, name:"worker-demo-host-a-codex"}});
   const b = worker({email:"b@example.test", role:"worker", tmux:{id:"$3", created:2, name:"worker-demo-host-b-codex"}});
   const solo = worker({email:"solo@example.test", role:"reviewer", tmux:{id:"$4", created:3, name:"worker-demo-reviewer"}});
-  renderMerged([a, b, solo], liveOf([
+  const { container } = renderMerged([a, b, solo], liveOf([
     asSession({session:"worker-demo-host-a-codex", state:"idle"}),
     asSession({session:"worker-demo-host-b-codex", state:"idle"}),
     asSession({session:"worker-demo-reviewer", state:"idle"}),
   ]));
-  expect(screen.getByTitle("worker · worker-demo-host-a-codex").textContent).toBe("worker · host-a-codex");
-  expect(screen.getByTitle("worker · worker-demo-host-b-codex").textContent).toBe("worker · host-b-codex");
-  // 角色在本团队里唯一时只显示角色名
-  expect(screen.getByTitle("reviewer · worker-demo-reviewer").textContent).toBe("reviewer");
+  expect(screen.getByTitle("a · worker-demo-host-a-codex").firstChild?.textContent).toBe("a");
+  expect(screen.getByTitle("b · worker-demo-host-b-codex").firstChild?.textContent).toBe("b");
+  expect(screen.getByTitle("solo · worker-demo-reviewer").firstChild?.textContent).toBe("solo");
+  // 旧的重名后缀逻辑已删除：没有 suffix 节点，也没有把 tmux 名当后缀显示
+  expect(container.querySelector(".team-live-suffix")).toBeNull();
+  expect(container.textContent).not.toContain("host-a-codex");
 });
 
 it("does not render a 无当前卡 line for idle members without a card", async () => {
@@ -286,8 +288,8 @@ it("keeps the Lead as a compact row whose details still manage the roster", asyn
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
   expect(await screen.findByRole("region", {name:"Lead成员"})).toBeTruthy();
   expect(document.querySelector(".team-live-group-lead .team-compact-row")).toBeTruthy();
-  await expand(await screen.findByRole("button", {name:"打开 · Lead · lead"}));
-  expect(screen.getByRole("button", {name:"编辑备注 · Lead"})).toBeTruthy();
+  await expand(await screen.findByRole("button", {name:"打开 · lead"}));
+  expect(screen.getByRole("button", {name:"编辑备注 · lead"})).toBeTruthy();
   expect(screen.getByRole("button", {name:"更新终端"})).toBeTruthy();
   expect(screen.getByRole("button", {name:"从团队移除"})).toBeTruthy();
 });
@@ -297,7 +299,7 @@ it("keeps a member's details open when it moves to another group", async () => {
   const ui = (session: AgentSession) => <TeamDynamics sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}} members={[mover]} onUpdated={async()=>{}} board={board} live={liveOf([session])}
     renderMemberAdmin={(m) => <div className="admin-stub">管理 {m.role}</div>}/>;
   const view = render(ui(asSession({session:"worker-demo-m", state:"running", taskCode:"DS-13", taskStatus:"doing"})));
-  const row = (await screen.findByRole("button", {name:"打开 · m · worker-demo-m"})).closest(".team-live-row") as HTMLElement;
+  const row = (await screen.findByRole("button", {name:"打开 · mover"})).closest(".team-live-row") as HTMLElement;
   await expand(row);
   expect(row.querySelector(".admin-stub")).toBeTruthy();
   // 同一个成员（key 不变）从运行中变成空闲：展开状态保留，管理区仍在
@@ -422,7 +424,7 @@ it("switches subscribed service projects without binding or writing a terminal p
  render(<TeamPanel sessionId="" pane={{id:"terminal",server}} navigation={{server,servers:[server],onOpen:vi.fn()}} onClose={vi.fn()}/>);
  fireEvent.change(screen.getByLabelText("团队项目"),{target:{value:"other"}});
  expect(screen.getByText("团队 · other")).toBeTruthy();
- expect(screen.getByRole("button",{name:"打开 · Other worker · worker"})).toBeTruthy();
- expect(screen.queryByRole("button",{name:"打开 · host-b · worker"})).toBeNull();
+ expect(screen.getByRole("button",{name:"打开 · other"})).toBeTruthy();
+ expect(screen.queryByRole("button",{name:"打开 · worker"})).toBeNull();
  expect(loadCollaboration()).toEqual({});expect(invoke).not.toHaveBeenCalled();
 });
