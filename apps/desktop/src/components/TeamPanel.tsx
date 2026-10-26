@@ -9,6 +9,7 @@ import "./Collaboration.css";
 import TaskLookup from "./TaskLookup";
 import type { OfficeSnapshot } from "../lib/teamOffice";
 import { teamLookupScope, type BoardSource, type ProjectReason, type TeamLookupScope } from "../lib/taskLookup";
+import { paneTeamProject } from "../lib/tmuxGroups";
 
 export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange, navigation, onClose, taskLookup, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange}: {
   onLookupScopeChange?: (paneId:string,scope?:TeamLookupScope)=>void;
@@ -18,9 +19,9 @@ export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange
   officeSnapshot?: OfficeSnapshot; officeVisible?: boolean; onPopOut?: () => Promise<void>;
 }) {
   const service = useTeamService();
-  const [selected, setSelected] = useState("");
-  const project = service.projects.includes(selected) ? selected
-    : profile && service.projects.includes(profile.project) ? profile.project : service.projects[0];
+  // Manual choice is per pane (tab): switching tabs must not lock another tab's project.
+  const [selected, setSelected] = useState<Record<string, string>>({});
+  const project = paneTeamProject(pane, selected[pane.id], profile?.project, service);
   // A local terminal is only a navigation destination; it never identifies this team.
   const lookupScope = teamLookupScope(service.url, project ?? profile?.project ?? "", navigation.server, profile);
   useEffect(()=>{onLookupScopeChange?.(pane.id,lookupScope);return()=>onLookupScopeChange?.(pane.id,undefined);},[pane.id,lookupScope?.key,onLookupScopeChange]);
@@ -30,7 +31,7 @@ export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange
     <div className="collaboration-content">
       {taskLookup && lookupScope && <TaskLookup source={taskLookup.source} inferred={taskLookup.inferred} teamScope={lookupScope}/>}
       {!service.url ? <p role="status">请在协作设置中配置团队服务。</p> : !project ? <p role="status">请在团队服务设置中添加要订阅的项目。</p> : <>
-        <label className="collaboration-field">团队项目<select value={project} onChange={event=>setSelected(event.target.value)}>
+        <label className="collaboration-field">团队项目<select value={project} onChange={event=>setSelected(old=>({...old,[pane.id]:event.target.value}))}>
           {service.projects.map(name=><option key={name} value={name}>{name}</option>)}
         </select></label>
         <TeamMembers key={JSON.stringify([service.url,project])} sessionId={sessionId} profile={active} navigation={navigation} board={taskLookup?.source}

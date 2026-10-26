@@ -64,3 +64,41 @@ export function compareTmuxGroups(a: string, b: string): number {
 
 /** Key used in the collapsed-folder set for a Workers project sub-folder. */
 export const workerSubgroupKey = (project: string) => `${WORKER_GROUP}\u0000${project}`;
+
+export interface PaneTeamService {
+  projects: string[];
+  snapshots: Record<string, { members: { project: string; tmux: { id: string; created: number } }[] } | undefined>;
+}
+
+/**
+ * The team a pane belongs to, in priority order (each candidate must be a subscribed project):
+ * the project chosen in this pane → a Lead tmux session's project → a roster member's tmux
+ * identity → the collaboration profile → the first subscribed project.
+ *
+ * The selection is keyed by pane id by the caller, so two tabs never share a manual choice.
+ */
+export function paneTeamProject(
+  pane: { tmux?: { id: string; created: number; name: string } } | undefined,
+  selected: string | undefined,
+  profileProject: string | undefined,
+  service: PaneTeamService,
+): string | undefined {
+  const projects = service.projects ?? [];
+  const usable = (project: string | undefined): project is string => !!project && projects.includes(project);
+  if (usable(selected)) return selected;
+  const tmux = pane?.tmux;
+  if (tmux) {
+    if (isLeadSession(tmux.name)) {
+      const lead = leadProject(tmux.name);
+      if (usable(lead)) return lead;
+    }
+    for (const project of projects) {
+      const members = service.snapshots?.[project]?.members ?? [];
+      if (members.some((member) => member.project === project && member.tmux.id === tmux.id && member.tmux.created === tmux.created)) {
+        return project;
+      }
+    }
+  }
+  if (usable(profileProject)) return profileProject;
+  return projects[0];
+}
