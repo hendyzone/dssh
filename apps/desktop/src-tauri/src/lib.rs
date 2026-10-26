@@ -17,7 +17,6 @@ mod ssh;
 mod sync;
 mod tmux;
 mod tmux_program_status;
-mod team_ai;
 mod team_service;
 mod workspace;
 mod vscode;
@@ -98,6 +97,7 @@ pub fn run() {
             team_service::team_service_subscribe,
             team_service::team_service_status,
             team_service::team_service_read,
+            team_service::sync_config::team_service_projects,
             team_service::rest::team_service_member_patch,
             team_service::rest::team_service_members_put,
             team_service::rest::team_service_member_delete,

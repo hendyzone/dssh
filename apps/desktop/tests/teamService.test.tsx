@@ -16,7 +16,7 @@ vi.mock("../src/lib/agentSessions", async importOriginal => ({
 import TeamMembers from "../src/components/TeamMembers";
 import TeamPanel from "../src/components/TeamPanel";
 import CollaborationSettings from "../src/components/CollaborationSettings";
-import { configureTeamService, subscribeTeamService, useTeamService, refreshServiceAi } from "../src/lib/teamService";
+import { configureTeamService, subscribeTeamService, useTeamService, refreshServiceAi, refreshProjectCatalog } from "../src/lib/teamService";
 import { emptyProfile } from "../src/lib/collaboration";
 import { parseAgentSessions } from "../src/lib/agentSessions";
 import type { ServerEntry } from "../src/types";
@@ -59,6 +59,7 @@ beforeEach(() => {
     }
     if (command === "team_service_subscribe") { native.projects = args?.projects as string[]; return null; }
     if (command === "team_service_read") return structuredClone(native);
+    if (command === "team_service_projects") return {projects:["demo","another"]};
     if (command === "team_service_status") return native.status;
     throw new Error(`Unexpected command: ${command}`);
   });
@@ -141,8 +142,8 @@ it("registers every event listener before the initial native snapshot read", asy
   await boot();
   const firstRead = bridge.invoke.mock.calls.findIndex(([command]) => command === "team_service_read");
   const readOrder = bridge.invoke.mock.invocationCallOrder[firstRead];
-  expect(bridge.listen.mock.calls.slice(0, 4).map(([name]) => name).sort()).toEqual(["team://delta", "team://live", "team://snapshot", "team://status"]);
-  expect(bridge.listen.mock.invocationCallOrder.slice(0, 4).every(order => order < readOrder)).toBe(true);
+  expect(bridge.listen.mock.calls.slice(0, 5).map(([name]) => name).sort()).toEqual(["team://configuration", "team://delta", "team://live", "team://snapshot", "team://status"]);
+  expect(bridge.listen.mock.invocationCallOrder.slice(0, 5).every(order => order < readOrder)).toBe(true);
 });
 
 it("does not let a delayed native read replace a newer event snapshot", async () => {
@@ -191,7 +192,7 @@ it("applies ordered live maps and global machine events without persisting volat
 
 it("releases event listeners after the last real component unmounts", async () => {
   await boot();
-  expect([...bridge.listeners.values()].reduce((sum, values) => sum + values.size, 0)).toBe(4);
+  expect([...bridge.listeners.values()].reduce((sum, values) => sum + values.size, 0)).toBe(5);
   cleanup();
   expect([...bridge.listeners.values()].reduce((sum, values) => sum + values.size, 0)).toBe(0);
 });
@@ -327,4 +328,88 @@ it("does not let an earlier capability read undo a newer ai_disabled response", 
   expect(state().status.ai_enabled).toBe(false);
   await act(async()=>{finish({ai_enabled:true});await config;});
   expect(state().status.ai_enabled).toBe(false);
+});
+
+function fillServiceSettings(projects="typo") {
+  fireEvent.change(screen.getByLabelText("团队服务地址"),{target:{value:"https://candidate.example.invalid"}});
+  fireEvent.change(screen.getByLabelText("团队服务令牌"),{target:{value:"candidate-secret"}});
+  fireEvent.change(screen.getByLabelText("订阅项目"),{target:{value:projects}});
+}
+it("blocks settings save for an invisible project without configuring credentials", async () => {
+  await boot();render(<CollaborationSettings/>);bridge.invoke.mockClear();
+  fillServiceSettings();fireEvent.click(screen.getByRole("button",{name:"保存团队服务"}));
+  await screen.findByText("团队服务中没有项目 typo，或当前令牌无权访问。");
+  expect(bridge.invoke).toHaveBeenCalledWith("team_service_projects",{url:"https://candidate.example.invalid/api/v1",token:"candidate-secret"});
+  expect(bridge.invoke.mock.calls.some(([command])=>command==="team_service_configure")).toBe(false);
+  expect(bridge.invoke.mock.calls.some(([command])=>command==="team_service_subscribe")).toBe(false);
+  expect(JSON.stringify(localStorage)+screen.getByTestId("service-state").textContent).not.toContain("candidate-secret");
+});
+it.each([401,403,0])("does not treat project lookup failure %s as an empty project list",async status=>{
+  render(<><Probe/><CollaborationSettings/></>);
+  await waitFor(()=>expect(bridge.invoke).toHaveBeenCalledWith("team_service_read"));
+  const original=bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async(command,args)=>{
+    if(command==="team_service_projects")throw {status,code:"private-server-body-secret"};
+    return original(command,args);
+  });
+  fillServiceSettings("demo");fireEvent.click(screen.getByRole("button",{name:"保存团队服务"}));
+  await screen.findByText(status?"无权读取团队服务项目，请检查令牌权限。":"无法读取团队服务项目，请检查连接后重试。");
+  expect(screen.queryByText(/团队服务中没有项目/)).toBeNull();
+  expect(document.body.textContent).not.toContain("private-server-body-secret");
+  expect(bridge.invoke.mock.calls.some(([command])=>command==="team_service_configure")).toBe(false);
+});
+it("checks subscription changes using saved Rust credentials and leaves a missing selection unsaved",async()=>{
+  await boot();render(<CollaborationSettings/>);bridge.invoke.mockClear();
+  fireEvent.change(screen.getByLabelText("订阅项目"),{target:{value:"missing"}});
+  fireEvent.click(screen.getByRole("button",{name:"更新项目订阅"}));
+  await screen.findByText("团队服务中没有项目 missing，或当前令牌无权访问。");
+  expect(bridge.invoke).toHaveBeenCalledWith("team_service_projects",undefined);
+  expect(bridge.invoke.mock.calls.some(([command])=>command==="team_service_subscribe")).toBe(false);
+  expect(state().projects).toEqual(["demo"]);
+});
+it("shows a missing project warning instead of zero people after visibility changes",async()=>{
+  await boot();await emit("team://snapshot",snapshot(1,[]));
+  await emit("team://status",{state:"online",token_configured:true});
+  expect(screen.getByText("团队 · 0 人")).toBeTruthy();
+  const original=bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async(command,args)=>command==="team_service_projects"?{projects:["another"]}:command==="team_service_refresh"?null:original(command,args));
+  await act(async()=>fireEvent.click(screen.getByRole("button",{name:"刷新成员",hidden:true})));
+  expect(screen.getByText("团队服务中没有项目 demo，或当前令牌无权访问。")).toBeTruthy();
+  expect(screen.queryByText("团队 · 0 人")).toBeNull();
+  expect(screen.queryByText("把成员终端放在一起")).toBeNull();
+});
+it("rejects a late candidate validation after another configuration wins",async()=>{
+  await boot();const original=bridge.invoke.getMockImplementation()!;
+  let finish!:(value:unknown)=>void;
+  bridge.invoke.mockImplementation(async(command,args)=>{
+    if(command==="team_service_projects" && String(args?.url).includes("older.example.invalid"))return new Promise(resolve=>{finish=resolve;});
+    return original(command,args);
+  });
+  let pending!:Promise<unknown>;
+  await act(async()=>{pending=configureTeamService("https://older.example.invalid","older-secret",["demo"]).catch(error=>error);});
+  await waitFor(()=>expect(finish).toBeTypeOf("function"));
+  await act(async()=>configureTeamService("https://winner.example.invalid","winner-secret",["demo"]));
+  await act(async()=>{finish({projects:["demo"]});await pending;});
+  expect(state().url).toContain("winner.example.invalid");
+  expect(bridge.invoke.mock.calls.filter(([command,args])=>command==="team_service_configure"&&String(args?.url).includes("older.example.invalid"))).toHaveLength(0);
+});
+
+it("adopts safe restored configuration while rejecting old service lookup responses",async()=>{
+  await boot();await emit("team://snapshot",snapshot());
+  const original=bridge.invoke.getMockImplementation()!;
+  let finish!:(value:unknown)=>void;let first=true;
+  bridge.invoke.mockImplementation(async(command,args)=>{
+    if(command==="team_service_projects" && first){first=false;return new Promise(resolve=>{finish=resolve;});}
+    return original(command,args);
+  });
+  let previous!:Promise<void>;
+  await act(async()=>{previous=refreshProjectCatalog();});
+  native={url:"wss://restored.example.invalid/api/v1/team/ws",projects:["another"],status:{state:"online",token_configured:true},snapshots:{another:snapshot(4,[],"another")}};
+  await emit("team://configuration",{url:native.url,projects:["another"]});
+  await waitFor(()=>expect(state().catalog?.state).toBe("ready"));
+  expect(state().url).toBe("https://restored.example.invalid/api/v1");expect(state().projects).toEqual(["another"]);
+  expect(state().snapshots.demo).toBeUndefined();expect(state().snapshots.another.seq).toBe(4);
+  await act(async()=>{finish({projects:[]});await previous;});
+  expect(state().catalog.projects).toContain("another");
+  expect(JSON.stringify(localStorage)).not.toMatch(/test-credential|candidate-secret/);
 });

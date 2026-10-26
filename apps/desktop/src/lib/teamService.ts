@@ -39,7 +39,9 @@ export interface TeamServiceProject {
   status: TeamConnectionState;
   identity: string;
 }
+export interface ProjectCatalog { state: "unknown" | "ready" | "error"; projects: string[]; message?: string }
 export interface TeamServiceState {
+  catalog?: ProjectCatalog;
   url: string;
   projects: string[];
   status: TeamServiceStatus;
@@ -76,7 +78,7 @@ function initialState(): TeamServiceState {
   if (object(config)) {
     try { url = normalizeServiceUrl(String(config.url)); projects = projectsOf(config.projects); } catch { /* Invalid saved configuration is ignored. */ }
   }
-  return { url, projects, status: { state: 'offline', token_configured: false }, snapshots: {} };
+  return { url, projects, catalog: {state: "unknown", projects: []}, status: { state: 'offline', token_configured: false }, snapshots: {} };
 }
 let current = initialState();
 const observers = new Set<() => void>();
@@ -84,6 +86,7 @@ let unlisten: UnlistenFn[] = [];
 let starting: Promise<void> | undefined;
 let lifetime = 0;
 let identityGeneration = 0;
+let catalogRevision = 0;
 let capabilityRevision = 0;
 let configuring = false;
 let revision = 0;
@@ -147,9 +150,11 @@ function loadCache() {
 }
 loadCache();
 function applyStatus(status: TeamServiceStatus) {
+  const becameOnline = status.state === "online" && current.status.state !== "online";
   const reconnect = status.state === 'connecting';
   publish({ ...current, status: { ...status, ai_enabled: status.ai_enabled ?? current.status.ai_enabled }, snapshots: Object.fromEntries(Object.entries(current.snapshots).map(([p, snapshot]) => [p,
     { ...snapshot, status: status.state, offline: status.state !== 'online', ...(reconnect ? { lseq: -1 } : {}) }])) });
+  if (becameOnline) void refreshProjectCatalog();
 }
 function eventReceived(event: unknown) {
   if (configuring || !object(event)) return;
@@ -227,6 +232,7 @@ async function pull(retryAfterPending = false, restore = false) {
       }
       const selected = sameUrl && current.projects.length ? current.projects : projects;
       publish({ ...current, url, projects: selected,
+        catalog: sameUrl ? current.catalog : {state:"unknown",projects:[]},
         status, snapshots: Object.fromEntries(Object.entries(snapshots).filter(([project]) => selected.includes(project))) });
       persist();
       if (restore && selected.length && JSON.stringify(selected) !== JSON.stringify(projects)) {
@@ -243,18 +249,39 @@ async function pull(retryAfterPending = false, restore = false) {
     }
   }
 }
+async function configurationRestored(value: unknown) {
+  if (!object(value)) return;
+  let url: string, projects: string[];
+  try { url = normalizeServiceUrl(String(value.url)); projects = projectsOf(value.projects); }
+  catch { return; }
+  const generation = ++identityGeneration;
+  catalogRevision++; capabilityRevision++; configuring = false;
+  pulling = undefined; pullAgain = false; projectRevisions.clear();
+  publish({url, projects, snapshots:{}, catalog:{state:"unknown",projects:[]},
+    status:{state:"connecting",token_configured:current.status.token_configured}});
+  persist();
+  await pull(false, true);
+  if (generation !== identityGeneration) return;
+  await refreshProjectCatalog();
+  if (generation === identityGeneration) await loadCapabilities();
+}
 async function start() {
   if (starting) return starting;
   const epoch = lifetime;
   const task = (async () => {
     const installed: UnlistenFn[] = [];
     try {
-      for (const name of ['team://snapshot', 'team://delta', 'team://live', 'team://status']) {
-        installed.push(await listen(name, e => { if (epoch === lifetime) eventReceived(e.payload); }));
+      for (const name of ['team://snapshot', 'team://delta', 'team://live', 'team://status', 'team://configuration']) {
+        installed.push(await listen(name, e => {
+          if (epoch !== lifetime) return;
+          if (name === 'team://configuration') void configurationRestored(e.payload);
+          else eventReceived(e.payload);
+        }));
       }
       if (epoch !== lifetime) { installed.forEach(stop => stop()); return; }
       unlisten = installed;
       await pull(false, true);
+      if (epoch === lifetime) await refreshProjectCatalog();
       if (epoch === lifetime) await loadCapabilities();
     } catch {
       installed.forEach(stop => stop());
@@ -282,11 +309,13 @@ export async function configureTeamService(url: string, token: string, projects:
   const normalized = normalizeServiceUrl(url), selection = projectsOf(projects);
   await start();
   const generation = ++identityGeneration;
+  const visible = await checkedProjects(selection, {url: normalized, token});
+  if (generation !== identityGeneration) throw new ProjectValidationError("团队服务已切换，请重新保存。");
   configuring = true;
   try {
     const result = await invoke<unknown>('team_service_configure', { url: normalized, token });
     if (generation !== identityGeneration) return;
-    publish({ url: normalized, projects: selection, status: statusOf(result) ?? { state: 'offline', token_configured: true }, snapshots: {} });
+    publish({ url: normalized, projects: selection, catalog: {state:"ready",projects:visible}, status: statusOf(result) ?? { state: 'offline', token_configured: true }, snapshots: {} });
     projectRevisions.clear();
     await invoke('team_service_subscribe', { projects: selection });
     if (generation !== identityGeneration) return;
@@ -301,11 +330,13 @@ export async function subscribeTeamService(projects: string[]): Promise<void> {
   const selection = projectsOf(projects);
   await start();
   const generation = ++identityGeneration;
+  const visible = await checkedProjects(selection);
+  if (generation !== identityGeneration) throw new ProjectValidationError("团队服务已切换，请重新更新订阅。");
   configuring = true;
   try {
     await invoke('team_service_subscribe', { projects: selection });
     if (generation !== identityGeneration) return;
-    publish({ ...current, projects: selection, snapshots: Object.fromEntries(Object.entries(current.snapshots).filter(([p]) => selection.includes(p))) });
+    publish({ ...current, projects: selection, catalog:{state:"ready",projects:visible}, snapshots: Object.fromEntries(Object.entries(current.snapshots).filter(([p]) => selection.includes(p))) });
     persist();
   } catch { throw Error('团队项目订阅失败'); }
   finally { if (generation === identityGeneration) configuring = false; }
@@ -316,6 +347,8 @@ export async function subscribeTeamService(projects: string[]): Promise<void> {
 /** Refresh conflicts from REST through Rust; write responses never mutate this store. */
 export async function refreshTeamService(project: string): Promise<TeamServiceProject | undefined> {
   const generation = identityGeneration;
+  await refreshProjectCatalog();
+  if (generation !== identityGeneration) throw new Error("团队服务已切换");
   await invoke("team_service_refresh", {project});
   if (generation !== identityGeneration) throw new Error("团队服务已切换");
   if (pulling) await pulling;
@@ -343,4 +376,38 @@ export async function refreshServiceAi(project: string, key: string): Promise<Ai
     publish({...current, status: {...current.status, ai_enabled: false}});
   }
   return {status: reply.status, code: reply.code, retry_after: reply.retry_after};
+}
+
+/** Only these controlled messages may be displayed by settings. */
+export class ProjectValidationError extends Error {}
+function projectFailure(error: unknown): ProjectValidationError {
+  const status = object(error) ? error.status : 0;
+  return new ProjectValidationError(status === 401 || status === 403
+    ? "无权读取团队服务项目，请检查令牌权限。"
+    : "无法读取团队服务项目，请检查连接后重试。");
+}
+async function visibleProjects(candidate?: {url: string; token: string}): Promise<string[]> {
+  try {
+    const reply = await invoke<unknown>("team_service_projects", candidate);
+    if (!object(reply) || !Array.isArray(reply.projects) || reply.projects.some(p => typeof p !== "string" || !projectPattern.test(p))) throw Error();
+    return [...new Set(reply.projects as string[])];
+  } catch (error) { throw projectFailure(error); }
+}
+async function checkedProjects(selection: string[], candidate?: {url: string; token: string}): Promise<string[]> {
+  const visible = await visibleProjects(candidate);
+  const missing = selection.filter(project => !visible.includes(project));
+  if (missing.length) throw new ProjectValidationError(`团队服务中没有项目 ${missing.join("、")}，或当前令牌无权访问。`);
+  return visible;
+}
+export async function refreshProjectCatalog(): Promise<void> {
+  if (!current.url) return;
+  const generation = identityGeneration, epoch = lifetime, request = ++catalogRevision;
+  try {
+    const projects = await visibleProjects();
+    if (generation !== identityGeneration || epoch !== lifetime || request !== catalogRevision) return;
+    publish({...current, catalog:{state:"ready",projects}});
+  } catch (error) {
+    if (generation !== identityGeneration || epoch !== lifetime || request !== catalogRevision) return;
+    publish({...current, catalog:{state:"error",projects:[],message:(error as ProjectValidationError).message}});
+  }
 }

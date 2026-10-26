@@ -45,6 +45,7 @@ beforeEach(()=>{
     if(command==="team_service_subscribe"){native.projects=args?.projects;return null;}
     if(command==="collaboration_worktree")return "/srv/new-project";
     if(command==="team_service_read")return structuredClone(native);
+    if(command==="team_service_projects")return {projects:["demo"]};
     if(command==="team_service_refresh"){
       native.snapshots.demo=refreshed;
       await emit("team://snapshot",refreshed);

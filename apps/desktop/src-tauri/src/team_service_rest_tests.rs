@@ -510,3 +510,322 @@ async fn team_service_capabilities_exposes_only_optional_boolean() {
     service.shutdown().await;
     server.abort();
 }
+
+#[tokio::test]
+async fn team_service_projects_candidates_are_read_only_and_safe() {
+    let directory = Directory::new();
+    let vault = Arc::new(MemoryVault::default());
+    let (service, _events) = client(&directory, vault.clone(), rest_timing());
+    let (url, mut requests, server) = http_server().await;
+    for (status, body, expected) in [
+        (
+            200,
+            json!({"projects":[{"project":PROJECT,"seq":1,"members":0,"token":TOKEN}],"debug":TOKEN}),
+            Some(vec![PROJECT.to_owned()]),
+        ),
+        (200, json!({"projects":[]}), Some(vec![])),
+        (
+            403,
+            json!({"error":{"code":"project_forbidden","message":TOKEN},"token":TOKEN}),
+            None,
+        ),
+        (200, json!({"projects":[{"project":"bad/project"}]}), None),
+    ] {
+        let task = tokio::spawn({
+            let service = service.clone();
+            let url = url.clone();
+            async move { service.projects(Some(url), Some(TOKEN.into())).await }
+        });
+        let request = request(&mut requests).await;
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.path, "/api/v1/projects");
+        assert_eq!(request.headers["authorization"], format!("Bearer {TOKEN}"));
+        request.reply.send((status, body)).unwrap();
+        let result = task.await.unwrap();
+        match expected {
+            Some(projects) => assert_eq!(result.unwrap().projects, projects),
+            None => assert!(!serde_json::to_string(&result.err().unwrap())
+                .unwrap()
+                .contains(TOKEN)),
+        }
+        assert!(vault.0.lock().unwrap().is_empty());
+        assert!(!directory.0.join("config.json").exists());
+        assert!(service.backup().await.unwrap().is_none());
+    }
+    configure(&service, url, vec![PROJECT.into()]).await;
+    let task = tokio::spawn({
+        let service = service.clone();
+        async move { service.projects(None, None).await }
+    });
+    request(&mut requests)
+        .await
+        .reply
+        .send((200, json!({"projects":[{"project":PROJECT}]})))
+        .unwrap();
+    assert_eq!(task.await.unwrap().unwrap().projects, vec![PROJECT]);
+    service.shutdown().await;
+    server.abort();
+}
+
+fn sync_test_bundle(backup: Option<sync_config::Backup>) -> crate::sync::bundle::Bundle {
+    let mut bundle = crate::sync::bundle::sample_bundle();
+    bundle.entries.clear();
+    bundle.ui_state.clear();
+    bundle.team_service = backup;
+    bundle
+}
+#[tokio::test]
+async fn team_service_sync_restores_keyring_config_and_reconnects_without_secret_files() {
+    let source_dir = Directory::new();
+    let target_dir = Directory::new();
+    let (url, _requests, mut sockets, server) = http_ws_server().await;
+    let (source, _) = client(&source_dir, Arc::default(), rest_timing());
+    configure(&source, url, vec![PROJECT.into()]).await;
+    let backup = source.backup().await.unwrap().unwrap();
+    let endpoint = backup.endpoint.clone();
+    source.shutdown().await;
+    while sockets.try_recv().is_ok() {}
+    let vault = Arc::new(MemoryVault::default());
+    let (target, mut events) = client(&target_dir, vault.clone(), rest_timing());
+    target
+        .restore_sync(
+            target_dir.0.join("servers.json"),
+            sync_test_bundle(Some(backup)),
+        )
+        .await
+        .unwrap();
+    let changed = event(&mut events, "team://configuration", |v| {
+        v["url"] == endpoint
+    })
+    .await;
+    assert_eq!(changed, json!({"url":endpoint,"projects":[PROJECT]}));
+    assert_eq!(vault.load(&endpoint), Ok(TOKEN.to_owned()));
+    let mut ws = timeout(WAIT, sockets.recv()).await.unwrap().unwrap();
+    let sub = receive(&mut ws).await;
+    assert_eq!(sub, json!({"type":"sub","projects":{(PROJECT):null}}));
+    let read = target.read().await.unwrap();
+    assert!(!read.to_string().contains(TOKEN));
+    let config = std::fs::read_to_string(target_dir.0.join("config.json")).unwrap();
+    assert!(!config.contains(TOKEN));
+    assert_eq!(
+        serde_json::from_str::<Value>(&config).unwrap()["projects"],
+        json!([PROJECT])
+    );
+    for file in std::fs::read_dir(&target_dir.0)
+        .unwrap()
+        .flatten()
+        .filter(|f| f.path().is_file())
+    {
+        assert!(!std::fs::read_to_string(file.path())
+            .unwrap()
+            .contains(TOKEN));
+    }
+    let mut old = sync_test_bundle(None);
+    old.ui_state
+        .insert("dssh.team-ai.v1".into(), "broken-json".into());
+    old.ai_keys.insert("old".into(), "old-secret".into());
+    let result = target
+        .restore_sync(target_dir.0.join("servers.json"), old)
+        .await
+        .unwrap();
+    assert!(result.ui_state.is_empty());
+    assert_eq!(vault.load(&endpoint).unwrap(), TOKEN);
+    assert_eq!(target.backup().await.unwrap().unwrap().endpoint, endpoint);
+    target.shutdown().await;
+    server.abort();
+}
+
+#[tokio::test]
+async fn team_service_sync_configuration_failure_rolls_back_keyring_and_keeps_actor() {
+    let directory = Directory::new();
+    let vault = Arc::new(MemoryVault::default());
+    let (service, _) = client(&directory, vault.clone(), rest_timing());
+    let (url, _requests, server) = http_server().await;
+    configure(&service, url, vec![PROJECT.into()]).await;
+    let backup = service.backup().await.unwrap().unwrap();
+    let endpoint = backup.endpoint.clone();
+    let config = std::fs::read(directory.0.join("config.json")).unwrap();
+    // Block only atomic config staging; the existing committed config remains intact.
+    std::fs::create_dir(directory.0.join("config.tmp")).unwrap();
+    let mut changed = backup.clone();
+    changed.token = "replacement-secret".into();
+    changed.projects = vec!["other".into()];
+    assert!(service
+        .restore_sync(
+            directory.0.join("servers.json"),
+            sync_test_bundle(Some(changed))
+        )
+        .await
+        .is_err());
+    assert_eq!(vault.load(&endpoint).unwrap(), TOKEN);
+    assert_eq!(
+        std::fs::read(directory.0.join("config.json")).unwrap(),
+        config
+    );
+    assert_eq!(
+        service.backup().await.unwrap().unwrap().projects,
+        vec![PROJECT]
+    );
+    assert!(!directory.0.join("servers.json").exists());
+    service.shutdown().await;
+    server.abort();
+}
+
+struct RejectingVault;
+impl Vault for RejectingVault {
+    fn existing(&self, _: &str) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+    fn store(&self, _: &str, _: &str) -> Result<(), String> {
+        Err("unavailable".into())
+    }
+    fn load(&self, _: &str) -> Result<String, String> {
+        Err("missing".into())
+    }
+    fn remove(&self, _: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+#[tokio::test]
+async fn team_service_sync_keyring_failure_does_not_commit_files_or_actor() {
+    let directory = Directory::new();
+    let (tx, mut events) = mpsc::unbounded_channel();
+    let service = TeamService::new(
+        directory.0.clone(),
+        Arc::new(RejectingVault),
+        Arc::new(Events(tx)),
+        rest_timing(),
+    );
+    let backup = sync_config::Backup {
+        endpoint: "https://team.example.invalid".into(),
+        projects: vec![PROJECT.into()],
+        token: TOKEN.into(),
+    };
+    let error = service
+        .restore_sync(
+            directory.0.join("servers.json"),
+            sync_test_bundle(Some(backup)),
+        )
+        .await
+        .err()
+        .unwrap();
+    assert!(!error.to_string().contains(TOKEN));
+    assert!(!directory.0.join("config.json").exists());
+    assert!(!directory.0.join("servers.json").exists());
+    assert!(service.backup().await.unwrap().is_none());
+    while let Ok((name, _)) = events.try_recv() {
+        assert_ne!(name, "team://configuration");
+    }
+    service.shutdown().await;
+}
+#[tokio::test]
+async fn team_service_sync_invalid_other_bundle_data_never_changes_service() {
+    let directory = Directory::new();
+    let vault = Arc::new(MemoryVault::default());
+    let (service, _) = client(&directory, vault.clone(), rest_timing());
+    let mut bundle = sync_test_bundle(Some(sync_config::Backup {
+        endpoint: "https://team.example.invalid".into(),
+        projects: vec![PROJECT.into()],
+        token: TOKEN.into(),
+    }));
+    bundle
+        .ui_state
+        .insert("unrecognized-setting".into(), "{}".into());
+    assert!(service
+        .restore_sync(directory.0.join("servers.json"), bundle)
+        .await
+        .is_err());
+    assert!(vault.0.lock().unwrap().is_empty());
+    assert!(!directory.0.join("config.json").exists());
+    assert!(service.backup().await.unwrap().is_none());
+    service.shutdown().await;
+}
+
+#[derive(Default)]
+struct UnreadableVault(std::sync::atomic::AtomicUsize);
+impl Vault for UnreadableVault {
+    fn store(&self, _: &str, _: &str) -> Result<(), String> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+    fn remove(&self, _: &str) -> Result<(), String> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+    fn load(&self, _: &str) -> Result<String, String> {
+        Err("unavailable".into())
+    }
+    fn existing(&self, _: &str) -> Result<Option<String>, String> {
+        Err("unavailable".into())
+    }
+}
+#[tokio::test]
+async fn team_service_sync_unreadable_old_credential_aborts_before_any_write() {
+    let directory = Directory::new();
+    let vault = Arc::new(UnreadableVault::default());
+    let (tx, _) = mpsc::unbounded_channel();
+    let service = TeamService::new(
+        directory.0.clone(),
+        vault.clone(),
+        Arc::new(Events(tx)),
+        rest_timing(),
+    );
+    let bundle = sync_test_bundle(Some(sync_config::Backup {
+        endpoint: "https://team.example.invalid".into(),
+        projects: vec![PROJECT.into()],
+        token: TOKEN.into(),
+    }));
+    assert!(service
+        .restore_sync(directory.0.join("servers.json"), bundle)
+        .await
+        .is_err());
+    assert_eq!(vault.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(!directory.0.join("config.json").exists());
+    assert!(!directory.0.join("servers.json").exists());
+    assert!(service.backup().await.unwrap().is_none());
+    service.shutdown().await;
+}
+
+#[tokio::test]
+async fn team_service_sync_cache_failure_restores_exact_files_and_credential() {
+    let directory = Directory::new();
+    let vault = Arc::new(MemoryVault::default());
+    let (service, mut events) = client(&directory, vault.clone(), rest_timing());
+    let (url, _requests, server) = http_server().await;
+    configure(&service, url, vec![PROJECT.into()]).await;
+    let backup = service.backup().await.unwrap().unwrap();
+    let old_config = b"  {\"endpoint\":\"previous\"}  \n";
+    let old_cache = b"invalid historical cache bytes\n";
+    std::fs::write(directory.0.join("config.json"), old_config).unwrap();
+    std::fs::write(directory.0.join("snapshots.json"), old_cache).unwrap();
+    std::fs::create_dir(directory.0.join("snapshots.tmp")).unwrap();
+    let mut changed = backup.clone();
+    changed.token = "replacement-secret".into();
+    changed.projects = vec!["other".into()];
+    assert!(service
+        .restore_sync(
+            directory.0.join("servers.json"),
+            sync_test_bundle(Some(changed))
+        )
+        .await
+        .is_err());
+    assert_eq!(
+        std::fs::read(directory.0.join("config.json")).unwrap(),
+        old_config
+    );
+    assert_eq!(
+        std::fs::read(directory.0.join("snapshots.json")).unwrap(),
+        old_cache
+    );
+    assert_eq!(vault.load(&backup.endpoint).unwrap(), TOKEN);
+    assert_eq!(
+        service.backup().await.unwrap().unwrap().projects,
+        vec![PROJECT]
+    );
+    assert!(!directory.0.join("servers.json").exists());
+    while let Ok((name, _)) = events.try_recv() {
+        assert_ne!(name, "team://configuration");
+    }
+    service.shutdown().await;
+    server.abort();
+}

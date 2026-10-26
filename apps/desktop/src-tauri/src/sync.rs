@@ -244,6 +244,7 @@ fn decrypt_bundle(raw: &[u8], password: &str) -> Result<bundle::Bundle, SyncErro
         let records: Vec<ServerRecord> = serde_json::from_slice(&plain)
             .map_err(|_| SyncError::Other("旧版备份格式无效".into()))?;
         Ok(bundle::Bundle {
+            team_service: None,
             ai_keys: Default::default(),
             entries: records
                 .into_iter()
@@ -309,7 +310,7 @@ pub async fn sync_upload(
     let pat = resolve_secret(pat, PAT_ACCOUNT, "GitHub PAT")?;
     let password = resolve_secret(password, PASSWORD_ACCOUNT, "同步密码")?;
     let client = github_client()?;
-    let local = bundle::collect(&app, ui_state.unwrap_or_default())?;
+    let local = bundle::collect(&app, ui_state.unwrap_or_default()).await?;
     let encrypted = encrypt_bundle(&local, &password)?;
     if encrypted.len() > 900 * 1024 {
         return Err(SyncError::Other(
@@ -335,7 +336,7 @@ pub async fn sync_upload(
         return Err(report_failure(response).await);
     }
     Ok(format!(
-        "已加密上传 {} 个连接及凭据、私钥、云端模型配置与 Key 和界面配置",
+        "已加密上传 {} 个连接及凭据、私钥、团队服务配置与凭据 和界面配置",
         local.entries.len()
     ))
 }
@@ -362,7 +363,7 @@ pub async fn sync_download(
         .decode(encoded)
         .map_err(|_| SyncError::Other("GitHub 同步文件不是有效的 Base64".to_string()))?;
     let payload = decrypt_bundle(&encrypted, &password)?;
-    bundle::restore(&app, payload)
+    bundle::restore(&app, payload).await
 }
 
 #[cfg(test)]
@@ -371,10 +372,14 @@ mod tests {
     #[test]
     fn full_backup_encrypts_secrets_and_round_trips() {
         let mut payload = bundle::sample_bundle();
-        payload.ai_keys.insert("https://example.test/chat/completions".into(), "synthetic-model-api-key".into());
+        payload.team_service = Some(crate::team_service::sync_config::Backup {
+            endpoint: "wss://team.example.invalid/api/v1/team/ws".into(),
+            projects: vec!["example-project".into()], token: "synthetic-team-token".into(),
+        });
         let encrypted = encrypt_bundle(&payload, "synthetic-sync-password").unwrap();
         let text = String::from_utf8(encrypted.clone()).unwrap();
-        assert!(!text.contains("synthetic-model-api-key"));
+        assert!(!text.contains("synthetic-team-token"));
+        assert!(!text.contains("teamService"));
         for secret in [
             "synthetic-ssh-password",
             "synthetic-key-passphrase",
@@ -385,7 +390,8 @@ mod tests {
             assert!(!text.contains(secret));
         }
         let restored = decrypt_bundle(&encrypted, "synthetic-sync-password").unwrap();
-        assert_eq!(restored.ai_keys, payload.ai_keys);
+        assert_eq!(restored.team_service.as_ref().unwrap().token, "synthetic-team-token");
+        assert_eq!(restored.team_service.as_ref().unwrap().projects, vec!["example-project"]);
         assert_eq!(restored.entries[0].password, payload.entries[0].password);
         assert_eq!(
             restored.entries[0].private_key,

@@ -19,8 +19,6 @@ const DEFAULTS: Record<string, string> = {
   "dssh.panel-side.collaboration": "right",
   "dssh.collaboration.v2": "{}",
   "dssh.team-connections.v1": "{}",
-  "dssh.team-ai.v1": "{}",
-  "dssh.team-ai.profiles.v1": "{}",
 };
 export function collectSyncUi(): Record<string, string> {
   return Object.fromEntries(
@@ -32,7 +30,8 @@ export function collectSyncUi(): Record<string, string> {
   );
 }
 export function restoreSyncUi(values: Record<string, string>): void {
-  const entries = Object.entries(values);
+  // Retired local AI settings in older bundles are ignored, not restored.
+  const entries = Object.entries(values).filter(([key]) => key !== "dssh.team-ai.v1" && key !== "dssh.team-ai.profiles.v1");
   if (
     entries.some(
       ([key, value]) =>
@@ -55,7 +54,6 @@ export function restoreSyncUi(values: Record<string, string>): void {
   }
   window.dispatchEvent(new Event("dssh-panel-position"));
   window.dispatchEvent(new Event("dssh-collaboration-changed"));
-  window.dispatchEvent(new Event("dssh-team-ai-config"));
   if (Object.prototype.hasOwnProperty.call(values, TASK_LOOKUP_KEY)) {
     clearBoardCache();
     window.dispatchEvent(new Event(TASK_LOOKUP_EVENT));

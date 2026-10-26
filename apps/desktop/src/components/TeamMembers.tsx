@@ -1,3 +1,4 @@
+import {teamProjectIssue} from "../lib/teamServiceProjects";
 import { invoke } from "@tauri-apps/api/core";
 import { refreshTeamService, useTeamService } from "../lib/teamService";
 import TeamServiceBanner from "./TeamServiceBanner";
@@ -36,6 +37,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
   onRoomOpenChange?: (open: boolean) => void;
 }) {
   const service = useTeamService();
+  const projectIssue = teamProjectIssue(service, profile.project);
   const team = service.snapshots[profile.project];
   const members = team?.members ?? [];
   const serviceIdentity = JSON.stringify([service.url, profile.project]);
@@ -244,10 +246,11 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
       <Button disabled={disabled} onClick={()=>void run(()=>writeMembers(confirmation.members,confirmation.patchKey))}>确认位置变更</Button>
       <Button disabled={busy} onClick={()=>setConfirmation(undefined)}>取消位置变更</Button>
     </section>}
-    <TeamDynamics key={serviceIdentity} sessionId={sessionId} profile={profile} navigation={navigation} members={members} serviceLive={team?.live??{}} serviceAi={team?.ai??{}} aiEnabled={service.status.ai_enabled} serviceIdentity={serviceIdentity} board={board} live={live} onUpdated={async()=>{}}
+    {projectIssue && <p role="alert">{projectIssue}</p>}
+    {!projectIssue && <TeamDynamics key={serviceIdentity} sessionId={sessionId} profile={profile} navigation={navigation} members={members} serviceLive={team?.live??{}} serviceAi={team?.ai??{}} aiEnabled={service.status.ai_enabled} serviceIdentity={serviceIdentity} board={board} live={live} onUpdated={async()=>{}}
       pinnedKeys={[noteMember, editing?memberKey(editing):undefined].filter((key):key is string=>!!key)}
       officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
-      onRefresh={()=>void run(async()=>{await refreshTeamService(profile.project);})} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>
-    {!workers.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>订阅项目的成员将由团队服务同步。</p></div>}
+      onRefresh={()=>void run(async()=>{await refreshTeamService(profile.project);})} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>}
+    {!projectIssue && !workers.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>订阅项目的成员将由团队服务同步。</p></div>}
   </section>;
 }

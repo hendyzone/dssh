@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { collaborationKey, collaborationMailHome, emptyProfile, loadCollaboration, resolveWorktree, saveCollaboration, useCollaboration, type CollaborationSession, type CollaborationProfile } from "../lib/collaboration";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { configureTeamService, subscribeTeamService, useTeamService } from "../lib/teamService";
+import { configureTeamService, subscribeTeamService, useTeamService, ProjectValidationError } from "../lib/teamService";
 import AgentGuide from "./AgentGuide";
 import "./Collaboration.css";
 
@@ -43,13 +43,13 @@ export default function CollaborationSettings({sessions=[]}: {sessions?:Collabor
         const token = serviceToken;
         setServiceToken(""); setServiceBusy(true); setServiceMessage("");
         try { await configureTeamService(serviceUrl, token, selection()); setServiceMessage("团队服务已配置。"); }
-        catch { setServiceMessage("团队服务配置失败，请检查地址和令牌。"); }
+        catch (error) { setServiceMessage(error instanceof ProjectValidationError ? error.message : "团队服务配置失败，请检查地址和令牌。"); }
         finally { setServiceBusy(false); }
       }}>保存团队服务</Button>
       <Button disabled={serviceBusy || !service.status.token_configured} onClick={async()=>{
         setServiceBusy(true); setServiceMessage("");
         try { await subscribeTeamService(selection()); setServiceMessage("已更新订阅项目。"); }
-        catch { setServiceMessage("更新订阅失败，请检查项目编号和服务连接。"); }
+        catch (error) { setServiceMessage(error instanceof ProjectValidationError ? error.message : "更新订阅失败，请检查项目编号和服务连接。"); }
         finally { setServiceBusy(false); }
       }}>更新项目订阅</Button>
       {serviceMessage && <p role="status">{serviceMessage}</p>}

@@ -24,19 +24,16 @@ it("exports valid task defaults and preserves local settings when older backups 
   expect(loadLookupSettings()).toEqual(settings);
 });
 
-it("syncs model provider profiles and stops collectors on restore without local-storage secrets", () => {
-  const config=JSON.stringify({endpoint:"https://api.deepseek.com/chat/completions",model:"example"});
-  localStorage.setItem("dssh.team-ai.v1",config);
-  localStorage.setItem("dssh.team-ai.profiles.v1",JSON.stringify({deepseek:JSON.parse(config)}));
+it("omits retired local AI settings and ignores them in older bundles", () => {
+  localStorage.setItem("dssh.team-ai.v1","old-local-value");
+  localStorage.setItem("dssh.team-ai.profiles.v1","old-local-profiles");
   const backup=collectSyncUi();
-  expect(backup["dssh.team-ai.v1"]).toBe(config);
-  expect(JSON.parse(backup["dssh.team-ai.profiles.v1"]).deepseek.model).toBe("example");
-  const listener=vi.fn();
-  window.addEventListener("dssh-team-ai-config",listener);
-  restoreSyncUi(backup);
-  expect(listener).toHaveBeenCalledOnce();
-  expect(Object.keys(backup).some(k=>/api.?key|auto/i.test(k))).toBe(false);
-  window.removeEventListener("dssh-team-ai-config",listener);
+  expect(backup).not.toHaveProperty("dssh.team-ai.v1");
+  expect(backup).not.toHaveProperty("dssh.team-ai.profiles.v1");
+  restoreSyncUi({"dssh.team-ai.v1":"invalid-json", "dssh.team-ai.profiles.v1":"ignored", "dssh.sidebar.width":"320"});
+  expect(localStorage.getItem("dssh.team-ai.v1")).toBe("old-local-value");
+  expect(localStorage.getItem("dssh.team-ai.profiles.v1")).toBe("old-local-profiles");
+  expect(localStorage.getItem("dssh.sidebar.width")).toBe("320");
 });
 
 it("exports only the supported UI preferences, never arbitrary local storage", () => {

@@ -21,6 +21,9 @@ use tokio_tungstenite::{
 #[path = "team_service_ai.rs"]
 pub(crate) mod ai;
 
+#[path = "team_service_sync.rs"]
+pub(crate) mod sync_config;
+
 #[path = "team_service_rest.rs"]
 pub(crate) mod rest;
 
@@ -31,6 +34,8 @@ const FRAME_LIMIT: usize = 2 * 1024 * 1024;
 pub trait Vault: Send + Sync {
     fn store(&self, endpoint: &str, token: &str) -> Result<(), String>;
     fn load(&self, endpoint: &str) -> Result<String, String>;
+    fn remove(&self, endpoint: &str) -> Result<(), String>;
+    fn existing(&self, endpoint: &str) -> Result<Option<String>, String>;
 }
 pub trait EventSink: Send + Sync {
     fn emit(&self, event: &str, payload: Value);
@@ -132,6 +137,9 @@ fn saved_at() -> u64 {
 }
 fn atomic_json(path: &Path, value: &Value) -> Result<(), String> {
     let bytes = serde_json::to_vec(value).map_err(|_| "Cannot encode team cache")?;
+    atomic_bytes(path, &bytes)
+}
+fn atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if bytes.len() as u64 > CACHE_LIMIT {
         return Err("Team cache capacity exceeded".into());
     }
@@ -175,6 +183,12 @@ pub struct TeamService {
     status: Arc<Mutex<Value>>,
 }
 enum Command {
+    ExportBackup(oneshot::Sender<Result<Option<sync_config::Backup>, String>>),
+    RestoreBundle(
+        PathBuf,
+        crate::sync::bundle::Bundle,
+        oneshot::Sender<Result<crate::sync::bundle::RestoreResult, crate::sync::SyncError>>,
+    ),
     Configure(String, String, oneshot::Sender<Result<Value, String>>),
     Subscribe(Vec<String>, oneshot::Sender<Result<(), String>>),
     Shutdown(oneshot::Sender<()>),
@@ -374,6 +388,21 @@ impl Actor {
     // One actor serializes commands and network application, fencing old connections.
     fn command(&mut self, command: Option<Command>) -> CommandEffect {
         match command {
+            Some(Command::ExportBackup(reply)) => {
+                let _ = reply.send(self.export_backup());
+                return CommandEffect::Keep;
+            }
+            Some(Command::RestoreBundle(path, bundle, reply)) => {
+                let has_team = bundle.team_service.is_some();
+                let result = self.restore_bundle(&path, bundle);
+                let restart = has_team && result.is_ok();
+                let _ = reply.send(result);
+                return if restart {
+                    CommandEffect::Restart
+                } else {
+                    CommandEffect::Keep
+                };
+            }
             Some(Command::Configure(endpoint, token, reply)) => {
                 if self.vault.store(&endpoint, &token).is_err() {
                     let _ = reply.send(Err("Cannot save team service credential".into()));
@@ -802,6 +831,20 @@ impl Actor {
 
 struct SystemVault;
 impl Vault for SystemVault {
+    fn existing(&self, endpoint: &str) -> Result<Option<String>, String> {
+        match keyring::Entry::new("dssh-team-service", endpoint).and_then(|e| e.get_password()) {
+            Ok(token) => Ok(Some(token)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err("Cannot read team service credential".into()),
+        }
+    }
+    fn remove(&self, endpoint: &str) -> Result<(), String> {
+        match keyring::Entry::new("dssh-team-service", endpoint).and_then(|e| e.delete_credential())
+        {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err("Cannot remove team service credential".into()),
+        }
+    }
     fn store(&self, endpoint: &str, token: &str) -> Result<(), String> {
         keyring::Entry::new("dssh-team-service", endpoint)
             .and_then(|e| e.set_password(token))

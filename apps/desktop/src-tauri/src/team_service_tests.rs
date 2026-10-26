@@ -29,6 +29,13 @@ const WAIT: Duration = Duration::from_secs(3);
 #[derive(Default)]
 struct MemoryVault(Mutex<HashMap<String, String>>);
 impl Vault for MemoryVault {
+    fn existing(&self, endpoint: &str) -> Result<Option<String>, String> {
+        Ok(self.0.lock().unwrap().get(endpoint).cloned())
+    }
+    fn remove(&self, endpoint: &str) -> Result<(), String> {
+        self.0.lock().unwrap().remove(endpoint);
+        Ok(())
+    }
     fn store(&self, endpoint: &str, token: &str) -> Result<(), String> {
         self.0
             .lock()
