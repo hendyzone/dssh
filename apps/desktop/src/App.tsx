@@ -14,7 +14,7 @@ import ToolRail from "./components/ToolRail";
 import CollaborationPanel from "./components/CollaborationPanel";
 import TeamPanel from "./components/TeamPanel";
 import { useOfficeMail } from "./lib/useOfficeMail";
-import type { OfficeMailDirectory } from "./lib/teamOffice";
+import { officeActiveProject, type OfficeMailDirectory } from "./lib/teamOffice";
 import { useTeamOffice } from "./lib/useTeamOffice";
 import { useOfficePublisher, openOfficeWindow, useMainWindowVisibility, useOfficePresence } from "./lib/officeWindowSync";
 import QuotaPanel, { type QuotaServer } from "./components/QuotaPanel";
@@ -411,7 +411,8 @@ export default function App() {
     programSnapshots:tmuxProgramSnapshots, lookupSettings, themeId:settings.themeId,
     animationEnabled:settings.teamAvatarAnimation !== false, enabled:(inlineRoomOpen || officeExists) && officeMainVisible, officeExists, mailDirectoryRef:officeMailDirectory});
   const officeMail = useOfficeMail({profiles:collaborationProfiles,servers,sessions:officeSessions,enabled:(inlineRoomOpen || officeExists) && officeMainVisible,directory:officeMailDirectory});
-  const officeSnapshot = useMemo(()=>({...officeRoomSnapshot,mail:officeMail}),[officeRoomSnapshot,officeMail]);
+  const activeOfficeProject = officeActiveProject(collaborationPane, teamService);
+  const officeSnapshot = useMemo(()=>({...officeRoomSnapshot,mail:officeMail,activeProject:activeOfficeProject}),[officeRoomSnapshot,officeMail,activeOfficeProject]);
   useOfficePublisher(officeSnapshot, officeExists);
   const paneTaskContext = (pane: SessionInfo) => ({
     source: boardSource(lookupSettings),

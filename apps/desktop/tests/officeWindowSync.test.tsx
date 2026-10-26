@@ -6,6 +6,7 @@ import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {useOfficeSnapshot,useOfficePublisher,useMainWindowVisibility,useOfficePresence,openOfficeWindow,type OfficeEnvelope} from "../src/lib/officeWindowSync";
 import type {OfficeSnapshot} from "../src/lib/teamOffice";
+vi.mock("@tauri-apps/api/window",()=>({getCurrentWindow:()=>({isFullscreen:async()=>false,setFullscreen:async()=>{},onResized:async()=>()=>{}})}));
 vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn()}));
 vi.mock("@tauri-apps/api/event",()=>({listen:vi.fn()}));
 const snapshot=(themeId="one-light"):OfficeSnapshot=>({version:1,themeId,animationEnabled:true,mailAvailability:"unavailable",projects:[]});

@@ -127,3 +127,9 @@
 
 .team-office[data-scale-mode="auto"] .office-desks{grid-template-columns:repeat(var(--office-columns),var(--office-station-width))}
 .team-office[data-compact-label="true"] .office-member-task{-webkit-line-clamp:1}
+
+.team-office{position:relative}
+.team-office[data-top-hidden="true"]>.office-toolbar,.team-office[data-top-hidden="true"]>.office-coverage,.team-office[data-top-hidden="true"] .office-upper-wall{display:none}
+.office-top-reveal{position:absolute;z-index:30;top:0;left:0;width:100%;height:8px;padding:0;border:0;background:transparent;cursor:pointer}
+.office-toolbar label:has(input){white-space:nowrap}
+.office-window-error{flex:none;margin:0;color:var(--ui-danger)}
