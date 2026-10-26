@@ -30,6 +30,21 @@ describe("memberDisplay", () => {
     expect(memberModel(member({ role: "worker（DeepSeek Harness，deepseek-v4-flash）" }))).toBe("deepseek-v4-flash");
     expect(memberModel(member({ role: "worker" }))).toBeUndefined();
   });
+  it("parses the new 'tool · model' role format", () => {
+    expect(memberModel(member({ role: "dsh · deepseek-v4-flash" }))).toBe("deepseek-v4-flash");
+    expect(memberModel(member({ role: "codex · GPT-6-Astra medium" }))).toBe("GPT-6-Astra medium");
+    expect(memberModel(member({ role: "worker（dsh，deepseek-v4-flash）" }))).toBe("deepseek-v4-flash");
+    expect(memberModel(member({ role: "dsh · deepseek-v4-flash" }), { model: "gpt-6-live" })).toBe("gpt-6-live");
+    expect(memberModel(member({ role: "Lead" }))).toBeUndefined();
+    // 首段不是工具时不能误吞；仍走旧括号解析或 undefined。
+    expect(memberModel(member({ role: "Lead · 2026-Q4" }))).toBeUndefined();
+    expect(memberModel(member({ role: "负责人（dsh，deepseek-v4-flash）" }))).toBe("deepseek-v4-flash");
+  });
+  it("never renders the tool twice when the model equals the tool", () => {
+    const dsh = { email: "amail-cw3-dsh@example.invalid" };
+    expect(memberDisplay(member({ ...dsh, role: "dsh · dsh" })).subtitle).toBe("dsh");
+    expect(memberDisplay(member({ ...dsh, role: "dsh · deepseek-v4-flash" })).subtitle).toBe("dsh · deepseek-v4-flash");
+  });
   it("shows a machine name but never an IP address", () => {
     expect(memberMachine(member(), { machine: "host-a" })).toBe("host-a");
     expect(memberMachine(member({ host: "host-b" }), undefined, { "host-b": { online: true } })).toBe("host-b");

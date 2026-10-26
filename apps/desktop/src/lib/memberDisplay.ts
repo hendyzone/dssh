@@ -35,11 +35,22 @@ export function memberTool(member: TeamMember, live?: MemberLiveInfo): string | 
   return undefined;
 }
 
-/** Model from live.model, else the last comma-separated part of a role parenthetical. */
+/** Model from live.model, then a "tool · model" role, then the legacy role parenthetical. */
 export function memberModel(member: TeamMember, live?: MemberLiveInfo): string | undefined {
   const fromLive = (live?.model ?? "").trim();
   if (fromLive) return fromLive;
-  const parenthetical = (member.role ?? "").match(/[（(]([^）)]*)[）)]/);
+  const role = member.role ?? "";
+  // New role format: "dsh · deepseek-v4-flash" (tool first, model from the second part on).
+  const segments = role.split(" · ").map(part => part.trim());
+  if (segments.length >= 2) {
+    const head = segments[0].toLowerCase();
+    const known = (TOOLS as readonly string[]).includes(head) || head === memberTool(member, live);
+    if (known) {
+      const model = segments.slice(1).filter(Boolean).join(" · ");
+      if (model) return model;
+    }
+  }
+  const parenthetical = role.match(/[（(]([^）)]*)[）)]/);
   if (!parenthetical) return undefined;
   const parts = parenthetical[1].split(/[，,、]/).map(part => part.trim()).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : undefined;
@@ -69,9 +80,10 @@ export function memberDisplay(member: TeamMember, live?: MemberLiveInfo, machine
   const tool = memberTool(member, live);
   const model = memberModel(member, live);
   const machine = memberMachine(member, live, machines);
+  const modelLabel = model && model.toLowerCase() !== (tool ?? "").toLowerCase() ? model : undefined;
   return {
     title: memberBox(member),
-    subtitle: [tool, model].filter(Boolean).join(" · "),
+    subtitle: [tool, modelLabel].filter(Boolean).join(" · "),
     ...(machine ? { machine } : {}),
     role: member.role ?? "",
     ...(member.responsibilities ? { responsibilities: member.responsibilities } : {}),
