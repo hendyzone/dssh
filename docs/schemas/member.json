@@ -103,6 +103,12 @@
         "notes": {
           "$ref": "#/$defs/noteText"
         },
+        "tenure": {
+          "$ref": "#/$defs/tenure"
+        },
+        "for_task": {
+          "$ref": "#/$defs/forTask"
+        },
         "updatedAt": {
           "$ref": "#/$defs/timestamp"
         },
@@ -192,6 +198,12 @@
         "notes": {
           "$ref": "#/$defs/noteText"
         },
+        "tenure": {
+          "$ref": "#/$defs/tenure"
+        },
+        "for_task": {
+          "$ref": "#/$defs/forTask"
+        },
         "rev": {
           "description": "Expected current rev (precondition).",
           "type": "integer",
@@ -278,8 +290,25 @@
         },
         "notes": {
           "$ref": "#/$defs/noteText"
+        },
+        "tenure": {
+          "$ref": "#/$defs/tenure"
+        },
+        "for_task": {
+          "$ref": "#/$defs/forTask"
         }
       }
+    },
+    "tenure": {
+      "type": "string",
+      "description": "resident = 常驻工位；temporary = 为单张卡临时开（卡完成当天回收）。缺省按 resident 显示。",
+      "enum": ["resident", "temporary"]
+    },
+    "forTask": {
+      "type": "string",
+      "description": "临时成员的所属卡 `<项目>/<编号>`；字段名沿用 dteam 的 snake_case。",
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"
     },
     "noteText": {
       "type": "string",
