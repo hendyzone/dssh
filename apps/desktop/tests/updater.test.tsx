@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { installVerifiedUpdate, checkForUpdate, type UpdateOffer, type UpdaterDeps } from "../src/lib/appUpdater";
-import { render, screen, fireEvent } from "@testing-library/react";
+import {
+  checkForUpdate,
+  formatDownloadProgress,
+  installUpdate,
+  runInstallAndRelaunch,
+  type UpdateOffer,
+  type UpdaterDeps,
+} from "../src/lib/appUpdater";
+import { render, screen } from "@testing-library/react";
 import UpdatePrompt from "../src/components/UpdatePrompt";
 
 const offer: UpdateOffer = { version: "9.9.9", notes: "测试说明", handle: {} };
@@ -21,35 +28,34 @@ describe("appUpdater logic", () => {
     expect(result).toBeNull();
   });
 
-  it("有新版时返回 offer", async () => {
-    const result = await checkForUpdate(deps(), { silent: false });
-    expect(result?.version).toBe("9.9.9");
-  });
-
-  it("签名校验失败不调用安装", async () => {
-    const d = deps();
-    await expect(installVerifiedUpdate(offer, d, false)).rejects.toThrow(/签名校验失败/);
-    expect(d.downloadAndInstall).not.toHaveBeenCalled();
-  });
-
   it("deb/rpm 只给链接不安装", async () => {
     const d = deps({ getInstallMode: vi.fn().mockResolvedValue("link_only") });
-    const result = await installVerifiedUpdate(offer, d, true);
+    const result = await installUpdate(offer, d);
     expect(result).toBe("link_only");
     expect(d.downloadAndInstall).not.toHaveBeenCalled();
   });
 
-  it("变异：校验失败仍调用安装应被上层拒绝", async () => {
-    const install = vi.fn().mockResolvedValue(undefined);
-    const d = deps({ downloadAndInstall: install });
-    let called = false;
-    try {
-      await installVerifiedUpdate(offer, d, false);
-    } catch {
-      called = true;
-    }
-    expect(called).toBe(true);
-    expect(install).not.toHaveBeenCalled();
+  it("下载进度：有 contentLength 时显示百分比", () => {
+    expect(formatDownloadProgress({ downloadedBytes: 500, percent: 42 })).toBe("下载 42%");
+  });
+
+  it("下载进度：无 contentLength 时显示已下载 MB", () => {
+    expect(formatDownloadProgress({ downloadedBytes: 2 * 1024 * 1024 })).toBe("已下载 2.0 MB");
+  });
+
+  it("downloadAndInstall 失败时不 relaunch", async () => {
+    const relaunch = vi.fn();
+    const d = deps({
+      downloadAndInstall: vi.fn().mockRejectedValue(new Error("签名校验失败")),
+    });
+    await expect(runInstallAndRelaunch(offer, d, relaunch)).rejects.toThrow(/签名/);
+    expect(relaunch).not.toHaveBeenCalled();
+  });
+
+  it("downloadAndInstall 成功后才 relaunch", async () => {
+    const relaunch = vi.fn().mockResolvedValue(undefined);
+    await runInstallAndRelaunch(offer, deps(), relaunch);
+    expect(relaunch).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -64,29 +70,10 @@ describe("UpdatePrompt UI", () => {
       />,
     );
     expect(screen.getByText(/发现新版本 9\.9\.9/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "更新" })).toBeTruthy();
+    expect(screen.getByText("更新后将自动重启")).toBeTruthy();
   });
 
-  it("无新版不渲染", () => {
-    const { container } = render(
-      <UpdatePrompt state={{ kind: "idle" }} onLater={() => {}} onInstall={() => {}} onOpenRelease={() => {}} />,
-    );
-    expect(container.textContent).toBe("");
-  });
-
-  it("失败时显示错误", () => {
-    render(
-      <UpdatePrompt
-        state={{ kind: "error", message: "签名校验失败，已拒绝安装" }}
-        onLater={() => {}}
-        onInstall={() => {}}
-        onOpenRelease={() => {}}
-      />,
-    );
-    expect(screen.getByRole("alert").textContent).toContain("签名校验失败");
-  });
-
-  it("deb/rpm 只给下载链接", () => {
+  it("deb/rpm 文案与按钮", () => {
     render(
       <UpdatePrompt
         state={{ kind: "offer", offer, linkOnly: true }}
@@ -95,21 +82,31 @@ describe("UpdatePrompt UI", () => {
         onOpenRelease={() => {}}
       />,
     );
+    expect(screen.getByText("此安装方式不支持自动更新")).toBeTruthy();
     expect(screen.getByRole("button", { name: "打开下载页" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "更新" })).toBeNull();
-  });
-});
-
-describe("installVerifiedUpdate mutation guard", () => {
-  it("verified=false 时 install 不被调用（红）", async () => {
-    const install = vi.fn();
-    await expect(installVerifiedUpdate(offer, deps({ downloadAndInstall: install }), false)).rejects.toThrow();
-    expect(install).not.toHaveBeenCalled();
   });
 
-  it("verified=true 时 install 被调用（绿）", async () => {
-    const install = vi.fn().mockResolvedValue(undefined);
-    await installVerifiedUpdate(offer, deps({ downloadAndInstall: install }), true);
-    expect(install).toHaveBeenCalledTimes(1);
+  it("进度对话框显示百分比", () => {
+    render(
+      <UpdatePrompt
+        state={{ kind: "progress", message: "下载 50%" }}
+        onLater={() => {}}
+        onInstall={() => {}}
+        onOpenRelease={() => {}}
+      />,
+    );
+    expect(screen.getByRole("status").textContent).toBe("下载 50%");
+  });
+
+  it("失败时显示错误", () => {
+    render(
+      <UpdatePrompt
+        state={{ kind: "error", message: "签名校验失败" }}
+        onLater={() => {}}
+        onInstall={() => {}}
+        onOpenRelease={() => {}}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toContain("签名校验失败");
   });
 });

@@ -27,9 +27,7 @@ export default function UpdateSettingsSection({ onUpdateFound }: Props) {
         setMessage("当前已是最新版本");
         return;
       }
-      const mode = await import("@tauri-apps/api/core").then(({ invoke }) =>
-        invoke<"auto_install" | "link_only">("updater_install_mode"),
-      );
+      const mode = await invoke<"auto_install" | "link_only">("updater_install_mode");
       onUpdateFound(offer, mode === "link_only");
       setMessage(`发现 ${offer.version}，请在弹窗中确认`);
     } catch (error) {

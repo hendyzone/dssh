@@ -4,8 +4,9 @@ import type { UpdateOffer } from "./appUpdater";
 import type { UpdatePromptState } from "../components/UpdatePrompt";
 import {
   createTauriUpdaterDeps,
-  installVerifiedUpdate,
+  runInstallAndRelaunch,
   startupUpdateCheck,
+  tauriRelaunch,
 } from "./appUpdaterTauri";
 
 export function useAppUpdate() {
@@ -37,10 +38,15 @@ export function useAppUpdate() {
 
   const install = async () => {
     if (prompt.kind !== "offer") return;
-    setPrompt({ kind: "progress", message: "正在下载并校验…" });
+    setPrompt({ kind: "progress", message: "准备下载…" });
     try {
       const deps = createTauriUpdaterDeps();
-      await installVerifiedUpdate(prompt.offer, deps, true);
+      await runInstallAndRelaunch(
+        prompt.offer,
+        deps,
+        tauriRelaunch,
+        (message) => setPrompt({ kind: "progress", message }),
+      );
     } catch (error) {
       setPrompt({ kind: "error", message: String(error) });
     }

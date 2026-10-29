@@ -1,6 +1,6 @@
 import { AppDialog } from "./ui/app-dialog";
 import { Button } from "./ui/button";
-import { RELEASE_PAGE, type UpdateOffer } from "../lib/appUpdater";
+import type { UpdateOffer } from "../lib/appUpdater";
 
 export type UpdatePromptState =
   | { kind: "idle" }
@@ -21,7 +21,7 @@ export default function UpdatePrompt({ state, onLater, onInstall, onOpenRelease 
   if (state.kind === "progress") {
     return (
       <AppDialog title="正在更新" onClose={() => {}} busy>
-        <p>{state.message}</p>
+        <p role="status">{state.message}</p>
       </AppDialog>
     );
   }
@@ -40,9 +40,9 @@ export default function UpdatePrompt({ state, onLater, onInstall, onOpenRelease 
     <AppDialog title={`发现新版本 ${offer.version}`} onClose={onLater}>
       {offer.notes ? <pre className="update-notes">{offer.notes}</pre> : null}
       {linkOnly ? (
-        <p>当前为 deb/rpm 等包管理安装，请从 GitHub 下载新版安装包。</p>
+        <p>此安装方式不支持自动更新</p>
       ) : (
-        <p>确认后将下载、校验签名并安装，完成后自动重启。</p>
+        <p>更新后将自动重启</p>
       )}
       <div className="modal-actions">
         <Button variant="ghost" onClick={onLater}>
@@ -54,9 +54,6 @@ export default function UpdatePrompt({ state, onLater, onInstall, onOpenRelease 
           <Button onClick={onInstall}>更新</Button>
         )}
       </div>
-      <a className="sr-only" href={RELEASE_PAGE}>
-        {RELEASE_PAGE}
-      </a>
     </AppDialog>
   );
 }
