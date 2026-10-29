@@ -1,11 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { markdownImagePath, selectedPage, type WebPage } from "../src/lib/webPages";
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), createTransfer: vi.fn(), waitForTransferListener: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("../src/lib/transfers", () => ({ createTransfer: mocks.createTransfer, waitForTransferListener: mocks.waitForTransferListener }));
 import WebPageView from "../src/components/WebPageView";
 
-beforeEach(() => mocks.invoke.mockReset());
+beforeEach(() => {
+  mocks.invoke.mockReset();
+  mocks.createTransfer.mockReset().mockReturnValue("download-test-id");
+  mocks.waitForTransferListener.mockReset().mockResolvedValue(undefined);
+});
 
 it("recognizes the screenshot's remote HTML path and encoded Chinese filenames", () => {
   expect(selectedPage("file:///home/example/.answer-me-with-html/pages/datrix-中枢-v2-核心机制-20261009-131637.html"))
@@ -86,5 +91,51 @@ it("shows remote read errors and allows retry", async () => {
   mocks.invoke.mockResolvedValue("<h1>恢复</h1>");
   fireEvent.click(screen.getByText("刷新网页"));
   await screen.findByTitle("图.html");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it.each(["image", "markdown", "html"] as const)("downloads a %s preview using its source path and session", async kind => {
+  const path = `/tmp/目录/文件.${kind}`;
+  mocks.invoke.mockImplementation(async command => command === "sftp_download" ? "/downloads/文件" : "preview");
+  render(<WebPageView page={{ ...page, target: { kind, path } }} active/>);
+  fireEvent.click(screen.getByRole("button", { name: "下载", exact: true }));
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("sftp_download", {
+    sessionId: "ssh-original", remotePath: path, transferId: "download-test-id",
+  }));
+  expect(mocks.createTransfer).toHaveBeenCalledWith("ssh-original", `文件.${kind}`, "download");
+  expect(mocks.waitForTransferListener).toHaveBeenCalledWith("ssh-original");
+  expect(await screen.findByText("已下载到 /downloads/文件")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "打开所在目录" }));
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("sftp_reveal_local", { path: "/downloads/文件" }));
+});
+
+it("does not offer remote download for URL previews", () => {
+  render(<WebPageView page={{ ...page, target: { kind: "url", url: "https://example.com" } }} active/>);
+  expect(screen.queryByRole("button", { name: "下载", exact: true })).toBeNull();
+  expect(mocks.createTransfer).not.toHaveBeenCalled();
+});
+
+it("waits for progress registration, prevents duplicates and allows retry after download failure", async () => {
+  let ready!: () => void;
+  let fail!: (reason: string) => void;
+  mocks.waitForTransferListener.mockReturnValue(new Promise<void>(resolve => { ready = resolve; }));
+  mocks.invoke.mockImplementation(command => command === "sftp_download"
+    ? new Promise<string>((_, reject) => { fail = reject; }) : Promise.resolve("preview"));
+  render(<WebPageView page={page} active/>);
+  fireEvent.click(screen.getByRole("button", { name: "下载", exact: true }));
+  const busy = screen.getByRole("button", { name: "下载中…" }) as HTMLButtonElement;
+  expect(busy.disabled).toBe(true);
+  fireEvent.click(busy);
+  expect(mocks.createTransfer).toHaveBeenCalledTimes(1);
+  expect(mocks.invoke.mock.calls.filter(([command]) => command === "sftp_download")).toHaveLength(0);
+  ready();
+  await waitFor(() => expect(mocks.invoke.mock.calls.filter(([command]) => command === "sftp_download")).toHaveLength(1));
+  fail("下载被拒绝");
+  expect((await screen.findByRole("alert")).textContent).toContain("下载被拒绝");
+  expect((screen.getByRole("button", { name: "下载", exact: true }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByTitle("图.html")).toBeTruthy();
+  mocks.invoke.mockResolvedValue("/downloads/retry.html");
+  fireEvent.click(screen.getByRole("button", { name: "下载", exact: true }));
+  expect(await screen.findByText("已下载到 /downloads/retry.html")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
 });

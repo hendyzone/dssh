@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Alert } from "./ui/alert";
+import { createTransfer, waitForTransferListener } from "../lib/transfers";
 import { Button } from "./ui/button";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -29,6 +31,34 @@ export default function WebPageView({ page, active }: { page: WebPage; active: b
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actualSize, setActualSize] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const downloadBusy = useRef(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadPath, setDownloadPath] = useState<string | null>(null);
+  const download = async () => {
+    if (page.target.kind === "url" || downloadBusy.current) return;
+    downloadBusy.current = true;
+    setDownloading(true);
+    setDownloadError(null);
+    setDownloadPath(null);
+    try {
+      const remotePath = page.target.path;
+      const transferId = createTransfer(page.sessionId, remotePath.split("/").pop() || remotePath, "download");
+      await waitForTransferListener(page.sessionId);
+      const localPath = await invoke<string>("sftp_download", {
+        sessionId: page.sessionId,
+        remotePath,
+        transferId,
+      });
+      setDownloadPath(localPath);
+    } catch (reason) {
+      setDownloadError(String(reason));
+    } finally {
+      downloadBusy.current = false;
+      setDownloading(false);
+    }
+  };
+
   useEffect(() => {
     if (page.target.kind === "url") return;
     let disposed = false;
@@ -44,6 +74,7 @@ export default function WebPageView({ page, active }: { page: WebPage; active: b
     <div className="web-page-toolbar">
       <Button variant="outline" size="sm" onClick={() => setRevision(value => value + 1)}>刷新网页</Button>
       {page.target.kind === "image" && <Button variant="outline" size="sm" onClick={() => setActualSize(value => !value)}>{actualSize ? "适应窗口" : "原始尺寸"}</Button>}
+      {page.target.kind !== "url" && <Button variant="outline" size="sm" disabled={downloading} onClick={() => void download()}>{downloading ? "下载中…" : "下载"}</Button>}
       <span title={address}>{address}</span>
     </div>
     <p className="web-page-hint">{page.target.kind === "html"
@@ -55,6 +86,17 @@ export default function WebPageView({ page, active }: { page: WebPage; active: b
         void invoke("taskboard_open", { url: address }).catch(reason => setError(String(reason)));
       }}>在系统浏览器打开</Button>}
     </p>
+    {downloadError && <Alert variant="destructive" className="block">{downloadError}</Alert>}
+    {downloadPath && <Alert role="status" className="block">
+      <div>
+        <span>已下载到 {downloadPath}</span>
+        <Button variant="outline" size="sm" onClick={() => {
+          void invoke("sftp_reveal_local", { path: downloadPath })
+            .catch(reason => setDownloadError(`无法打开所在目录：${String(reason)}`));
+        }}>打开所在目录</Button>
+        <Button variant="ghost" size="sm" onClick={() => setDownloadPath(null)}>关闭提示</Button>
+      </div>
+    </Alert>}
     {error && <p role="alert">网页打开失败：{error}</p>}
     {page.target.kind !== "url" && html === null && !error && <p role="status">正在读取远程文件…</p>}
     {page.target.kind === "markdown" && html !== null && <article className="markdown-preview" key={revision}>
