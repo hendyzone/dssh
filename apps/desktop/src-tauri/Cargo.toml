@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "~2.12", features = ["devtools"] }
 tauri-plugin-dialog = "2.7.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -47,8 +47,8 @@ custom-protocol = ["tauri/custom-protocol"]
 keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
-webview2-com = "0.38.2"
-windows-core = "0.61"
+webview2-com = "0.39.1"
+windows-core = "0.62"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem"] }
@@ -56,4 +56,4 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 
 [dev-dependencies]
 # Exercise the real snapshot command with Tauri's existing mock runtime.
-tauri = { version = "2", features = ["test"] }
+tauri = { version = "~2.12", features = ["test"] }
