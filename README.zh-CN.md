@@ -5,7 +5,7 @@
 <h1 align="center">dssh</h1>
 
 <p align="center">把远程终端、文件和开发任务放在同一个工作区。</p>
-<p align="center"><strong>v1.2.26</strong> · Tauri SSH 客户端 · Windows / macOS / Linux</p>
+<p align="center"><strong>v1.2.27</strong> · Tauri SSH 客户端 · Windows / macOS / Linux</p>
 <p align="center"><a href="README.md">English</a> | <strong>简体中文</strong></p>
 
 dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中运行长任务、编辑远程文件、查看代码差异，也能给远程 Codex、Claude 等工具粘贴截图路径；带 Agent 团队的项目还能在同一个窗口里看成员状态、任务卡片和模型额度。
@@ -93,6 +93,8 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 
 **团队面板**：在「设置 → Agent 协作」配置团队服务地址和订阅项目，通过 WebSocket 实时读取成员与状态，不依赖当前终端绑定 tmux 会话；仍可跨服务器一键打开已登记成员的 tmux 会话（[从 Lead 跳转到成员终端](docs/agent-collaboration.md#从-lead-跳转到成员终端)）。
 「动态」和「成员」两页使用服务状态；只有服务明确标记 `no_agent` 的成员才回退到已配置 taskboard 的只读会话采集（`GET /api/v1/agent-sessions`），看板同时提供当前卡片与最近提交等信息。
+
+**v1.2.27:** 应用内更新：启动时（及「设置 → 检查更新」）从 GitHub Releases 发现新版本，显示版本与更新说明，确认后下载、校验签名并重启；deb/rpm 安装只给下载链接。像素办公室把临时 worker 放进单独的临时工位并标出所属卡，卡完成后标「待回收」。
 
 **v1.2.26:** 远程图片、Markdown、HTML 预览页的工具栏新增「下载」按钮，直接把文件存到本机，进度、成功提示和「打开所在目录」与 SFTP 面板一致。
 
