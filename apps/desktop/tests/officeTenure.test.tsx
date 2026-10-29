@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import TeamOffice from "../src/components/TeamOffice";
+import TeamOffice, { fitOfficeGrid } from "../src/components/TeamOffice";
 import { buildOfficeSnapshot, parseForTask, type OfficeMember, type OfficeSnapshot } from "../src/lib/teamOffice";
 import { emptyProfile } from "../src/lib/collaboration";
 
@@ -37,12 +37,16 @@ it("puts temporary workers in their own zone and names the card they were opened
   const station = zone.querySelector('[data-member-id="temp-a"]')!;
   expect(station.getAttribute("data-tenure")).toBe("temporary");
   expect(station.getAttribute("data-for-task")).toBe("alpha/T62");
-  expect(station.textContent).toContain("临时");
+  // 区头只写「临时工位」，不写解说句；工牌不再挂重复的「临时」徽标。
+  expect(zone.querySelector(".office-temp-heading")!.textContent).toBe("◷ 临时工位");
+  expect(station.querySelector(".office-tenure-badge")).toBeNull();
+  // 卡片号单独等宽显示，不再写「为 … 而开」。
   const task = station.querySelector(".office-temp-task")!;
-  expect(task.textContent).toContain("alpha/T62");
+  expect(task.textContent).toBe("alpha/T62");
+  expect(station.textContent).not.toContain("而开");
   expect(station.querySelector(".office-detail")?.textContent).toContain("工位：临时");
-  // 常驻区里没有临时牌
-  expect(main.querySelector(".office-tenure-badge")).toBeNull();
+  // 名字完整可读，不被徽标挤掉
+  expect(station.querySelector(".office-station-name strong")?.textContent).toBe("temp-a");
 });
 
 it("marks a temporary worker whose card is already done as 待回收 with the card number", () => {
@@ -53,7 +57,7 @@ it("marks a temporary worker whose card is already done as 待回收 with the ca
   expect(station.getAttribute("data-for-task-done")).toBe("true");
   const badge = station.querySelector(".office-reclaim-badge")!;
   expect(badge.textContent).toBe("待回收");
-  expect(badge.getAttribute("title")).toContain("alpha/T61");
+  expect(badge.getAttribute("title")).toBe("alpha/T61 · 已完成");
   expect(station.querySelector(".office-detail")?.textContent).toContain("待回收");
 
   // 状态未知（查不到卡）时不猜待回收，卡号照常显示
@@ -74,7 +78,15 @@ it("treats a missing tenure as resident without guessing from notes", () => {
   const station = view.container.querySelector('[data-member-id="legacy"]')!;
   expect(station.getAttribute("data-tenure")).toBe("resident");
   expect(view.container.querySelector(".office-temp-zone")).toBeNull();
-  expect(station.querySelector(".office-tenure-badge")).toBeNull();
+  expect(station.querySelector(".office-reclaim-badge")).toBeNull();
+});
+
+it("reserves height for temporary zone headers so small rooms still fit", () => {
+  const plain = fitOfficeGrid(2, 3000, 3000, false, [2], 0);
+  const withTemp = fitOfficeGrid(2, 3000, 3000, false, [2], 1);
+  expect(withTemp.scale).toBe(plain.scale);
+  expect(withTemp.columns).toBe(plain.columns);
+  expect(withTemp.height - plain.height).toBeGreaterThan(0);
 });
 
 it("carries tenure and for_task from the roster into the snapshot and only marks done from the board lookup", () => {

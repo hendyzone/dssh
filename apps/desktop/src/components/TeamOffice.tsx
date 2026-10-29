@@ -14,7 +14,7 @@ const SCALE_KEY = "dssh.office.scale.v1";
 type OfficeScale = number;
 type ScaleMode = "auto" | "1" | "2" | "3";
 const textScale = (scale: number) => 1 + (scale - 1) * .15;
-export function fitOfficeGrid(count: number, width: number, height: number, lead = false, groupCounts?: number[]) {
+export function fitOfficeGrid(count: number, width: number, height: number, lead = false, groupCounts?: number[], tempZones = 0) {
   const total = Math.max(1, count);
   const factor = lead ? 1.12 : 1;
   const geometry = (scale: number, columns: number) => {
@@ -23,9 +23,11 @@ export function fitOfficeGrid(count: number, width: number, height: number, lead
     const stationWidth = Math.max(160, 96 * scale * factor);
     // Bubble, desk and label: name/status plus one or two task lines, padding and border.
     const stationHeight = 24 * text + 72 * scale * factor + (scale < 1.75 ? 52 : 70) * text;
+    // Temporary zone headings are part of the grid: small rooms must fit them too.
+    const tempHeight = tempZones > 0 ? tempZones * (24 * text + 6) : 0;
     return {scale, columns, rows, stationWidth, stationHeight,
       width: columns * stationWidth + (columns - 1) * 14,
-      height: rows * stationHeight + (rows - 1) * 22};
+      height: rows * stationHeight + (rows - 1) * 22 + tempHeight};
   };
   let best = geometry(1, Math.max(1, Math.min(total, Math.floor((width + 14) / 174))));
   for (let scale = 1; scale <= 3; scale += .25) {
@@ -150,8 +152,8 @@ function DetailCard({member, now, id}: {member: OfficeMember; now: number; id: s
   const rows: [string, string][] = [];
   rows.push(["工位", member.tenure === "temporary" ? "临时" : "常驻"]);
   if (member.tenure === "temporary") {
-    if (member.forTask) rows.push(["所属卡", `${member.forTask}${member.forTaskDone === true ? "（已完成，待回收）" : member.forTaskDone === false ? "（进行中）" : ""}`]);
-    if (member.forTaskDone === true) rows.push(["回收", "所属卡已完成，这个临时 worker 可以回收了"]);
+    if (member.forTask) rows.push(["所属卡", `${member.forTask}${member.forTaskDone === true ? " · 已完成" : member.forTaskDone === false ? " · 进行中" : ""}`]);
+    if (member.forTaskDone === true) rows.push(["回收", "待回收"]);
   }
   if (member.responsibilities) rows.push(["职责", member.responsibilities]);
   if (member.taskFull) rows.push(["当前任务", member.taskFull]);
@@ -244,8 +246,9 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
   const groups = openProjects.flatMap(project => project.sources.filter(source => source.members.length));
   const sourceOverhead = openProjects.reduce((sum, project) => sum + project.sources.reduce((height, source) => height +
     (source.members.length && (project.sources.length > 1 || source.label !== project.name) ? 32 : 0), 0), 0) + Math.max(0, groups.length - 1) * 30;
+  const tempZones = groups.filter(source => source.members.some(member => member.tenure === "temporary")).length;
   const grid = fitOfficeGrid(activeMembers.length, Math.max(0, roomSize.width - 58),
-    Math.max(0, roomSize.height - wallHeight - 64 * snapshot.projects.length - 74 - sourceOverhead), furnitureFactor > 1, groups.map(source => source.members.length));
+    Math.max(0, roomSize.height - wallHeight - 64 * snapshot.projects.length - 74 - sourceOverhead), furnitureFactor > 1, groups.map(source => source.members.length), tempZones);
   const scale: OfficeScale = scaleMode === "auto" ? grid.scale : Number(scaleMode);
   const mailScale = scale < 1.5 ? 1 : scale < 2.5 ? 2 : 3;
   const avatarScale = scale === 1 || scale === 2 || scale === 3 ? scale : 1;
@@ -383,14 +386,13 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                     <div className="office-desk-label">
                         <div className="office-station-name">
                           {member.isLead && <span className="office-lead-label">Lead</span>}
-                          {temporary && <span className="office-tenure-badge" title="临时 worker：为一张卡临时开，卡完成当天回收">◷ 临时</span>}
-                          {reclaim && <span className="office-reclaim-badge" title={`所属卡 ${member.forTask ?? ""} 已完成，临时 worker 可以回收`}>待回收</span>}
                           {member.tool && <span className="office-tool" title={`工具 ${member.tool}`}>{TOOL_LABELS[member.tool] ?? member.tool}</span>}
                           <strong title={member.name}>{member.name}</strong>
                         </div>
                         <div className="office-status-line"><span className="office-member-status" title={member.status.label}>{shortStatus[member.status.state] ?? STATE_LABELS[member.status.state] ?? member.status.label}</span></div>
+                    {reclaim && <div className="office-station-flags"><span className="office-reclaim-badge" title={`${member.forTask ?? ""} · 已完成`}>待回收</span></div>}
                     {!quiet && <p className="office-member-task office-station-paper" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskFull || member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.taskText}</p>}
-                    {temporary && member.forTask && <p className="office-temp-task" title={`临时 worker 为卡 ${member.forTask} 而开${reclaim?"（该卡已完成，待回收）":""}`}>为 <code>{member.forTask}</code> 而开</p>}
+                    {temporary && member.forTask && <p className="office-temp-task"><code>{member.forTask}</code></p>}
                     </div>
                     <DetailCard member={member} now={seconds} id={detailId}/>
                   </article>;
@@ -401,7 +403,7 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                 return <>
                   <div className="office-desks">{residents.map(station)}</div>
                   {temporary.length > 0 && <section className="office-temp-zone" aria-label="临时工位">
-                    <p className="office-temp-heading"><span aria-hidden="true">◷</span> 临时工位 <small>为单张卡临时开，卡完成当天回收</small></p>
+                    <p className="office-temp-heading"><span aria-hidden="true">◷</span> 临时工位</p>
                     <div className="office-desks">{temporary.map(station)}</div>
                   </section>}
                 </>;
