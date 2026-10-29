@@ -42,7 +42,20 @@ jobs:
         working-directory: apps/desktop
         run: npm ci
 
-      - name: Build Tauri app
+      # main 与手动运行只构建：不给 Release 定位参数，也不传上传令牌。
+      - name: Build Tauri app (no Release upload)
+        if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          includeUpdaterJson: false
+
+      # 仅推 v* tag 时创建/上传 Release，保留签名及 latest.json 的发布路径。
+      - name: Build and upload Tauri release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,7 +64,6 @@ jobs:
         with:
           projectPath: apps/desktop
           includeUpdaterJson: true
-          # 推 tag（v*）或匹配到既有 draft release 时上传安装包（release 资产不占 artifact 配额）
           tagName: v__VERSION__
           releaseName: "dssh v__VERSION__"
           releaseDraft: true
