@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { emptyProfile, type CollaborationProfile, type CollaborationSession } from "./collaboration";
-import { briefKey, fetchAgentSessions, matchSession, taskBrief } from "./agentSessions";
+import { briefKey, fetchAgentSessions, matchSession, taskBrief, taskLifecycle } from "./agentSessions";
 import { boardSource, isIdentifier, type TaskLookupSettings } from "./taskLookup";
 import {memberTaskTarget,memberTaskSession} from "./teamServicePresentation";
 import { useTeamService } from "./teamService";
-import { buildOfficeMailDirectory, type OfficeMailDirectory, buildOfficeSnapshot, officeTeamSources, officeKey, type OfficeTeamSource, type OfficeBoard, type OfficeRoster, type OfficeSnapshot } from "./teamOffice";
+import { buildOfficeMailDirectory, type OfficeMailDirectory, buildOfficeSnapshot, officeTeamSources, officeKey, parseForTask, type OfficeTeamSource, type OfficeBoard, type OfficeRoster, type OfficeSnapshot } from "./teamOffice";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
 import type { ServerEntry } from "../types";
 
@@ -63,19 +63,28 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
           try {
             const snapshot=await fetchAgentSessions(source).catch(()=>undefined);
             const briefs:OfficeBoard["briefs"]={};
+            const forTasks:NonNullable<OfficeBoard["forTasks"]>={};
             const targets=new Map<string,{project:string;code:string}>();
+            const forTargets=new Map<string,{project:string;code:string}>();
             for(const team of teams)for(const member of rosters[team.id]?.members??[]){
               const task=memberTaskTarget(member,memberTaskSession(member,snapshot?.sessions??[]));
               if(task)targets.set(briefKey(task.project,task.code),task);
               const session=matchSession(member,snapshot?.sessions??[]);
               if(!team.service&&!task&&session?.taskCode&&isIdentifier(session.taskCode)&&isIdentifier(session.project)&&!session.stale&&session.hostOk)
                 targets.set(briefKey(session.project,session.taskCode),{project:session.project,code:session.taskCode});
+              // 临时 worker 的所属卡（dteam T62 的 for_task）：只查状态，不新接看板。
+              const owner=parseForTask(member.for_task);
+              if(owner&&isIdentifier(owner.project)&&isIdentifier(owner.code))forTargets.set(briefKey(owner.project,owner.code),owner);
             }
             await Promise.all([...targets].map(async([key,target])=>{
               if(disposed)return;
               try{const brief=await taskBrief({...source,key:JSON.stringify([source.key,service.url])},target.project,target.code);if(brief)briefs[key]=brief;}catch{/* Deleted tasks need no caption. */}
             }));
-            board={snapshot,briefs,offline:false};
+            await Promise.all([...forTargets].map(async([key,target])=>{
+              if(disposed)return;
+              try{const state=await taskLifecycle({...source,key:JSON.stringify([source.key,service.url])},target.project,target.code);if(state)forTasks[key]=state;}catch{/* 查不到状态就不显示待回收，不猜。 */}
+            }));
+            board={snapshot,briefs,forTasks,offline:false};
           }catch{board={briefs:{},offline:true};}
           if(!disposed){setBoards(previous=>({...previous,...Object.fromEntries(teams.map(team=>[team.id,board]))}));setBoardsScope(boardKey);}
         }));

@@ -133,3 +133,14 @@
 .office-top-reveal{position:absolute;z-index:30;top:0;left:0;width:100%;height:8px;padding:0;border:0;background:transparent;cursor:pointer}
 .office-toolbar label:has(input){white-space:nowrap}
 .office-window-error{flex:none;margin:0;color:var(--ui-danger)}
+/* 常驻 / 临时工位（T61）：临时区与常驻分开，靠文字+图标区分，不靠颜色单一区分（色弱可辨）。 */
+.office-temp-zone{margin-top:10px;padding-top:6px;border-top:1px dashed color-mix(in srgb,var(--ui-muted) 45%,transparent)}
+.office-temp-heading{margin:0 0 4px;font-size:calc(11px * var(--office-text, 1));letter-spacing:.02em;color:#4b4236;display:flex;align-items:center;gap:6px}
+.office-temp-heading small{font-weight:400;color:var(--ui-muted);font-size:calc(11px * var(--office-text, 1))}
+.office-tenure-badge,.office-reclaim-badge{flex:none;font-size:calc(11px * var(--office-text, 1));line-height:1.5;border:1px dashed #8a6d3b;border-radius:3px;padding:0 3px;white-space:nowrap;color:#6b4f1d;background:rgba(240,168,104,.18)}
+.office-reclaim-badge{border-style:solid;border-color:#b25a2a;color:#8a3d14;background:rgba(255,122,122,.2);font-weight:600}
+.office-temp-task{margin:2px 6px 0;font-size:calc(11px * var(--office-text, 1));color:#4b4236;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.office-temp-task code{font-size:inherit;background:rgba(0,0,0,.06);padding:0 2px;border-radius:2px}
+.office-station.is-temporary .office-desk-top{fill:#c9b48f}
+.office-station.is-temporary .office-desk-front{fill:#b3a084}
+.office-station.is-reclaim{outline:1px dashed #b25a2a;outline-offset:2px;border-radius:4px}

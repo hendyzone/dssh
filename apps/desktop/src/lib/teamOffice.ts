@@ -12,6 +12,13 @@ import type { ServerEntry } from "../types";
 
 export { sessionTeamProject as officeActiveProject } from "./tmuxGroups";
 
+/** 解析临时成员的 for_task（`<项目>/<编号>`），格式不对或为空返回 undefined。 */
+export function parseForTask(value: string | undefined): { project: string; code: string } | undefined {
+  const text = (value ?? "").trim();
+  const match = /^([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})$/.exec(text);
+  return match && text.length <= 64 ? { project: match[1], code: match[2] } : undefined;
+}
+
 export type OfficeMailEndpoint = {kind:"station";sourceId:string;memberId:string} | {kind:"edge"};
 export interface OfficeMailEvent { id:string; uid:number; kind:string|null; from:OfficeMailEndpoint; to:OfficeMailEndpoint; }
 export interface OfficeMailView {
@@ -60,6 +67,12 @@ export interface OfficeMember {
   tool?: string; machine?: string; machineOnline?: boolean; machineVersion?: string;
   liveState?: string; match?: "exact" | "replaced" | "gone" | "no_agent";
   detail?: string; since?: number;
+  /** 常驻/临时（缺字段按常驻）。临时坐临时工位区。 */
+  tenure?: "resident" | "temporary";
+  /** 临时成员为哪张卡而开（已校验的 `<项目>/<编号>`）。 */
+  forTask?: string;
+  /** 所属卡已完成但人还在 = 待回收；undefined 表示查不到状态。 */
+  forTaskDone?: boolean;
 }
 export interface OfficeSource {
   id: string; label: string; availability: "ready" | "offline" | "error" | "loading";
@@ -85,6 +98,8 @@ export interface OfficeRoster {
 }
 export interface OfficeBoard {
   snapshot?: SessionsSnapshot; briefs: Record<string, TaskBrief>; offline: boolean;
+  /** `briefKey(project, code)` → 所属卡状态；只查临时成员的 for_task。 */
+  forTasks?: Record<string, "done" | "open">;
 }
 export interface OfficeBuildContext {
   servers: ServerEntry[]; sessions: CollaborationSession[];
@@ -185,6 +200,10 @@ export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record
       const live = roster.live?.[memberKey(member)];
       const machines = (roster.machines ?? {}) as Record<string, { online?: boolean; version?: string }>;
       const display = memberDisplay(member, live, machines);
+      const tenure: OfficeMember["tenure"] = member.tenure === "temporary" ? "temporary" : "resident";
+      const forTask = tenure === "temporary" ? parseForTask(member.for_task) : undefined;
+      const board = context.boards?.[source.id];
+      const forTaskDone = forTask && board?.forTasks?.[briefKey(forTask.project, forTask.code)] === "done" ? true : undefined;
       const machineName = display.machine;
       const machineRecord = machineName ? machines[machineName] : undefined;
       return {
@@ -201,6 +220,7 @@ export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record
         machine: machineName ? String(machineName).slice(0, 64) : undefined,
         machineOnline: typeof machineRecord?.online === "boolean" ? machineRecord.online : undefined,
         machineVersion: typeof machineRecord?.version === "string" ? machineRecord.version.slice(0, 40) : undefined,
+        tenure, ...(forTask ? {forTask: `${forTask.project}/${forTask.code}`} : {}), forTaskDone,
         liveState: live?.state, match: live?.match, detail: live?.detail?.slice(0, 200),
         since: live?.since ? Date.parse(live.since) || undefined : undefined,
       };

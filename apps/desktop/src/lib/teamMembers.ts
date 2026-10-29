@@ -24,6 +24,10 @@ export interface TeamMember {
   aiDigest?: string;
   aiSource?: string;
   aiEvidence?: string;
+  /** 常驻/临时（dteam T62）：缺字段按常驻显示，不猜备注文字。 */
+  tenure?: "resident" | "temporary";
+  /** 临时成员为哪张卡而开：`<项目>/<编号>`。 */
+  for_task?: string;
 }
 export const memberNoteFields = {responsibilities:"主要负责", quota:"额度情况", currentTask:"当前在做", notes:"其他备注"} as const;
 export type MemberNoteField = keyof typeof memberNoteFields;
@@ -62,7 +66,10 @@ export function parseMember(value: unknown, project: string): TeamMember {
   for(const key of ["aiSummary","aiStatus","aiUpdatedAt","aiDigest","aiSource","aiEvidence"] as const){
     if(typeof m[key]==="string" && m[key]!.length<=2000)ai[key]=m[key];
   }
-  return { ...info, ...ai, ...(validId ? {id:m.id} : {}), project, email:m.email, role:m.role, host:m.host, port:m.port, username:m.username, workdir:m.workdir,
+  const tenure = m.tenure === "resident" || m.tenure === "temporary" ? m.tenure : undefined;
+  const forTask = typeof m.for_task === "string" && m.for_task.length <= 64 && /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(m.for_task)
+    ? m.for_task : undefined;
+  return { ...info, ...ai, ...(tenure ? {tenure} : {}), ...(forTask ? {for_task:forTask} : {}), ...(validId ? {id:m.id} : {}), project, email:m.email, role:m.role, host:m.host, port:m.port, username:m.username, workdir:m.workdir,
     tmux:{id:m.tmux.id, created:m.tmux.created, name:m.tmux.name},
     ...(Number.isSafeInteger(m.rev) && Number(m.rev) > 0 ? {rev:m.rev} : {}),
     ...(validText(m.updatedAt, 80) ? {updatedAt:m.updatedAt} : {}) };

@@ -53,7 +53,8 @@ function priority(member: OfficeMember) {
   return counts.stuck ? 0 : counts.waiting ? 1 : counts.running ? 2 : counts.idle ? 3 : 4;
 }
 function sortedMembers(members: OfficeMember[]) {
-  return [...members].sort((a, b) => Number(b.isLead) - Number(a.isLead) || priority(a) - priority(b));
+  // 常驻工位要稳定：优先级相同的成员按稳定的调色板键排序，成员数组顺序变化不换位。
+  return [...members].sort((a, b) => Number(b.isLead) - Number(a.isLead) || priority(a) - priority(b) || a.paletteKey.localeCompare(b.paletteKey));
 }
 function readCollapsed(projects: string[]): Set<string> {
   try {
@@ -147,6 +148,11 @@ const shortStatus: Record<string,string> = {working:"工作中",idle:"空闲",un
 
 function DetailCard({member, now, id}: {member: OfficeMember; now: number; id: string}) {
   const rows: [string, string][] = [];
+  rows.push(["工位", member.tenure === "temporary" ? "临时" : "常驻"]);
+  if (member.tenure === "temporary") {
+    if (member.forTask) rows.push(["所属卡", `${member.forTask}${member.forTaskDone === true ? "（已完成，待回收）" : member.forTaskDone === false ? "（进行中）" : ""}`]);
+    if (member.forTaskDone === true) rows.push(["回收", "所属卡已完成，这个临时 worker 可以回收了"]);
+  }
   if (member.responsibilities) rows.push(["职责", member.responsibilities]);
   if (member.taskFull) rows.push(["当前任务", member.taskFull]);
   rows.push(["状态", `${member.status.label}${member.since ? ` · ${duration(member.since, now)}` : ""}`]);
@@ -334,9 +340,11 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
               {source.availability !== "ready" ? <p role="status" className="office-source-notice">{source.notice}</p>
                 : !source.members.length ? <p className="office-source-notice">此团队尚未登记成员。</p> : null}
               {!source.members.length && <EmptyDesks scale={scale}/>}
-              <div className="office-desks">
-                {sortedMembers(source.members).map(member => {
+              {(() => {
+                const station = (member: OfficeMember) => {
                   const ended = member.match === "gone" || member.match === "replaced";
+                  const temporary = member.tenure === "temporary";
+                  const reclaim = temporary && member.forTaskDone === true;
                   const quiet = priority(member) >= 3;
                   const grey = priority(member) === 4;
                   const urgent = priority(member) <= 1;
@@ -350,8 +358,9 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                   // One placement for both prompts: inside the desk box, below the bubble slot.
                   const badge = ["waiting_input", "input_pending"].includes(member.liveState ?? "") || member.status.state === "blocked"
                     ? "warn" : member.liveState === "stuck" || member.status.state === "error" ? "alert" : "";
-                  return <article className={`office-station${member.isLead?" is-lead":""}${ended?" is-ended":""}${grey?" is-grey":""}${quiet?" is-quiet":""}${member.liveState==="stuck"||member.status.state==="error"?" is-stuck":""} ${stateClass}`}
+                  return <article className={`office-station${member.isLead?" is-lead":""}${temporary?" is-temporary":""}${reclaim?" is-reclaim":""}${ended?" is-ended":""}${grey?" is-grey":""}${quiet?" is-quiet":""}${member.liveState==="stuck"||member.status.state==="error"?" is-stuck":""} ${stateClass}`}
                     key={member.id} data-member-id={member.id} data-office-station={officeStationAnchor(source.id,member.id)}
+                    data-tenure={temporary ? "temporary" : "resident"} data-for-task={member.forTask ?? ""} data-for-task-done={member.forTaskDone === true ? "true" : ""}
                     data-state={member.status.state} data-live-state={member.liveState ?? ""} data-match={member.match ?? ""}
                     data-palette-key={member.paletteKey} aria-label={`工位 ${member.name}`} aria-describedby={detailId}
                     tabIndex={0} onClick={open} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}>
@@ -374,16 +383,29 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                     <div className="office-desk-label">
                         <div className="office-station-name">
                           {member.isLead && <span className="office-lead-label">Lead</span>}
+                          {temporary && <span className="office-tenure-badge" title="临时 worker：为一张卡临时开，卡完成当天回收">◷ 临时</span>}
+                          {reclaim && <span className="office-reclaim-badge" title={`所属卡 ${member.forTask ?? ""} 已完成，临时 worker 可以回收`}>待回收</span>}
                           {member.tool && <span className="office-tool" title={`工具 ${member.tool}`}>{TOOL_LABELS[member.tool] ?? member.tool}</span>}
                           <strong title={member.name}>{member.name}</strong>
                         </div>
                         <div className="office-status-line"><span className="office-member-status" title={member.status.label}>{shortStatus[member.status.state] ?? STATE_LABELS[member.status.state] ?? member.status.label}</span></div>
                     {!quiet && <p className="office-member-task office-station-paper" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskFull || member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.taskText}</p>}
+                    {temporary && member.forTask && <p className="office-temp-task" title={`临时 worker 为卡 ${member.forTask} 而开${reclaim?"（该卡已完成，待回收）":""}`}>为 <code>{member.forTask}</code> 而开</p>}
                     </div>
                     <DetailCard member={member} now={seconds} id={detailId}/>
                   </article>;
-                })}
-              </div>
+                };
+                const ordered = sortedMembers(source.members);
+                const residents = ordered.filter(member => member.tenure !== "temporary");
+                const temporary = ordered.filter(member => member.tenure === "temporary");
+                return <>
+                  <div className="office-desks">{residents.map(station)}</div>
+                  {temporary.length > 0 && <section className="office-temp-zone" aria-label="临时工位">
+                    <p className="office-temp-heading"><span aria-hidden="true">◷</span> 临时工位 <small>为单张卡临时开，卡完成当天回收</small></p>
+                    <div className="office-desks">{temporary.map(station)}</div>
+                  </section>}
+                </>;
+              })()}
             </section>)}
           </div>
         </section>;

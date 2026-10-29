@@ -247,6 +247,15 @@ export function taskBrief(source: BoardSource, project: string, code: string): P
   });
 }
 
+/** One task's lifecycle for the temporary-worker badge: only the board's done column matters. */
+export function taskLifecycle(source: BoardSource, project: string, code: string): Promise<"done" | "open" | null> {
+  if (!isIdentifier(project) || !isIdentifier(code)) return Promise.resolve(null);
+  return cached(`${source.key}|lifecycle|${project}|${code}`, async () => {
+    const raw = await get<Record<string, unknown>>(source, `/api/v1/projects/${project}/tasks/${code}`);
+    return raw && typeof raw.status_key === "string" ? (raw.status_key === "done" ? "done" : "open") : null;
+  });
+}
+
 export interface LiveSessions {
   snapshot?: SessionsSnapshot;
   /** `briefKey(project, code)` → brief. */
