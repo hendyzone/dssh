@@ -189,6 +189,16 @@ npm run tauri build
 
 </details>
 
+## 自动更新与签名密钥（维护者）
+
+桌面端启动后会后台检查 GitHub Releases 上的 `latest.json`（与 tauri-action 生成的 updater 产物一致）；**设置 → 更新** 可手动检查。Windows / macOS / Linux AppImage 在用户确认后会下载、校验 Minisign 签名并安装；**deb / rpm 仅提示新版本与下载链接**，不覆盖包管理器安装。
+
+`apps/desktop/src-tauri/tauri.conf.json` 里 `plugins.updater.pubkey` 为 Minisign 公钥（与 CI secrets 中的私钥成对）。私钥**不要**进仓库；CI 通过 GitHub Actions secrets 注入：
+
+1. 维护者生成 updater 密钥对（Tauri signer / Minisign），将**公钥**写入 `tauri.conf.json` 的 `pubkey` 并合入 main。
+2. 在 GitHub 仓库 Settings → Secrets 添加 `TAURI_SIGNING_PRIVATE_KEY` 与 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。
+3. 推送 `v*` tag 或走 `build-windows.yml` 工作流；产物含 `latest.json` 与签名安装包。**CI 不会自动创建密钥。**
+
 ## 许可证
 
 [MIT](LICENSE) © 2026 hendyzone

@@ -7,6 +7,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { THEMES, getTheme, themeCategory } from "../themes";
 import SyncGuide from "./SyncGuide";
 import CollaborationSettings from "./CollaborationSettings";
+import UpdateSettingsSection from "./UpdateSettingsSection";
+import type { UpdateOffer } from "../lib/appUpdater";
 import type { CollaborationSession } from "../lib/collaboration";
 import {
   collectSyncUi,
@@ -26,6 +28,7 @@ interface Props {
   onClose: () => void;
   /** 同步下载替换 servers.json 后通知外层刷新列表（内存态与磁盘保持一致） */
   onServersChanged?: () => void;
+  onUpdateFound?: (offer: UpdateOffer, linkOnly: boolean) => void;
 }
 
 const SYNC_REPOSITORY_KEY = "dssh.sync.repository";
@@ -48,8 +51,9 @@ export default function SettingsModal({
   onChange,
   onClose,
   onServersChanged,
+  onUpdateFound,
 }: Props) {
-  const [section, setSection] = useState<"appearance" | "sync" | "team">("appearance");
+  const [section, setSection] = useState<"appearance" | "sync" | "team" | "update">("appearance");
   const [themeFilter, setThemeFilter] = useState("all");
   const [themeQuery, setThemeQuery] = useState("");
   const visibleThemes = THEMES.filter(
@@ -145,16 +149,22 @@ export default function SettingsModal({
         <h3 id="settings-title">设置</h3>
         <Tabs
           value={section}
-          onValueChange={(value) => setSection(value as "appearance" | "sync" | "team")}
+          onValueChange={(value) => setSection(value as "appearance" | "sync" | "team" | "update")}
           className="settings-tabs"
         >
           <TabsList className="settings-nav" aria-label="设置分类">
             <TabsTrigger value="appearance">外观</TabsTrigger>
             <TabsTrigger value="sync">同步</TabsTrigger>
             <TabsTrigger value="team">团队</TabsTrigger>
+            <TabsTrigger value="update">更新</TabsTrigger>
           </TabsList>
           <div className="settings-scroll">
             <TabsContent value="team"><CollaborationSettings sessions={collaborationSessions}/></TabsContent>
+            <TabsContent value="update" className="settings-section" hidden={section !== "update"} forceMount>
+              <UpdateSettingsSection
+                onUpdateFound={(offer, linkOnly) => onUpdateFound?.(offer, linkOnly)}
+              />
+            </TabsContent>
             <TabsContent
               forceMount
               value="appearance"

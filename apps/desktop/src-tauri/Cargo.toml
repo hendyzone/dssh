@@ -36,6 +36,8 @@ argon2 = "0.5"
 base64 = "0.22"
 rand = "0.8"
 tauri-plugin-notification = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 portable-pty = "0.9"
 
 [features]

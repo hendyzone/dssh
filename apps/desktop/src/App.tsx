@@ -54,6 +54,8 @@ import {
 import ServerImport from "./components/ServerImport";
 import ServerForm from "./components/ServerForm";
 import SettingsModal from "./components/SettingsModal";
+import UpdatePrompt from "./components/UpdatePrompt";
+import { useAppUpdate } from "./lib/useAppUpdate";
 import SftpPanel from "./components/SftpPanel";
 import Sidebar from "./components/Sidebar";
 import {
@@ -97,6 +99,7 @@ export default function App() {
   const collaborationProfiles = useCollaboration();
   const teamService = useTeamService();
   const serviceTeamsEnabled = !!teamService.url && teamService.projects.length > 0;
+  const appUpdate = useAppUpdate();
   useEffect(() => {
     document.addEventListener("contextmenu", preventBrowserContextMenu, true);
     return () =>
@@ -1414,6 +1417,7 @@ export default function App() {
           settings={settings}
           onChange={updateSettings}
           onClose={() => setShowSettings(false)}
+          onUpdateFound={appUpdate.presentOffer}
           onServersChanged={() => {
             setSidebarRevision((value) => value + 1);
             // 同步下载已替换磁盘上的 servers.json，重新加载内存列表
@@ -1423,6 +1427,12 @@ export default function App() {
           }}
         />
       )}
+      <UpdatePrompt
+        state={appUpdate.prompt}
+        onLater={appUpdate.dismiss}
+        onInstall={() => void appUpdate.install()}
+        onOpenRelease={appUpdate.openRelease}
+      />
     </div>
   );
 }
