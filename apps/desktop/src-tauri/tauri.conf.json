@@ -24,9 +24,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/hendyzone/dssh/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVDNUE3MEJDMDA0NTMxOTEKUldSUk1VVUF2SEJhWEp4MzJ4ajVwQnBlNUx6RXQ2aFpsdHMzeUJVS05Na0hTZEtocmp3KzcxVSsK"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "license": "MIT",
     "icon": [
       "icons/32x32.png",

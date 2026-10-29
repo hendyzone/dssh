@@ -20,6 +20,7 @@ mod tmux_program_status;
 mod team_service;
 mod workspace;
 mod vscode;
+mod updater;
 
 use tauri::Manager;
 
@@ -39,6 +40,8 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let _ = diagnostics::record(app.handle(), "startup", "Tauri application started", "");
             #[cfg(windows)]
@@ -127,6 +130,7 @@ pub fn run() {
             commands::desktop_report_error,
             commands::desktop_restart,
             commands::list_ssh_keys,
+            updater::updater_install_mode,
             workspace::workspace_changes,
             workspace::workspace_diff,
             vscode::vscode_open,
