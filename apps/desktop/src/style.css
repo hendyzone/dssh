@@ -1394,3 +1394,8 @@ input[type="range"] {
 }
 .terminal-clipboard-error.terminal-download-notice button { flex: 0 0 auto; width: auto; height: 24px; padding: 0 8px; border: 1px solid var(--ui-border); border-radius: 6px; font-size: 11px; }
 .terminal-clipboard-error.terminal-download-notice button[aria-label="关闭下载提示"] { width: 24px; height: 24px; padding: 0; border: 0; }
+/* 左右图标栏 + connections 面板（T8）：两侧同一组件，顺序由设置决定。 */
+.right-rail-slot{display:flex;align-items:stretch;flex:0 0 auto;min-width:0}
+.connections-dock{display:flex;flex:0 0 auto;min-width:0;min-height:0}
+.connections-dock-right .sidebar{border-right:0;border-left:1px solid var(--ui-border)}
+.icon-rail{flex:0 0 36px;height:100%}

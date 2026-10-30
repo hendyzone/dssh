@@ -2,7 +2,7 @@ import {defaultLookupSettings,saveLookupSettings,teamLookupScope} from "../src/l
 import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "../src/App";
-import { deleteServer, loadServers } from "../src/store";
+import { deleteServer, loadServers, saveSettings } from "../src/store";
 import { loadWorkspace, saveWorkspace } from "../src/lib/workspaceRestore";
 import { StrictMode, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -641,4 +641,32 @@ it.each([false,true])("Adventure opens a Lead through member navigation (already
   const workspace=loadWorkspace(servers), target=workspace.tabs.find(t=>t.id===workspace.activeTabId)!;
   expect(target.panes[target.activePane]).toMatchObject({server,tmux});
   if(existing)expect(invoke).toHaveBeenCalledWith("collaboration_worktree",{sessionId:"ssh-lead-pane",target:{id:"$41",created:41}});
+});
+
+it("keeps the server list as a rail panel and moves it to the other rail by drag", async () => {
+  localStorage.clear();
+  const view = render(<App />);
+  await act(async () => {});
+  const leftRail = view.container.querySelector(".icon-rail-left")!;
+  const connections = leftRail.querySelector('[data-panel-icon="connections"]') as HTMLElement;
+  expect(connections.getAttribute("aria-label")).toBe("服务器与连接");
+  expect(view.container.querySelector(".connections-dock-left .sidebar")).toBeTruthy();
+  // 再点一次收起，再点展开
+  fireEvent.click(connections);
+  expect(view.container.querySelector(".connections-dock")).toBeNull();
+  fireEvent.click(leftRail.querySelector('[data-panel-icon="connections"]')!);
+  expect(view.container.querySelector(".connections-dock-left .sidebar")).toBeTruthy();
+  // 拖到右栏：图标换边、服务器面板跟着换边，并写进设置
+  const transfer = {effectAllowed: "", dropEffect: "", data: {} as Record<string, string>,
+    setData(key: string, value: string) { this.data[key] = value; }, getData(key: string) { return this.data[key] ?? ""; }};
+  fireEvent.dragStart(connections, {dataTransfer: transfer});
+  fireEvent.dragOver(view.container.querySelector(".icon-rail-right")!, {dataTransfer: transfer});
+  fireEvent.drop(view.container.querySelector(".icon-rail-right")!, {dataTransfer: transfer});
+  fireEvent.dragEnd(connections, {dataTransfer: transfer});
+  await act(async () => {});
+  expect(view.container.querySelector('.icon-rail-right [data-panel-icon="connections"]')).toBeTruthy();
+  expect(view.container.querySelector(".connections-dock-right .sidebar")).toBeTruthy();
+  const saved = vi.mocked(saveSettings).mock.calls.at(-1)?.[0];
+  expect(saved?.panelLayout?.connections?.side).toBe("right");
+  view.unmount();
 });

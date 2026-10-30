@@ -1,0 +1,11 @@
+.side-panel-settings{display:flex;flex-direction:column;gap:10px}
+.side-panel-settings-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.side-panel-settings-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.side-panel-settings-row{display:flex;align-items:center;gap:8px;padding:4px 6px;border:1px solid var(--ui-border);border-radius:7px;background:var(--ui-panel)}
+.side-panel-settings-row.is-dragging{opacity:.6}
+.side-panel-settings-row.is-drop-target{border-color:var(--ui-accent);box-shadow:0 0 0 1px var(--ui-accent) inset}
+.side-panel-settings-grip{cursor:grab;color:var(--ui-muted);letter-spacing:-1px}
+.side-panel-settings-icon{display:inline-flex;color:var(--ui-muted)}
+.side-panel-settings-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.side-panel-settings-side{display:inline-flex;gap:2px}
+.side-panel-settings-show{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--ui-muted)}
