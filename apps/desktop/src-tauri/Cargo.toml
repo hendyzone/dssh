@@ -1,6 +1,6 @@
 [package]
 name = "dssh"
-version = "1.2.27"
+version = "1.2.28"
 description = "Personal modern SSH client"
 license = "MIT"
 edition = "2021"
