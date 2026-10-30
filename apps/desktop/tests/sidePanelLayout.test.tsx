@@ -84,8 +84,13 @@ it("settings rows change side, visibility and order, and reach the icon rails", 
   const rightRail = view.container.querySelector(".icon-rail-right")!;
   expect([...rightRail.querySelectorAll("[data-panel-icon]")].map(node => node.getAttribute("data-panel-icon")).slice(0, 3))
     .toEqual(["tmux", "team", "sftp"]);
-  // 设置里把 sftp 换到左边：图标出现在左栏
-  fireEvent.click(within(sftpRow).getByRole("button", {name: /左/}));
+  // 当前侧的按钮处于按下态，另一侧普通；切换后按下态跟着走
+  const sftpRowNow = () => view.container.querySelector('[data-panel-row="sftp"]')!;
+  expect(within(sftpRowNow()).getByRole("button", {name: "右侧"}).getAttribute("aria-pressed")).toBe("true");
+  expect(within(sftpRowNow()).getByRole("button", {name: "左侧"}).getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(within(sftpRowNow()).getByRole("button", {name: "左侧"}));
+  expect(within(sftpRowNow()).getByRole("button", {name: "左侧"}).getAttribute("aria-pressed")).toBe("true");
+  expect(within(sftpRowNow()).getByRole("button", {name: "右侧"}).getAttribute("aria-pressed")).toBe("false");
   expect([...view.container.querySelectorAll(".icon-rail-left [data-panel-icon]")].map(node => node.getAttribute("data-panel-icon")))
     .toContain("sftp");
   // 隐藏 sftp：图标消失，恢复默认后回来
