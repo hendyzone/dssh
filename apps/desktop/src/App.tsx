@@ -65,6 +65,9 @@ import {
 } from "./lib/recentConnections";
 import TerminalView from "./components/TerminalView";
 import WebPageView from "./components/WebPageView";
+import FileBookmarks from "./components/FileBookmarks";
+import { bookmarkId, loadBookmarks, removeBookmark, saveBookmarks, toggleBookmark, pageTarget,
+  type FileBookmark } from "./lib/bookmarks";
 import type { PageTarget, WebPage } from "./lib/webPages";
 import {
   isAppShortcut,
@@ -141,10 +144,36 @@ export default function App() {
     setWebPages(previous => previous.filter(page => page.id !== id));
     if (activeTabId === id) setActiveTabId(webPages.filter(page => page.id !== id).at(-1)?.id ?? tabs.at(-1)?.id ?? null);
   };
+  // 远程文件书签：只存本机 localStorage（服务器 id + 远端绝对路径），不同步。
+  const [bookmarks, setBookmarks] = useState<FileBookmark[]>(() => loadBookmarks());
+  const [bookmarksOpen, setBookmarksOpen] = useState(false);
+  const [bookmarkError, setBookmarkError] = useState("");
+  const [pageMenu, setPageMenu] = useState<{pageId: string; x: number; y: number} | null>(null);
+  const [pendingBookmark, setPendingBookmark] = useState<{serverId: string; target: PageTarget} | null>(null);
+  const updateBookmarks = (next: FileBookmark[]) => { setBookmarks(next); saveBookmarks(next); };
   /** 窗格 id → 后端 SSH session_id（连接建立后回填） */
   const [backendIds, setBackendIds] = useState<Record<string, string | null>>(
     {},
   );
+  /** A preview tab's SSH backend → the server it belongs to (bookmarks are per server, not per backend). */
+  const pageServerId = (page: WebPage) =>
+    tabs.flatMap(tab => tab.panes).find(pane => backendIds[pane.id] === page.sessionId)?.server.id;
+  const pageBookmark = (page: WebPage) => {
+    const target = page.target;
+    if (target.kind === "url") return undefined;
+    const serverId = pageServerId(page);
+    return serverId ? bookmarks.find(bookmark => bookmark.serverId === serverId && bookmark.path === target.path) : undefined;
+  };
+  const togglePageBookmark = (page: WebPage) => {
+    if (page.target.kind === "url") return;
+    const serverId = pageServerId(page);
+    if (!serverId) return;
+    const server = servers.find(item => item.id === serverId);
+    updateBookmarks(toggleBookmark(bookmarks, {
+      serverId, serverName: server?.name ?? serverId, kind: page.target.kind,
+      path: page.target.path, title: page.target.path.split("/").pop() || page.target.path,
+    }));
+  };
   /** 每个标签页打开的侧面板 */
   const taskStates = useTasks();
   const claudeHosts = new Map<string, ClaudeHost>();
@@ -459,6 +488,29 @@ export default function App() {
     if (tmux) setSidePanels((prev) => ({ ...prev, [tab.id]: "tmux" }));
   };
 
+  /** Reopen by the saved server and path; reuse any live SSH connection, otherwise connect first. */
+  const openBookmark = (bookmark: FileBookmark) => {
+    setBookmarkError("");
+    const server = servers.find(item => item.id === bookmark.serverId);
+    if (!server) { setBookmarkError(`服务器已不存在：${bookmark.serverName}`); return; }
+    const target = pageTarget(bookmark);
+    const existing = webPages.find(page => page.target.kind !== "url" &&
+      page.target.path === bookmark.path && pageServerId(page) === server.id);
+    if (existing) { setActiveTabId(existing.id); setBookmarksOpen(false); return; }
+    const pane = tabs.flatMap(tab => tab.panes).find(item => item.server.id === server.id && backendIds[item.id]);
+    if (pane) { openPage(target, backendIds[pane.id]!); setBookmarksOpen(false); return; }
+    setPendingBookmark({serverId: server.id, target});
+    setBookmarksOpen(false);
+    connect(server);
+  };
+  useEffect(() => {
+    if (!pendingBookmark) return;
+    const pane = tabs.flatMap(tab => tab.panes)
+      .find(item => item.server.id === pendingBookmark.serverId && backendIds[item.id]);
+    if (!pane) return;
+    openPage(pendingBookmark.target, backendIds[pane.id]!);
+    setPendingBookmark(null);
+  }, [pendingBookmark, tabs, backendIds]);
   const hasActiveConnection = (tabId: string) => {
     const tab = tabs.find((item) => item.id === tabId);
     return tab?.panes.some((pane) => Boolean(backendIds[pane.id])) ?? false;
@@ -822,7 +874,9 @@ export default function App() {
   };
   const renderTab = (t: TabInfo) => {
     const page = webPages.find(item => item.id === t.id);
-    if (page) return <div key={page.id} role="tab" tabIndex={0}
+    if (page) {
+      const saved = pageBookmark(page);
+      return <div key={page.id} role="tab" tabIndex={0}
       aria-selected={page.id === activeTabId} className={`tab ${page.id === activeTabId ? "active" : ""}`}
       onClick={() => setActiveTabId(page.id)}
       onKeyDown={event => {
@@ -830,11 +884,16 @@ export default function App() {
           event.preventDefault(); setActiveTabId(page.id);
         }
       }}
-      onAuxClick={event => { if (event.button === 1) { event.preventDefault(); closePage(page.id); } }}>
+      onAuxClick={event => { if (event.button === 1) { event.preventDefault(); closePage(page.id); } }}
+      onContextMenu={event => { if (page.target.kind === "url") return; event.preventDefault(); setPageMenu({pageId: page.id, x: event.clientX, y: event.clientY}); }}>
+      {page.target.kind !== "url" && <Button variant="ghost" size="icon-sm" className={`tab-bookmark${saved ? " is-on" : ""}`}
+        aria-label={saved ? "取消收藏" : "收藏"} title={saved ? "取消收藏" : "收藏"}
+        onClick={event => { event.stopPropagation(); togglePageBookmark(page); }}>{saved ? "★" : "☆"}</Button>}
       <span title={page.title}>🌐 {page.title}</span>
       <Button variant="ghost" size="icon-sm" aria-label={`关闭网页 ${page.title}`}
         onClick={event => { event.stopPropagation(); closePage(page.id); }}><IconClose size={12}/></Button>
     </div>;
+    }
     // 未重命名的标签仍以服务器名和 #n 序号显示。
     const sameServer = tabs.filter(
       (x) => x.panes[0].server.id === t.panes[0].server.id,
@@ -1005,6 +1064,14 @@ export default function App() {
             onNewTab={() => setServerPickerOpen(true)}
             onMove={moveToGroup}
           />
+          <Button variant="ghost" size="icon-sm" className="file-bookmarks-entry" aria-label="文件书签"
+            aria-expanded={bookmarksOpen} title="文件书签" onClick={() => { setBookmarkError(""); setBookmarksOpen(open => !open); }}>
+            <span aria-hidden="true">{bookmarks.length ? "★" : "☆"}</span>
+          </Button>
+          {bookmarksOpen && <FileBookmarks bookmarks={bookmarks} servers={servers} error={bookmarkError}
+            onOpen={openBookmark}
+            onRemove={bookmark => updateBookmarks(removeBookmark(bookmarks, bookmark.id))}
+            onClose={() => setBookmarksOpen(false)}/>}
           {activeTabId && tabs.some(tab => tab.id === activeTabId) && (
             <div
               className="workspace-tab-actions"
@@ -1232,6 +1299,15 @@ export default function App() {
           })
         )}
       </main>
+      {pageMenu && (() => {
+        const page = webPages.find(item => item.id === pageMenu.pageId);
+        if (!page) return null;
+        const saved = pageBookmark(page);
+        return <PositionedMenu x={pageMenu.x} y={pageMenu.y} onClose={() => setPageMenu(null)} label="文件标签操作">
+          <MenuItem onClick={() => { togglePageBookmark(page); setPageMenu(null); }}>{saved ? "取消收藏" : "收藏"}</MenuItem>
+          <MenuItem onClick={() => { closePage(page.id); setPageMenu(null); }}>关闭标签</MenuItem>
+        </PositionedMenu>;
+      })()}
       {contextMenu && (
         <PositionedMenu
           x={contextMenu.x}
