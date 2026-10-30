@@ -622,3 +622,23 @@ it("passes the active pane identity and terminal cwd to SFTP", async () => {
   expect(screen.getByTestId("sftp-identity").dataset).toMatchObject({cwd: "/right", server: "server"});
   expect(screen.getByTestId("sftp-identity").dataset.tmux).toBeUndefined();
 });
+
+it.each([false,true])("Adventure opens a Lead through member navigation (already open: %s)", async existing => {
+  terminalMock.connected=true;
+  const servers=await loadServers(), server=servers[0];
+  const tmux={id:"$41",created:41,name:"project-lead"};
+  const lead={project:"adventure",email:"project-lead@example.invalid",role:"Lead",host:server.host,port:server.port,username:server.username,workdir:"/work/project",tmux};
+  teamServiceMock.url="https://team.example.invalid/api/v1";teamServiceMock.projects=["adventure"];
+  teamServiceMock.snapshots={adventure:{project:"adventure",seq:1,lseq:1,members:[lead],ai:{},live:{},machines:{},offline:false,status:"online",identity:"adventure"}};
+  vi.mocked(invoke).mockImplementation(async command=>command==="collaboration_worktree"?"/work/project":[]);
+  saveWorkspace({tabs:[{id:"start",activePane:0,panes:[{id:"start-pane",server}]},...(existing?[{id:"lead-tab",activePane:0,panes:[{id:"lead-pane",server,tmux}]}]:[])],activeTabId:"start",groups:[],cwds:{}});
+  render(<App/>);await act(async()=>{});
+  const before=screen.getAllByRole("tab").length;
+  fireEvent.click(screen.getByRole("button",{name:"冒险团"}));
+  fireEvent.click(screen.getByRole("button",{name:"打开 Lead · adventure · project-lead"}));
+  await waitFor(()=>expect(loadWorkspace(servers).activeTabId).not.toBe("start"));
+  expect(screen.getAllByRole("tab")).toHaveLength(before+(existing?0:1));
+  const workspace=loadWorkspace(servers), target=workspace.tabs.find(t=>t.id===workspace.activeTabId)!;
+  expect(target.panes[target.activePane]).toMatchObject({server,tmux});
+  if(existing)expect(invoke).toHaveBeenCalledWith("collaboration_worktree",{sessionId:"ssh-lead-pane",target:{id:"$41",created:41}});
+});

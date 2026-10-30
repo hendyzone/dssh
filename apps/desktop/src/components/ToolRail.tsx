@@ -6,7 +6,7 @@ import {
   TooltipTrigger,
 } from "./ui/tooltip";
 import { useEffect, useState } from "react";
-import { Gauge, Users } from "lucide-react";
+import { Crown, Gauge, Users } from "lucide-react";
 import {
   IconFolder,
   IconForward,
@@ -28,7 +28,7 @@ export default function ToolRail({
   collaborationEnabled?: boolean;
   teamEnabled?: boolean;
   onSelect: (
-    kind: "sftp" | "tmux" | "forward" | "tasks" | "changes" | "monitor" | "collaboration" | "team" | "quota",
+    kind: "sftp" | "tmux" | "forward" | "tasks" | "changes" | "monitor" | "collaboration" | "team" | "quota" | "adventure",
   ) => void;
 }) {
   const [revision, setRevision] = useState(0);
@@ -44,8 +44,8 @@ export default function ToolRail({
         className={"tool-rail tool-rail-" + side}
         aria-label={side === "left" ? "左侧工具" : "右侧工具"}
       >
-        {(["sftp", "tmux", "team", "forward", "tasks", "changes", "monitor", "quota", "collaboration"] as const)
-          .filter(kind => !local || ["tmux", "tasks", "collaboration", "team"].includes(kind))
+        {(["sftp", "tmux", "team", "adventure", "forward", "tasks", "changes", "monitor", "quota", "collaboration"] as const)
+          .filter(kind => !local || ["tmux", "tasks", "collaboration", "team", "adventure"].includes(kind))
           .filter(kind => kind !== "team" || teamEnabled)
           .filter(kind => kind !== "collaboration" || collaborationEnabled)
           .filter(
@@ -72,12 +72,13 @@ export default function ToolRail({
                       monitor: "服务器监控",
                       collaboration: "Agent 协作",
                       team: "团队 · 打开成员终端",
+                      adventure: "冒险团",
                       quota: "模型额度",
                     }[kind]
                   }
                   onClick={() => onSelect(kind)}
                 >
-                  {kind === "team" ? <Users size={18}/> : kind === "quota" ? <Gauge size={18}/> : kind === "sftp" ? (
+                  {kind === "adventure" ? <Crown size={18}/> : kind === "team" ? <Users size={18}/> : kind === "quota" ? <Gauge size={18}/> : kind === "sftp" ? (
                     <IconFolder />
                   ) : kind === "forward" ? (
                     <IconForward />
@@ -110,6 +111,7 @@ export default function ToolRail({
                     monitor: "服务器监控",
                     collaboration: "Agent 协作",
                     team: "团队 · 打开成员终端",
+                      adventure: "冒险团",
                       quota: "模型额度",
                   }[kind]
                 }
