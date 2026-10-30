@@ -65,6 +65,8 @@ export interface AppSettings {
   scrollSensitivity?: number;
   /** 丢弃触摸板松手后惯性滚动的低速尾巴（默认开） */
   touchpadInertiaFilter?: boolean;
+  /** 左右图标栏：每个面板的侧别、顺序与显示；缺省用注册表默认值。 */
+  panelLayout?: Record<string, {side: "left" | "right"; hidden: boolean; order: number}>;
 }
 
 /** GitHub 仓库连通性检查结果（PAT 不会返回到前端或界面回显）。 */

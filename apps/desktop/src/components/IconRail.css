@@ -1,0 +1,8 @@
+.icon-rail .icon-rail-slot{display:flex;align-items:center;justify-content:center;position:relative;padding:2px 0}
+.icon-rail .icon-rail-slot.is-drop-before::before,
+.icon-rail .icon-rail-slot.is-drop-after::after{content:"";position:absolute;left:6px;right:6px;height:2px;border-radius:2px;background:var(--ui-accent);pointer-events:none}
+.icon-rail .icon-rail-slot.is-drop-before::before{top:-2px}
+.icon-rail .icon-rail-slot.is-drop-after::after{bottom:-2px}
+.icon-rail .icon-rail-slot [data-panel-icon]{cursor:grab}
+.icon-rail .icon-rail-slot [data-panel-icon]:active{cursor:grabbing}
+.icon-rail.is-dragging .icon-rail-slot [data-panel-icon]{opacity:.75}
