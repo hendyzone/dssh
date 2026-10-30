@@ -1,3 +1,4 @@
+import AdventurePanel from "./components/AdventurePanel";
 import { useTeamService } from "./lib/teamService";
 import { AppDialog } from "./components/ui/app-dialog";
 import { PositionedMenu, MenuItem } from "./components/ui/positioned-menu";
@@ -86,6 +87,7 @@ import { applyTheme, getTheme } from "./themes";
 import type { AppSettings, ServerEntry, SessionInfo, TabInfo } from "./types";
 
 type SidePanel =
+  | "adventure"
   | "team"
   | "collaboration"
   | "sftp"
@@ -1123,7 +1125,7 @@ export default function App() {
           tabs.map((t) => {
             const local = isLocalShell(t.panes[t.activePane].server);
             const requestedPanel = sidePanels[t.id] ?? null;
-            const panel = local && !["tmux", "tasks", "collaboration", "team"].includes(requestedPanel ?? "") ? null : requestedPanel;
+            const panel = local && !["tmux", "tasks", "collaboration", "team", "adventure"].includes(requestedPanel ?? "") ? null : requestedPanel;
             const activePaneBackend =
               backendIds[t.panes[t.activePane]?.id ?? ""] ?? null;
             const collaboration = t.id === activeTabId ? activeCollaboration : undefined;
@@ -1217,6 +1219,11 @@ export default function App() {
                       />
                     </PanelDock>
                   )}
+                  {panel === "adventure" && t.id === activeTabId && <PanelDock kind="adventure">
+                    <AdventurePanel service={teamService} servers={servers} sessions={officeSessions}
+                      onOpen={(member, server) => openTeamMember(member, server, t.groupId)}
+                      onClose={() => togglePanel(t.id, null)}/>
+                  </PanelDock>}
                   {panel === "team" && t.id === activeTabId && (serviceTeamsEnabled || t.panes[t.activePane]?.tmux) && <PanelDock kind="team">
                     <TeamPanel onLookupScopeChange={onLookupScopeChange} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}

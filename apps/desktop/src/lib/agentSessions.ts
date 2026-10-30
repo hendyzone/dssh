@@ -168,8 +168,8 @@ export function noteFreshness(updatedAt: string | undefined, nowMs = Date.now())
 }
 
 /** The Lead: role starting with 「Lead」, or the very tmux session the team panel is bound to. */
-export function isLeadMember(m: Pick<TeamMember, "role" | "tmux" | "workdir" | "username">, self: { tmuxId: string; tmuxCreated: number; workdir: string; username: string }) {
-  return /^lead\b/i.test(m.role.trim()) || (m.tmux.id === self.tmuxId && m.tmux.created === self.tmuxCreated && m.workdir === self.workdir && m.username === self.username);
+export function isLeadMember(m: Pick<TeamMember, "role" | "tmux" | "workdir" | "username">, self?: { tmuxId: string; tmuxCreated: number; workdir: string; username: string }) {
+  return /^lead\b/i.test(m.role.trim()) || (!!self && m.tmux.id === self.tmuxId && m.tmux.created === self.tmuxCreated && m.workdir === self.workdir && m.username === self.username);
 }
 
 type Matchable = Pick<TeamMember, "host" | "workdir" | "email" | "tmux" | "currentTask">;
