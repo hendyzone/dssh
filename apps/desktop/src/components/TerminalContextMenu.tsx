@@ -12,6 +12,7 @@ export default function TerminalContextMenu({
   canPaste,
   onCopy,
   onOpenPage,
+  download,
   onCopyTmux,
   onPaste,
   onPasteImage,
@@ -22,6 +23,8 @@ export default function TerminalContextMenu({
   canPaste: boolean;
   onCopy: () => void;
   onOpenPage?: () => void;
+  /** Shown only after the selected text stats as an existing remote file. */
+  download?: {pending: boolean; onClick: () => void};
   onCopyTmux?: () => void;
   onPaste: () => void;
   onPasteImage?: () => void;
@@ -36,6 +39,7 @@ export default function TerminalContextMenu({
       label="终端操作"
     >
       {onOpenPage && <MenuItem onClick={onOpenPage}>在 dssh 新标签页打开</MenuItem>}
+      {download && <MenuItem disabled={download.pending} onClick={download.onClick}>下载</MenuItem>}
       <MenuItem disabled={!position.selection} onClick={onCopy}>
         复制选中文本
       </MenuItem>
