@@ -11,7 +11,8 @@ import { invoke } from "@tauri-apps/api/core";
 import ChangesPanel from "./components/ChangesPanel";
 import { focusTask, focusTmuxPane, taskLabels } from "./lib/taskStatus";
 import { useTmuxProgramStatus } from "./lib/tmuxProgramStatus";
-import ToolRail from "./components/ToolRail";
+import IconRail from "./components/IconRail";
+import { placePanel, railPanels, settingsLayout, setPanelHidden, setPanelSide, type PanelId, type PanelSide } from "./lib/sidePanelLayout";
 import CollaborationPanel from "./components/CollaborationPanel";
 import TeamPanel from "./components/TeamPanel";
 import { useOfficeMail } from "./lib/useOfficeMail";
@@ -396,6 +397,14 @@ export default function App() {
     setSettings(next);
     saveSettings(next);
   };
+  // Left and right rails share one layout: side, order and visibility per panel.
+  const panelLayout = useMemo(() => settingsLayout(settings), [settings.panelLayout]);
+  const updateLayout = (next: typeof panelLayout) => updateSettings({...settings, panelLayout: next});
+  const movePanel = (id: PanelId, side: PanelSide, index: number) => updateLayout(placePanel(panelLayout, id, side, index));
+  const movePanelToSide = (id: PanelId, side: PanelSide) => {
+    if (panelLayout[id].side !== side) updateLayout(placePanel(panelLayout, id, side, 9999));
+  };
+  const [connectionsOpen, setConnectionsOpen] = useState(true);
 
   const setBackendId = useCallback(
     (paneId: string, backendId: string | null) => {
@@ -1001,6 +1010,35 @@ export default function App() {
     );
   };
 
+  const railTab = tabs.find(tab => tab.id === activeTabId);
+  const railLocal = railTab ? isLocalShell(railTab.panes[railTab.activePane].server) : false;
+  const railPanel = sidePanels[activeTabId ?? ""] ?? null;
+  const railTeamAvailable = serviceTeamsEnabled || (!railLocal && !!railTab?.panes[railTab.activePane]?.tmux);
+  const railCollaborationAvailable = !!activeCollaboration?.enabled &&
+    (activeCollaboration.taskboardEnabled || activeCollaboration.mailEnabled);
+  const railAvailable = (id: PanelId) => {
+    if (id === "connections") return true;
+    if (!railTab) return false;
+    if (railLocal && !["tmux", "tasks", "collaboration", "team", "adventure"].includes(id)) return false;
+    if ((id === "team" || id === "adventure") && !railTeamAvailable) return false;
+    if (id === "collaboration" && !railCollaborationAvailable) return false;
+    return true;
+  };
+  const railActiveOn = (side: PanelSide) => connectionsOpen && panelLayout.connections.side === side
+    ? "connections"
+    : railPanel && panelLayout[railPanel]?.side === side ? railPanel : null;
+  const rail = (side: PanelSide) => <IconRail side={side}
+    items={railPanels(panelLayout, side).filter(item => railAvailable(item.id))}
+    active={railActiveOn(side)}
+    onSelect={id => { if (id === "connections") { setConnectionsOpen(open => !open); return; } if (activeTabId) togglePanel(activeTabId, id); }}
+    onMove={movePanel}/>;
+  const connectionsPanel = !panelLayout.connections.hidden && connectionsOpen
+    ? <Sidebar recentIds={recentIds} key={sidebarRevision} servers={servers} onConnect={connect}
+        onAdd={(group) => { setNewServerGroup(group); setFormTarget(undefined); }}
+        onImport={() => setShowImport(true)} onEdit={(s) => setFormTarget(s)}
+        onDelete={removeServer} onServersChanged={setServers} onOpenSettings={() => setShowSettings(true)}/>
+    : null;
+
   return (
     <div className={`app${linuxTitleBar ? " has-linux-titlebar" : ""}`}>
       <LinuxTitleBar />
@@ -1011,21 +1049,8 @@ export default function App() {
           {closeError}
         </div>
       )}
-      <Sidebar
-        recentIds={recentIds}
-        key={sidebarRevision}
-        servers={servers}
-        onConnect={connect}
-        onAdd={(group) => {
-          setNewServerGroup(group);
-          setFormTarget(undefined);
-        }}
-        onImport={() => setShowImport(true)}
-        onEdit={(s) => setFormTarget(s)}
-        onDelete={removeServer}
-        onServersChanged={setServers}
-        onOpenSettings={() => setShowSettings(true)}
-      />
+      {rail("left")}
+      {connectionsPanel && <div className={`connections-dock connections-dock-${panelLayout.connections.side}`}>{connectionsPanel}</div>}
       <main className="main-area">
         {taskStates.some((task) => task.unread) && (
           <div className="task-reminder" role="status">
@@ -1136,22 +1161,6 @@ export default function App() {
                 hidden={t.id !== activeTabId}
               >
                 <div className="session-content">
-                  <ToolRail
-                    local={local}
-                    side="left"
-                    teamEnabled={serviceTeamsEnabled || (!local && !!t.panes[t.activePane]?.tmux)}
-                    collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
-                    active={panel}
-                    onSelect={(kind) => togglePanel(t.id, kind)}
-                  />
-                  <ToolRail
-                    local={local}
-                    side="right"
-                    teamEnabled={serviceTeamsEnabled || (!local && !!t.panes[t.activePane]?.tmux)}
-                    collaborationEnabled={!!collaboration?.enabled && (collaboration.taskboardEnabled || collaboration.mailEnabled)}
-                    active={panel}
-                    onSelect={(kind) => togglePanel(t.id, kind)}
-                  />
                   <div
                     className="panes"
                     style={{
@@ -1191,7 +1200,7 @@ export default function App() {
                     ))}
                   </div>
                   {panel === "monitor" && (
-                    <PanelDock kind="monitor">
+                    <PanelDock kind="monitor" side={panelLayout.monitor.side} onSideChange={next => movePanelToSide("monitor", next)}>
                       <aside
                         className="monitor-dock"
                         id={"monitor-dock-" + t.id}
@@ -1199,7 +1208,7 @@ export default function App() {
                     </PanelDock>
                   )}
                   {panel === "quota" && (
-                    <PanelDock kind="quota">
+                    <PanelDock kind="quota" side={panelLayout.quota.side} onSideChange={next => movePanelToSide("quota", next)}>
                       <QuotaPanel
                         servers={quotaServers}
                         currentId={t.panes[t.activePane]?.server.id}
@@ -1209,7 +1218,7 @@ export default function App() {
                     </PanelDock>
                   )}
                   {panel === "tasks" && (
-                    <PanelDock kind="tasks">
+                    <PanelDock kind="tasks" side={panelLayout.tasks.side} onSideChange={next => movePanelToSide("tasks", next)}>
                       <TasksPanel
                         sessionId={activePaneBackend ?? undefined}
                         serverName={t.panes[t.activePane]?.server.name}
@@ -1219,21 +1228,21 @@ export default function App() {
                       />
                     </PanelDock>
                   )}
-                  {panel === "adventure" && t.id === activeTabId && <PanelDock kind="adventure">
+                  {panel === "adventure" && t.id === activeTabId && <PanelDock kind="adventure" side={panelLayout.adventure.side} onSideChange={next => movePanelToSide("adventure", next)}>
                     <AdventurePanel service={teamService} servers={servers} sessions={officeSessions}
                       onOpen={(member, server) => openTeamMember(member, server, t.groupId)}
                       onClose={() => togglePanel(t.id, null)}/>
                   </PanelDock>}
-                  {panel === "team" && t.id === activeTabId && (serviceTeamsEnabled || t.panes[t.activePane]?.tmux) && <PanelDock kind="team">
+                  {panel === "team" && t.id === activeTabId && (serviceTeamsEnabled || t.panes[t.activePane]?.tmux) && <PanelDock kind="team" side={panelLayout.team.side} onSideChange={next => movePanelToSide("team", next)}>
                     <TeamPanel onLookupScopeChange={onLookupScopeChange} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
-                    <PanelDock kind="collaboration">
+                    <PanelDock kind="collaboration" side={panelLayout.collaboration.side} onSideChange={next => movePanelToSide("collaboration", next)}>
                       <CollaborationPanel lookupPaneId={t.panes[t.activePane].id} onLookupScopeChange={onLookupScopeChange} key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (
-                    <PanelDock kind="changes">
+                    <PanelDock kind="changes" side={panelLayout.changes.side} onSideChange={next => movePanelToSide("changes", next)}>
                       <ChangesPanel
                         key={activePaneBackend ?? "disconnected"}
                         sessionId={activePaneBackend ?? ""}
@@ -1243,7 +1252,7 @@ export default function App() {
                     </PanelDock>
                   )}
                   {panel === "sftp" && (
-                    <PanelDock kind="sftp">
+                    <PanelDock kind="sftp" side={panelLayout.sftp.side} onSideChange={next => movePanelToSide("sftp", next)}>
                       <SftpPanel
                         paneId={t.panes[t.activePane]?.id}
                         tmuxSessionName={t.panes[t.activePane]?.tmux?.name}
@@ -1257,7 +1266,7 @@ export default function App() {
                     </PanelDock>
                   )}
                   {panel === "tmux" && (
-                    <PanelDock kind="tmux">
+                    <PanelDock kind="tmux" side={panelLayout.tmux.side} onSideChange={next => movePanelToSide("tmux", next)}>
                       <TmuxPanel
                         key={activePaneBackend ?? "disconnected"}
                         sessionId={activePaneBackend ?? ""}
@@ -1287,7 +1296,7 @@ export default function App() {
                     </PanelDock>
                   )}
                   {panel === "forward" && (
-                    <PanelDock kind="forward">
+                    <PanelDock kind="forward" side={panelLayout.forward.side} onSideChange={next => movePanelToSide("forward", next)}>
                       <ForwardPanel
                         sessionId={activePaneBackend ?? ""}
                         onClose={() => togglePanel(t.id, null)}
@@ -1306,6 +1315,11 @@ export default function App() {
           })
         )}
       </main>
+      <div className="right-rail-slot">
+        {rail("right")}
+        {panelLayout.connections.side === "right" && connectionsPanel &&
+          <div className={`connections-dock connections-dock-right`}>{connectionsPanel}</div>}
+      </div>
       {pageMenu && (() => {
         const page = webPages.find(item => item.id === pageMenu.pageId);
         if (!page) return null;

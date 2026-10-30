@@ -5,9 +5,14 @@ import { usePanelWidth } from "../lib/usePanelWidth";
 export default function PanelDock({
   kind,
   children,
+  side: controlledSide,
+  onSideChange,
 }: {
   kind: string;
   children: ReactNode;
+  /** Controlled by the shared side-panel layout when provided; omitting keeps the legacy per-panel behavior. */
+  side?: "left" | "right";
+  onSideChange?: (side: "left" | "right") => void;
 }) {
   const key = `dssh.panel-side.${kind}`;
   const drag = useRef<{
@@ -37,17 +42,19 @@ export default function PanelDock({
       window.removeEventListener("blur", cancel);
     };
   }, []);
-  const [side, setSide] = useState<"left" | "right">(() => {
+  const [localSide, setLocalSide] = useState<"left" | "right">(() => {
     try {
       return localStorage.getItem(key) === "left" ? "left" : "right";
     } catch {
       return "right";
     }
   });
+  const side = controlledSide ?? localSide;
   useEffect(() => {
     const sync = () => {
+      if (controlledSide) return;
       try {
-        setSide(localStorage.getItem(key) === "left" ? "left" : "right");
+        setLocalSide(localStorage.getItem(key) === "left" ? "left" : "right");
       } catch {}
     };
     window.addEventListener("dssh-panel-position", sync);
@@ -55,13 +62,14 @@ export default function PanelDock({
   }, [key]);
   const sizing = usePanelWidth(kind, side);
   const move = (value: "left" | "right") => {
-    setSide(value);
+    if (!controlledSide) setLocalSide(value);
     try {
       localStorage.setItem(key, value);
       window.dispatchEvent(new Event("dssh-panel-position"));
     } catch {
       /* Keep current position without persistence. */
     }
+    onSideChange?.(value);
   };
   return (
     <section
