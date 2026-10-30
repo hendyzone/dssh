@@ -28,6 +28,9 @@ import { useTaskIndex, type BoardSource, type IndexTask } from "../lib/taskLooku
 import { createTaskLinkProvider } from "../lib/taskLinks";
 import { createPathLinkProvider } from "../lib/pathLinks";
 import { selectedPage, type PageTarget } from "../lib/webPages";
+import { createTransfer, formatTransferSize, subscribeTransfers, transferPercent, waitForTransferListener } from "../lib/transfers";
+import { downloadCandidate, isRemoteFile, parentPath, type RemoteDownloadCandidate, type RemoteEntry } from "../lib/terminalDownload";
+import TerminalDownloadNotice, { type TerminalDownloadNotice as DownloadNotice } from "./TerminalDownloadNotice";
 import TerminalTaskLayer, { type TaskHover } from "./TerminalTaskLayer";
 import TerminalContextMenu, {
   type TerminalMenuPosition,
@@ -302,6 +305,11 @@ export default function TerminalView({
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const [menu, setMenu] = useState<TerminalMenuPosition | null>(null);
+  // Right-click 「下载」: only after the selected text stats as an existing remote file.
+  const [download, setDownload] = useState<(RemoteDownloadCandidate & {pending: boolean}) | null>(null);
+  const [downloadNotice, setDownloadNotice] = useState<DownloadNotice | null>(null);
+  const cwdRef = useRef<string | undefined>(session.restoreCwd);
+  const menuGeneration = useRef(0);
   const menuPage = menu ? selectedPage(menu.selection) : null;
   // Task codes: the provider reads refs so the terminal is not rebuilt when the index refreshes.
   const taskIndex = useTaskIndex(taskLinks?.source, taskLinks?.project, !!taskLinks);
@@ -325,12 +333,54 @@ export default function TerminalView({
     return () => window.clearTimeout(timer);
   }, [clipboardError, clipboardSuccess, clipboardNoticeVersion]);
   const closeMenu = () => {
+    menuGeneration.current++;
     setMenu(null);
+    setDownload(null);
     // Return focus after the menu's focus scope has unmounted.
     requestAnimationFrame(() => termRef.current?.focus());
   };
+  /** Resolve the selection against the pane cwd, then stat it (read-only); the menu opens immediately. */
+  const prepareDownload = async (selection: string) => {
+    const generation = ++menuGeneration.current;
+    setDownload(null);
+    const candidate = downloadCandidate(selection, cwdRef.current);
+    const backend = backendRef.current;
+    if (local || !candidate || !backend) return;
+    setDownload({...candidate, pending: true});
+    const entries = await invoke<RemoteEntry[]>("sftp_list", {sessionId: backend, path: parentPath(candidate.path)})
+      .catch(() => null);
+    if (generation !== menuGeneration.current) return;
+    setDownload(isRemoteFile(entries, candidate.path) ? {...candidate, pending: false} : null);
+  };
+  /** Same transfer path as the SFTP panel: native save dialog, progress events, completion notice. */
+  const startDownload = (candidate: RemoteDownloadCandidate) => {
+    const backend = backendRef.current;
+    if (!backend) return;
+    closeMenu();
+    const transferId = createTransfer(backend, candidate.name, "download");
+    setDownloadNotice({phase: "progress", name: candidate.name, percent: 0, detail: ""});
+    const unsubscribe = subscribeTransfers(backend, list => {
+      const item = list.find(transfer => transfer.transferId === transferId);
+      if (!item || item.status === "error") return;
+      if (item.status === "active") {
+        setDownloadNotice({phase: "progress", name: candidate.name, percent: transferPercent(item),
+          detail: [formatTransferSize(item.transferredBytes), formatTransferSize(item.totalBytes)].filter(Boolean).join(" / ")});
+      }
+    });
+    void (async () => {
+      try {
+        await waitForTransferListener(backend);
+        const localPath = await invoke<string>("sftp_download", {sessionId: backend, remotePath: candidate.path, transferId});
+        setDownloadNotice({phase: "done", name: candidate.name, localPath});
+      } catch (reason) {
+        setDownloadNotice({phase: "error", name: candidate.name, detail: String(reason)});
+      } finally {
+        unsubscribe();
+      }
+    })();
+  };
   useEffect(() => {
-    if (!active || !inputEnabled) setMenu(null);
+    if (!active || !inputEnabled) { setMenu(null); setDownload(null); }
   }, [active, inputEnabled]);
   const activeRef = useRef(active);
   const inputEnabledRef = useRef(inputEnabled);
@@ -745,6 +795,7 @@ export default function TerminalView({
             oscCarry = scanned.carry;
             if (scanned.path) {
               lastCwd = scanned.path;
+              cwdRef.current = scanned.path;
               onCwdChangeRef.current?.(session.id, scanned.path);
             }
             output!.push(chunk);
@@ -949,11 +1000,13 @@ export default function TerminalView({
           event.stopPropagation();
           if (!inputEnabled || !termRef.current) return;
           setClipboardError(null);
+          const selection = termRef.current.getSelection();
           setMenu({
             x: event.clientX,
             y: event.clientY,
-            selection: termRef.current.getSelection(),
+            selection,
           });
+          void prepareDownload(selection);
         }}
       />
       {taskLinks && (
@@ -974,6 +1027,7 @@ export default function TerminalView({
               closeMenu();
               onOpenPage(menuPage, backendRef.current ?? "");
             } : undefined}
+          download={download ? {pending: download.pending, onClick: () => startDownload(download)} : undefined}
           canPaste={connectionState === "connected" && inputEnabled}
           onCopyTmux={() => {
             closeMenu();
@@ -999,6 +1053,7 @@ export default function TerminalView({
           }}
         />
       )}
+      {downloadNotice && <TerminalDownloadNotice notice={downloadNotice} onClose={() => setDownloadNotice(null)}/>}
       {clipboardError && (
         <div
           className={`terminal-clipboard-error${clipboardSuccess ? " is-success" : ""}`}
