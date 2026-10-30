@@ -1,3 +1,5 @@
+import { Changelog } from "./Changelog";
+import { bundledVersion, installedEntries } from "../lib/changelog";
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { Button } from "./ui/button";
@@ -10,12 +12,12 @@ interface Props {
 }
 
 export default function UpdateSettingsSection({ onUpdateFound }: Props) {
-  const [version, setVersion] = useState("…");
+  const [version, setVersion] = useState(bundledVersion);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void getVersion().then(setVersion).catch(() => setVersion("未知"));
+    void getVersion().then(setVersion).catch(() => setVersion(bundledVersion));
   }, []);
 
   const check = async () => {
@@ -49,6 +51,10 @@ export default function UpdateSettingsSection({ onUpdateFound }: Props) {
         检查更新
       </Button>
       {message ? <p role="status">{message}</p> : null}
+      <details className="changelog-history">
+        <summary>更新日志</summary>
+        <Changelog entries={installedEntries(version)}/>
+      </details>
       <p className="sync-field-help">
         <a href={RELEASE_PAGE} target="_blank" rel="noreferrer">
           打开 GitHub 发布页

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkForUpdate,
   formatDownloadProgress,
@@ -9,6 +9,10 @@ import {
 } from "../src/lib/appUpdater";
 import { render, screen } from "@testing-library/react";
 import UpdatePrompt from "../src/components/UpdatePrompt";
+
+vi.mock("@tauri-apps/api/app", () => ({ getVersion: async () => "1.2.27" }));
+beforeEach(() => vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline"))));
+afterEach(() => vi.unstubAllGlobals());
 
 const offer: UpdateOffer = { version: "9.9.9", notes: "测试说明", handle: {} };
 

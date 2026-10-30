@@ -53,6 +53,11 @@ jobs:
           projectPath: apps/desktop
           includeUpdaterJson: false
 
+      - name: Extract release notes
+        id: release-notes
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/extract-release-notes.mjs
+
       # 仅推 v* tag 时创建/上传 Release，保留签名及 latest.json 的发布路径。
       - name: Build and upload Tauri release
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -67,6 +72,7 @@ jobs:
           tagName: v__VERSION__
           releaseName: "dssh v__VERSION__"
           releaseDraft: true
+          releaseBody: ${{ steps.release-notes.outputs.body }}
 
       - name: Upload installers (artifact)
         uses: actions/upload-artifact@v4

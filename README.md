@@ -95,19 +95,7 @@ Optional **Agent collaboration** (「Agent 协作」) is configured per tmux ses
 **Team panel** (「团队」): configure a team service URL and project subscriptions in Settings → Agent collaboration. Members and their live state arrive through WebSocket independently of the current terminal's tmux session. Open a registered member's tmux session across servers in one click ([details](docs/agent-collaboration.md#从-lead-跳转到成员终端)).
 The "Activity" (「动态」) and "Members" (「成员」) pages use service status. Only members explicitly reported as `no_agent` fall back to the configured taskboard's read-only session collector (`GET /api/v1/agent-sessions`); taskboard data also provides current cards and recent commits.
 
-**v1.2.27:** In-app updates: dssh checks GitHub Releases on startup (and from Settings → Check for updates), shows the new version and notes, then downloads, verifies the signature and restarts after you confirm; deb/rpm installs get a download link instead. The pixel office seats temporary workers in their own area with the card they were opened for, and marks them for reclaim once that card is done.
-
-**v1.2.26:** Preview tabs for remote images, Markdown and HTML files have a Download button that saves the file locally, with the same progress, success notice and "open folder" action as the SFTP panel.
-
-**v1.2.25:** Member cards in the team panel keep the name right next to the status dot; the AI summary now sits on its own row instead of widening the first column.
-
-**v1.2.24:** Following the focused terminal now also works for Lead sessions whose name differs from the project name: the session is matched against the team roster instead.
-
-**v1.2.23:** The pixel office fits a whole team (Lead plus up to eight workers) on one screen with adaptive sizing, puts stuck and waiting members first, dims idle desks and hides secondary details. It follows the project of the focused terminal and can go full screen with the header hidden. Each member shows the task card it is working on, preferring the roster entry over the branch binding. AI summary lines no longer show the summarizer model, models fall back to the roster role, and team panels keep separate projects and locks per tab.
-
-**v1.2.22:** Team service AI summaries are shown read-only with an on-demand refresh. Team service settings (URL, subscriptions and token) travel in the encrypted GitHub sync, and subscriptions are checked against the projects the service exposes. Task lookup locks follow the open team. A redesigned pixel office shows every member's desk with live state, task note and AI summary. Member names are consistent across panels. Settings are merged into one Team page, task lookup only uses a directly reachable board, and the task list and detail card are easier to read and close.
-
-**v1.2.21:** The configurable team service supplies live rosters and status over WebSocket, with member editing and conflict handling. Reading and writing the Lead's local roster over SSH has been removed. Local AI summary generation is disabled; generation will move to the server.
+See [更新日志 / Changelog](CHANGELOG.md) for version history.
 
 - Members are grouped by state: **Needs attention** (「需要处理」: stuck, a confirmation prompt, unsent input, or a session that is gone while its card is still in progress) is listed first and highlighted; **Waiting on Lead** (「等 Lead」: the worker is idle but its card is still in progress or blocked, longest wait first); **Delivered, awaiting review** (「已交付·待验收」: the card is in review); running; **Idle, ready for work** (「空闲·可派活」: no card in progress, blocked or in review). The Lead's own session has its own group.
 - A summary line at the top: needs attention N · waiting on Lead N (longest X) · in review N · ready for work N.

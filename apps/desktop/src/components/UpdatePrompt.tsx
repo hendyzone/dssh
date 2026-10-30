@@ -1,3 +1,4 @@
+import { UpdateChangelog } from "./Changelog";
 import { AppDialog } from "./ui/app-dialog";
 import { Button } from "./ui/button";
 import type { UpdateOffer } from "../lib/appUpdater";
@@ -38,7 +39,7 @@ export default function UpdatePrompt({ state, onLater, onInstall, onOpenRelease 
   const { offer, linkOnly } = state;
   return (
     <AppDialog title={`发现新版本 ${offer.version}`} onClose={onLater}>
-      {offer.notes ? <pre className="update-notes">{offer.notes}</pre> : null}
+      <UpdateChangelog version={offer.version} notes={offer.notes}/>
       {linkOnly ? (
         <p>此安装方式不支持自动更新</p>
       ) : (

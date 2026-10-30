@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  define: {__AGENT_PLAYBOOK__:JSON.stringify(readFileSync(new URL("../../docs/agent-playbook.md",import.meta.url),"utf8"))},
+  define: {__APP_CHANGELOG__:JSON.stringify(readFileSync(new URL("../../CHANGELOG.md",import.meta.url),"utf8")),__AGENT_PLAYBOOK__:JSON.stringify(readFileSync(new URL("../../docs/agent-playbook.md",import.meta.url),"utf8"))},
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

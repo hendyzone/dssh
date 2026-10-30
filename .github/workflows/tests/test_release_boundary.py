@@ -54,6 +54,17 @@ class ReleaseBoundary(unittest.TestCase):
                 for key in ['TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD']:
                     self.assertEqual(active[0]['env'][key], '${{ secrets.' + key + ' }}')
 
+    def test_release_notes_only_run_before_tag_upload(self):
+        notes = next(s for s in self.steps if s.get('id') == 'release-notes')
+        release = next(s for s in self.builds if s['with'].get('tagName'))
+        self.assertLess(self.steps.index(notes), self.steps.index(release))
+        self.assertEqual(notes['run'], 'node scripts/extract-release-notes.mjs')
+        self.assertEqual(release['with']['releaseBody'], '${{ steps.release-notes.outputs.body }}')
+        for event, ref, expected in [('push', 'refs/heads/main', False),
+                                    ('workflow_dispatch', 'refs/tags/v1.2.27', False),
+                                    ('push', 'refs/tags/v1.2.27', True)]:
+            self.assertEqual(enabled(notes, event, ref), expected)
+
     def test_triggers_matrix_and_artifacts_preserved(self):
         # PyYAML's YAML 1.1 loader treats the unquoted key "on" as True.
         triggers = self.workflow.get('on', self.workflow.get(True))
