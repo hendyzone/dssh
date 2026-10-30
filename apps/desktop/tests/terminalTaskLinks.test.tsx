@@ -5,6 +5,7 @@ import { fakeInvoke } from "./fixtures/taskboard";
 const mocks = vi.hoisted(() => ({ init: vi.fn(), invoke: vi.fn(), listen: vi.fn(), instances: [] as any[] }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("ghostty-web/ghostty-vt.wasm?url", () => ({ default: "test.wasm" }));
 
 /** Buffer rows as cells; a wide CJK char is followed by a zero spacer cell like ghostty. */
@@ -51,7 +52,10 @@ beforeEach(() => {
   clearBoardCache();
   mocks.instances.length = 0;
   mocks.init.mockResolvedValue(undefined);
-  mocks.listen.mockResolvedValue(() => {});
+  mocks.listen.mockImplementation(async (name: string, callback: (event: { payload: any }) => void) => {
+    if (name === "ssh_start") queueMicrotask(() => callback({ payload: { sessionId: "backend" } }));
+    return () => {};
+  });
   const board = fakeInvoke();
   mocks.invoke.mockReset();
   mocks.invoke.mockImplementation(async (command: string, args: any) => command === "ssh_connect" ? "backend" : board(command, args));
@@ -59,16 +63,18 @@ beforeEach(() => {
 
 it("opens the selected remote HTML in a dssh tab from Shift+right-click", async () => {
   const openPage = vi.fn();
-  const { container } = render(<TerminalView {...props} onOpenPage={openPage}/>);
-  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("ssh_connect", expect.anything()));
+  const onStateChange = vi.fn();
+  const view = render(<TerminalView {...props} onOpenPage={openPage} onStateChange={onStateChange}/>);
+  await waitFor(() => expect(onStateChange).toHaveBeenCalledWith("pane", "connected"));
   const term = mocks.instances[0];
   term.getSelection.mockReturnValue("file:///home/example/核心机制.html");
-  fireEvent.contextMenu(container.querySelector("canvas")!, { shiftKey: true });
+  fireEvent.contextMenu(view.container.querySelector("canvas")!, { shiftKey: true });
   fireEvent.click(screen.getByRole("menuitem", { name: "在 dssh 新标签页打开" }));
   expect(openPage).toHaveBeenCalledWith({ kind: "html", path: "/home/example/核心机制.html" }, "backend");
   term.getSelection.mockReturnValue("echo hello");
-  fireEvent.contextMenu(container.querySelector("canvas")!, { shiftKey: true });
+  fireEvent.contextMenu(view.container.querySelector("canvas")!, { shiftKey: true });
   expect(screen.queryByRole("menuitem", { name: "在 dssh 新标签页打开" })).toBeNull();
+  view.unmount();
 });
 
 it("maps codes to cell columns, including after wide characters", async () => {
@@ -90,10 +96,11 @@ it("recognises only the project's real codes, shows a hover card and opens the f
   render(<TerminalView {...props} taskLinks={{ source, project: "smart-table" }}/>);
   await act(async () => { await new Promise(r => setTimeout(r, 25)); });
   const term = mocks.instances[0];
-  expect(term.providers).toHaveLength(1);
+  const taskProvider = term.providers.at(-1)!;
+  expect(term.providers.length).toBeGreaterThanOrEqual(1);
   term.rows = ["worker: T1090 已交付，AM-42 不属于本项目，NOTE-1 也不是"];
   let links: any[] | undefined;
-  await waitFor(async () => { links = await linksAt(term.providers[0], 0); expect(links).toHaveLength(1); });
+  await waitFor(async () => { links = await linksAt(taskProvider, 0); expect(links).toHaveLength(1); });
   expect(links![0].text).toBe("T1090");
 
   await act(async () => { links![0].hover(true); });

@@ -614,6 +614,7 @@ export class Terminal implements ITerminalCore {
           const rect = canvas.getBoundingClientRect();
           return { left: rect.left, top: rect.top };
         },
+        suppressMouseReport: (event) => this.options.suppressMouseReport?.(event) ?? false,
       };
 
       // Create input handler
@@ -678,8 +679,9 @@ export class Terminal implements ITerminalCore {
       // Register link providers
       // OSC8 first (explicit hyperlinks take precedence)
       this.linkDetector.registerProvider(new OSC8LinkProvider(this));
-      // URL regex second (fallback for plain text URLs)
-      this.linkDetector.registerProvider(new UrlRegexProvider(this));
+      if (this.options.plainTextUrlLinks !== false) {
+        this.linkDetector.registerProvider(new UrlRegexProvider(this));
+      }
 
       // Setup mouse event handling for links and scrollbar
       // Use capture phase to intercept scrollbar clicks before SelectionManager

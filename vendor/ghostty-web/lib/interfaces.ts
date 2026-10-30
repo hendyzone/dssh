@@ -39,6 +39,10 @@ export interface ITerminalOptions {
   // Called when a link is clicked. Return true to prevent default link handling.
   // If not provided, links use the click event's owning window to open a new tab, which may be blocked in webviews.
   onLinkClick?: (url: string, event: MouseEvent) => boolean;
+  /** When false, the built-in plain-text UrlRegexProvider is not registered (use registerLinkProvider instead). Default: true. */
+  plainTextUrlLinks?: boolean;
+  /** Skip forwarding mouse reports to the application when this returns true (link clicks, context menu). */
+  suppressMouseReport?: (event: MouseEvent) => boolean;
 
   // Internal: Ghostty WASM instance (optional, for test isolation)
   // If not provided, uses the module-level instance from init()

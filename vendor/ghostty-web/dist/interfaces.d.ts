@@ -26,6 +26,9 @@ export interface ITerminalOptions {
     scrollbarWidth?: number;
     scrollSensitivity?: number;
     onLinkClick?: (url: string, event: MouseEvent) => boolean;
+    /** When false, the built-in plain-text UrlRegexProvider is not registered. Default: true. */
+    plainTextUrlLinks?: boolean;
+    suppressMouseReport?: (event: MouseEvent) => boolean;
     ghostty?: Ghostty;
 }
 export interface ITerminalDecoration {

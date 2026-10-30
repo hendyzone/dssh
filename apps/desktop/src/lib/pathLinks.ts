@@ -43,6 +43,7 @@ export function createPathLinkProvider(term: PathLinkTerminal, options: {
   generation: () => number;
   enabled: () => boolean;
   onActivate: (target: PageTarget, event: MouseEvent) => void;
+  onHover?: (target: PageTarget | null) => void;
 }): ILinkProvider {
   return {
     provideLinks(y, callback) {
@@ -69,6 +70,10 @@ export function createPathLinkProvider(term: PathLinkTerminal, options: {
         links.push({
           text: value,
           range: { start: { x: columns[match.index], y }, end: { x: columns[match.index + value.length] - 1, y } },
+          hover: (isHovered) => {
+            if (!options.enabled()) return;
+            options.onHover?.(isHovered ? target : null);
+          },
           activate: event => {
             // Reflow and reconnects invalidate links captured by the old terminal state.
             if (!options.enabled() || generation !== options.generation()) return;
