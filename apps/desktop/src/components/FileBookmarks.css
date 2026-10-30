@@ -1,0 +1,16 @@
+.file-bookmarks{position:absolute;top:calc(100% + 6px);right:8px;z-index:40;width:min(360px,90vw);max-height:60vh;overflow:auto;padding:8px;border:1px solid var(--ui-border, #3b4148);border-radius:8px;background:var(--ui-bg-elevated, #1f2328);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.file-bookmarks-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 4px 6px}
+.file-bookmarks-head strong{font-size:12px;font-weight:600}
+.file-bookmarks-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.file-bookmarks-list li{display:flex;align-items:center;gap:2px;min-width:0}
+.file-bookmark-open{flex:1;min-width:0;justify-content:flex-start;display:flex;gap:8px;overflow:hidden}
+.file-bookmark-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-bookmark-server{margin-left:auto;flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;opacity:.7}
+.file-bookmark-server[data-missing="true"]{text-decoration:line-through}
+.file-bookmarks-empty{margin:6px 4px;font-size:12px;opacity:.7}
+.file-bookmarks-error{margin:2px 4px 6px;font-size:12px;color:var(--ui-danger, #e5534b)}
+.workspace-tab-header{position:relative}
+.file-bookmarks-entry{flex:none;align-self:center;margin-right:4px}
+.tab .tab-bookmark{flex:none;padding:0 3px;line-height:1;color:var(--ui-muted)}
+.tab .tab-bookmark.is-on{color:#e0af68}
+.tab .tab-bookmark:hover{color:var(--ui-fg)}
