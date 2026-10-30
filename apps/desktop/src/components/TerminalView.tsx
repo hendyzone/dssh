@@ -27,6 +27,8 @@ import type { AppSettings, SessionInfo } from "../types";
 import { useTaskIndex, type BoardSource, type IndexTask } from "../lib/taskLookup";
 import { createTaskLinkProvider } from "../lib/taskLinks";
 import { createPathLinkProvider } from "../lib/pathLinks";
+import { createHttpUrlLinkProvider } from "../lib/httpUrlLinks";
+import { openExternalHttpUrl, sanitizeHttpUrl } from "../lib/openExternalHttpUrl";
 import { selectedPage, type PageTarget } from "../lib/webPages";
 import { createTransfer, formatTransferSize, subscribeTransfers, transferPercent, waitForTransferListener } from "../lib/transfers";
 import { downloadCandidate, isRemoteFile, parentPath, type RemoteDownloadCandidate, type RemoteEntry } from "../lib/terminalDownload";
@@ -316,6 +318,8 @@ export default function TerminalView({
   const taskIndexRef = useRef<Map<string, IndexTask> | undefined>(undefined);
   taskIndexRef.current = taskLinks && taskIndex?.project === taskLinks.project ? taskIndex.byCode : undefined;
   const pointerRef = useRef({ x: 0, y: 0, width: 0 });
+  const hoveredHttpUrlRef = useRef<string | null>(null);
+  const hoveredPathTargetRef = useRef<PageTarget | null>(null);
   const [taskHover, setTaskHover] = useState<TaskHover | null>(null);
   const [taskOpened, setTaskOpened] = useState<{ code: string; seq: number } | null>(null);
   useEffect(() => { setTaskHover(null); setTaskOpened(null); }, [taskLinks?.project, taskLinks?.source.key]);
@@ -336,6 +340,8 @@ export default function TerminalView({
     menuGeneration.current++;
     setMenu(null);
     setDownload(null);
+    hoveredHttpUrlRef.current = null;
+    hoveredPathTargetRef.current = null;
     // Return focus after the menu's focus scope has unmounted.
     requestAnimationFrame(() => termRef.current?.focus());
   };
@@ -343,7 +349,9 @@ export default function TerminalView({
   const prepareDownload = async (selection: string) => {
     const generation = ++menuGeneration.current;
     setDownload(null);
-    const candidate = downloadCandidate(selection, cwdRef.current);
+    const pathHover = hoveredPathTargetRef.current?.kind !== "url" ? hoveredPathTargetRef.current?.path : undefined;
+    const candidate = downloadCandidate(selection, cwdRef.current)
+      ?? (pathHover ? downloadCandidate(pathHover, cwdRef.current) : null);
     const backend = backendRef.current;
     if (local || !candidate || !backend) return;
     setDownload({...candidate, pending: true});
@@ -486,13 +494,26 @@ export default function TerminalView({
       if (disposed || !containerRef.current) return;
 
       const theme = getTheme(settings.themeId).term;
-      const t = new Terminal({
-        // Own automatic copying so the notice reflects the actual clipboard result.
+      let t: Terminal;
+      t = new Terminal({
         copyOnSelect: false,
+        plainTextUrlLinks: false,
         cursorBlink: activeRef.current && inputEnabledRef.current,
         fontSize: settings.fontSize,
         fontFamily: settings.fontFamily,
         theme,
+        suppressMouseReport: (event: MouseEvent) => {
+          if (event.ctrlKey || event.metaKey) return true;
+          if (event.button === 2 && (hoveredHttpUrlRef.current || hoveredPathTargetRef.current)) return true;
+          return false;
+        },
+        onLinkClick: (url, event: MouseEvent) => {
+          if (event.button !== 0 || !(event.ctrlKey || event.metaKey) || event.detail > 1 || t.getSelection()) return false;
+          const href = sanitizeHttpUrl(url);
+          if (!href) return false;
+          void openExternalHttpUrl(href);
+          return true;
+        },
       });
       term = t;
       termRef.current = t;
@@ -524,6 +545,7 @@ export default function TerminalView({
           t.registerLinkProvider?.(createPathLinkProvider(t, {
             generation: () => linkGeneration,
             enabled: () => !disposed && connectionStateRef === "connected" && !!backendRef.current && !!onOpenPageRef.current,
+            onHover: (target) => { hoveredPathTargetRef.current = target; },
             onActivate: (target, event) => {
               // The provider's synchronous enabled check guarantees a live backend.
               const backend = backendRef.current!;
@@ -535,6 +557,11 @@ export default function TerminalView({
             },
           }));
         }
+        t.registerLinkProvider?.(createHttpUrlLinkProvider(t, {
+          generation: () => linkGeneration,
+          enabled: () => !disposed && connectionStateRef === "connected" && (local ? !!backendRef.current : true),
+          onHover: (href) => { hoveredHttpUrlRef.current = href; },
+        }));
         t.registerLinkProvider?.(createTaskLinkProvider(t, {
           index: () => taskIndexRef.current,
           onHover: (task) => {
@@ -1018,11 +1045,18 @@ export default function TerminalView({
           onClose={() => setTaskOpened(null)}
         />
       )}
-      {menu && (
+      {menu && (() => {
+        const browserRaw = hoveredHttpUrlRef.current ?? menu.selection ?? (menuPage?.kind === "url" ? menuPage.url : "");
+        const browserHref = sanitizeHttpUrl(browserRaw);
+        return (
         <TerminalContextMenu
           position={menu}
-          onOpenPage={onOpenPage && menuPage &&
-            (menuPage.kind === "url" || (!local && connectionState === "connected"))
+          onOpenInBrowser={browserHref ? () => {
+            closeMenu();
+            void openExternalHttpUrl(browserHref);
+          } : undefined}
+          onOpenPage={onOpenPage && menuPage && menuPage.kind !== "url" &&
+            (!local && connectionState === "connected")
             ? () => {
               closeMenu();
               onOpenPage(menuPage, backendRef.current ?? "");
@@ -1052,7 +1086,8 @@ export default function TerminalView({
             closeMenu();
           }}
         />
-      )}
+        );
+      })()}
       {downloadNotice && <TerminalDownloadNotice notice={downloadNotice} onClose={() => setDownloadNotice(null)}/>}
       {clipboardError && (
         <div

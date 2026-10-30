@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("ghostty-web/ghostty-vt.wasm?url", () => ({ default: "test.wasm" }));
 
 /** Match ghostty's buffer cells, including the spacer after a wide character. */
@@ -95,7 +96,10 @@ vi.mock("ghostty-web", async () => {
           renderer: this.renderer, wasmTerm: this.wasmTerm, linkDetector: this.detector,
           isOpen: true, getViewportY: () => this.viewportY, requestRender: vi.fn(),
         });
-        this.builtins = [new OSC8LinkProvider(this), new UrlRegexProvider(this)];
+        this.builtins = [new OSC8LinkProvider(this)];
+        if (this.options.plainTextUrlLinks !== false) {
+          this.builtins.push(new UrlRegexProvider(this));
+        }
         this.builtins.forEach(provider => this.pointer.registerLinkProvider(provider));
         root.querySelector("canvas")!.addEventListener("mousemove", event => this.pointer.processMouseMove(event));
         root.querySelector("canvas")!.addEventListener("click", this.pointer.handleClick);
@@ -568,10 +572,11 @@ it("requires connected state even after the backend id exists during SSH initial
   }
 });
 
-it.each([false, true])("matches built-in URL hover and click behavior with mouse tracking %s", async tracking => {
+it.each([false, true])("matches http URL hover and Ctrl+click with mouse tracking %s", async tracking => {
   const { term, openPage } = await mount();
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  vi.mocked(openUrl).mockClear();
   term.hasMouseTracking.mockReturnValue(tracking);
-  const externalOpen = vi.spyOn(term.root.ownerDocument.defaultView, "open").mockImplementation(() => null);
   try {
     setLine(term, "/tmp/chart.png");
     await act(async () => { fireEvent.mouseMove(term.root.querySelector("canvas"), { clientX: 11, clientY: 1 }); });
@@ -585,11 +590,11 @@ it.each([false, true])("matches built-in URL hover and click behavior with mouse
     await act(async () => { fireEvent.mouseMove(term.root.querySelector("canvas"), { clientX: 11, clientY: 1 }); });
     expect(term.renderer.setHoveredLinkRange).toHaveBeenLastCalledWith(expect.objectContaining({ startX: 0, endX: url.length - 1 }));
     await clickAt(term, 1);
-    expect(externalOpen).not.toHaveBeenCalled();
+    expect(openUrl).not.toHaveBeenCalled();
     await clickAt(term, 1, { ctrlKey: true });
-    expect(externalOpen).toHaveBeenCalledExactlyOnceWith(url, "_blank", "noopener,noreferrer");
+    expect(openUrl).toHaveBeenCalledWith(url);
     expect(openPage).toHaveBeenCalledTimes(1);
-  } finally { externalOpen.mockRestore(); }
+  } finally { /* openUrl is a mock */ }
 });
 
 it("keeps two absolute paths separate across an unwritten terminal cell", async () => {

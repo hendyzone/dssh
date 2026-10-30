@@ -23,6 +23,8 @@ export interface MouseTrackingConfig {
         left: number;
         top: number;
     };
+    /** When true, do not forward this mouse event to the application (tmux/vim mouse mode). */
+    suppressMouseReport?: (event: MouseEvent) => boolean;
 }
 export declare class InputHandler {
     private encoder;

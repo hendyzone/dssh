@@ -38,6 +38,7 @@ rand = "0.8"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-opener = "2"
 portable-pty = "0.9"
 
 [features]

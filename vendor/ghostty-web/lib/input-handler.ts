@@ -170,6 +170,8 @@ export interface MouseTrackingConfig {
   getCellDimensions: () => { width: number; height: number };
   /** Get canvas/container offset for accurate position calculation */
   getCanvasOffset: () => { left: number; top: number };
+  /** When true, do not forward this mouse event to the application (tmux/vim mouse mode). */
+  suppressMouseReport?: (event: MouseEvent) => boolean;
 }
 
 export class InputHandler {
@@ -889,6 +891,7 @@ export class InputHandler {
   private handleMouseDown(event: MouseEvent): void {
     if (this.isDisposed) return;
     if (event.shiftKey || !this.mouseConfig?.hasMouseTracking()) return;
+    if (this.mouseConfig?.suppressMouseReport?.(event)) return;
 
     const cell = this.pixelToCell(event);
     if (!cell) return;
@@ -934,6 +937,7 @@ export class InputHandler {
     this.mouseButtonsPressed &= ~(1 << button);
 
     if (!this.mouseConfig?.hasMouseTracking()) return;
+    if (this.mouseConfig?.suppressMouseReport?.(event)) return;
 
     // Only report the release if this instance saw the press. Without this,
     // releases originating in another terminal or outside any terminal

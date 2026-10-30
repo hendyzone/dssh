@@ -1774,7 +1774,7 @@ var Te = new TextDecoder(), P = class e {
 		this.onDataCallback(s);
 	}
 	handleMouseDown(e) {
-		if (this.isDisposed || e.shiftKey || !this.mouseConfig?.hasMouseTracking()) return;
+		if (this.isDisposed || e.shiftKey || !this.mouseConfig?.hasMouseTracking() || this.mouseConfig?.suppressMouseReport?.(e)) return;
 		let t = this.pixelToCell(e);
 		if (!t) return;
 		let n = e.button;
@@ -1783,7 +1783,7 @@ var Te = new TextDecoder(), P = class e {
 	handleMouseUp(e) {
 		if (this.isDisposed) return;
 		let t = e.button, n = (this.mouseButtonsPressed & 1 << t) != 0;
-		if (this.mouseButtonsPressed &= ~(1 << t), !this.mouseConfig?.hasMouseTracking() || !n) return;
+		if (this.mouseButtonsPressed &= ~(1 << t), !this.mouseConfig?.hasMouseTracking() || this.mouseConfig?.suppressMouseReport?.(e) || !n) return;
 		let r = this.pixelToCell(e);
 		r && this.sendMouseEvent(t, r.col, r.row, !0, e);
 	}
@@ -5630,7 +5630,8 @@ var Ut = class e {
 						left: e.left,
 						top: e.top
 					};
-				}
+				},
+				suppressMouseReport: (e) => this.options.suppressMouseReport?.(e) ?? !1
 			};
 			this.inputHandler = new Ne(this.ghostty, e, (e) => {
 				this.options.disableStdin || (this.selectionManager?.clearSelection(), this.awaitingEcho = !0, this.dataEmitter.fire(e));
@@ -5640,7 +5641,7 @@ var Ut = class e {
 				this.keyEmitter.fire(e);
 			}, this.customKeyEventHandler, (e) => this.wasmTerm?.getMode(e, !1) ?? !1, () => this.options.copyMode === "native" ? !1 : this.copySelection(), this.textarea, s), this.selectionManager = new We(this, this.renderer, this.wasmTerm, this.textarea), this.renderer.setSelectionManager(this.selectionManager), this.selectionManager.onSelectionChange(() => {
 				this.selectionChangeEmitter.fire(), this.requestRender();
-			}), this.linkDetector = new Pe(this), this.linkDetector.registerProvider(new Fe(this)), this.linkDetector.registerProvider(new Le(this)), e.addEventListener("mousedown", this.handleMouseDown, { capture: !0 }), e.addEventListener("mousemove", this.handleMouseMove), e.addEventListener("mouseleave", this.handleMouseLeave), e.addEventListener("click", this.handleClick), n.addEventListener("mouseup", this.handleMouseUp), e.addEventListener("wheel", this.handleWheel, {
+			}), this.linkDetector = new Pe(this), this.linkDetector.registerProvider(new Fe(this)), this.options.plainTextUrlLinks !== !1 && this.linkDetector.registerProvider(new Le(this)), e.addEventListener("mousedown", this.handleMouseDown, { capture: !0 }), e.addEventListener("mousemove", this.handleMouseMove), e.addEventListener("mouseleave", this.handleMouseLeave), e.addEventListener("click", this.handleClick), n.addEventListener("mouseup", this.handleMouseUp), e.addEventListener("wheel", this.handleWheel, {
 				passive: !1,
 				capture: !0
 			}), this.renderer.attachOverlayTo(e), this.renderer.render(this.wasmTerm, !0, this.viewportY, this, this.scrollbarOpacity), this.renderer.setOnRequestRender(() => this.requestRender()), this.renderTick(), this.openEmitter.fire(), this.openEmitter.dispose(), this.isAndroidPlatform || this.focus();
