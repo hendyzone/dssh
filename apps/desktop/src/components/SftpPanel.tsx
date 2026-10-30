@@ -50,10 +50,21 @@ interface FileEntry {
 interface SftpPanelProps {
   sessionId: string;
   serverId?: string;
+  /** 前端窗格标识：重连后不变，普通会话只在本次运行内记住目录。 */
+  paneId?: string;
+  /** tmux 会话按服务器与名称持久记住目录，不使用易变的后端连接 ID。 */
+  tmuxSessionName?: string;
   /** 当前聚焦窗格的远端终端目录（OSC 7 上报，未知时为 undefined） */
   terminalCwd?: string;
   onClose: () => void;
   onOpenPage?: (target: PageTarget, sessionId: string) => void;
+}
+
+// 普通窗格不写入持久存储，应用重启后从自己的终端目录重新打开。
+const rememberedPaneDirectories = new Map<string, string>();
+
+function validDirectory(path: string | null | undefined): path is string {
+  return !!path?.startsWith("/") && !path.includes("\0");
 }
 
 interface DragDropPayload {
@@ -137,6 +148,8 @@ function formatTime(mtime: number | null | undefined): string {
 export default function SftpPanel({
   sessionId,
   serverId,
+  paneId,
+  tmuxSessionName,
   terminalCwd,
   onClose,
   onOpenPage,
@@ -253,7 +266,13 @@ export default function SftpPanel({
     return subscribeTransfers(sessionId, setTransfers);
   }, [sessionId]);
   const currentPathRef = useRef(currentPath);
-  const directoryStorageKey = serverId ? `dssh.sftp.last-directory.${serverId}` : undefined;
+  const directoryStorageKey = serverId && tmuxSessionName
+    ? `dssh.sftp.last-directory.tmux.${JSON.stringify([serverId, tmuxSessionName])}`
+    : undefined;
+  const paneDirectoryKey = paneId ? JSON.stringify([serverId, paneId]) : undefined;
+  // 只在会话初始化时取 cwd；普通 cd 不应覆盖用户手动选的目录。
+  const terminalCwdRef = useRef(terminalCwd);
+  terminalCwdRef.current = terminalCwd;
 
   const loadDirectory = useCallback(
     async (path: string) => {
@@ -274,8 +293,12 @@ export default function SftpPanel({
         currentPathRef.current = path;
         setCurrentPath(path);
         setSelectedPath(null);
-        if (directoryStorageKey && path.startsWith("/")) {
-          try { localStorage.setItem(directoryStorageKey, path); } catch {}
+        if (validDirectory(path)) {
+          if (directoryStorageKey) {
+            try { localStorage.setItem(directoryStorageKey, path); } catch {}
+          } else if (paneDirectoryKey) {
+            rememberedPaneDirectories.set(paneDirectoryKey, path);
+          }
         }
         return true;
       } catch (reason) {
@@ -286,7 +309,7 @@ export default function SftpPanel({
         if (request === requestId.current) setLoading(false);
       }
     },
-    [sessionId, directoryStorageKey],
+    [sessionId, directoryStorageKey, paneDirectoryKey],
   );
 
   useEffect(() => {
@@ -294,9 +317,14 @@ export default function SftpPanel({
     let live = true;
     const restore = async () => {
       let saved: string | null = null;
-      try { saved = directoryStorageKey ? localStorage.getItem(directoryStorageKey) : null; } catch {}
-      if (saved?.startsWith("/") && !saved.includes("\0")) {
-        const result = await loadDirectory(saved);
+      try {
+        saved = directoryStorageKey ? localStorage.getItem(directoryStorageKey)
+          : paneDirectoryKey ? rememberedPaneDirectories.get(paneDirectoryKey) ?? null : null;
+      } catch {}
+      const cwd = terminalCwdRef.current;
+      for (const path of new Set([saved, cwd])) {
+        if (!validDirectory(path)) continue;
+        const result = await loadDirectory(path);
         if (!live || result !== false) return;
       }
       const ticket = requestId.current;
@@ -306,7 +334,7 @@ export default function SftpPanel({
     };
     void restore();
     return () => { live = false; requestId.current++; };
-  }, [loadDirectory, sessionId, directoryStorageKey]);
+  }, [loadDirectory, sessionId, directoryStorageKey, paneDirectoryKey]);
 
   // 跟随模式：终端目录变化且与面板当前目录不同时自动跳转
   useEffect(() => {
