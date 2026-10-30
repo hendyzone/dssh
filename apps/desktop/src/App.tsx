@@ -1171,6 +1171,8 @@ export default function App() {
                   {panel === "sftp" && (
                     <PanelDock kind="sftp">
                       <SftpPanel
+                        paneId={t.panes[t.activePane]?.id}
+                        tmuxSessionName={t.panes[t.activePane]?.tmux?.name}
                         serverId={t.panes[t.activePane]?.server.id}
                         key={activePaneBackend ?? "disconnected"}
                         sessionId={activePaneBackend ?? ""}

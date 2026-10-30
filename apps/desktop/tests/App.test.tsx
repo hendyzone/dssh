@@ -83,7 +83,8 @@ vi.mock("../src/components/TerminalView", () => ({
   },
 }));
 vi.mock("../src/components/MonitorBar", () => ({ default: () => null }));
-vi.mock("../src/components/SftpPanel", () => ({ default: () => null }));
+vi.mock("../src/components/SftpPanel", () => ({ default: (props: {paneId?: string; tmuxSessionName?: string; terminalCwd?: string; serverId?: string}) =>
+  <div data-testid="sftp-identity" data-pane={props.paneId} data-tmux={props.tmuxSessionName} data-cwd={props.terminalCwd} data-server={props.serverId}/> }));
 vi.mock("../src/components/ForwardPanel", () => ({ default: () => null }));
 
 beforeEach(() => {
@@ -602,4 +603,22 @@ it("follows the active team lock and releases it on pane switches and panel clos
  fireEvent.click(container.querySelectorAll(".tab")[0]);await waitFor(()=>expect(first()).toBe("shared"));
  fireEvent.click(screen.getByRole("button",{name:"关闭团队"}));await waitFor(()=>expect(first()).toBe("alpha"));
  expect(officeMock.publish.mock.lastCall?.[0].activeProject).toBe("alpha");
+});
+
+
+it("passes the active pane identity and terminal cwd to SFTP", async () => {
+  terminalMock.connected = true;
+  const servers = await loadServers();
+  saveWorkspace({ tabs: [{ id: "sftp-tab", activePane: 0, panes: [
+    { id: "sftp-left", server: servers[0], tmux: { id: "$1", created: 123, name: "work" } },
+    { id: "sftp-right", server: servers[0] },
+  ] }], activeTabId: "sftp-tab", groups: [], cwds: { "sftp-left": "/left", "sftp-right": "/right" } });
+  render(<App/>);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", {name: "文件 · SFTP"}));
+  expect(screen.getByTestId("sftp-identity").dataset).toMatchObject({pane: "sftp-left", tmux: "work", cwd: "/left", server: "server"});
+  fireEvent.click(screen.getByTestId("terminal-sftp-right"));
+  await waitFor(() => expect(screen.getByTestId("sftp-identity").dataset.pane).toBe("sftp-right"));
+  expect(screen.getByTestId("sftp-identity").dataset).toMatchObject({cwd: "/right", server: "server"});
+  expect(screen.getByTestId("sftp-identity").dataset.tmux).toBeUndefined();
 });

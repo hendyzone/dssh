@@ -132,31 +132,31 @@ it("renders Markdown safely and keeps edits when switching modes",async()=>{
  render(<SftpPanel sessionId="session" onClose={()=>{}}/>);await screen.findByText("README.md");fireEvent.click(screen.getByTitle("在线编辑"));await screen.findByRole("heading",{name:"Preview title"});expect(document.querySelector("article script")).toBeNull();fireEvent.click(screen.getByRole("button",{name:"编辑源码"}));fireEvent.change(screen.getByLabelText("文件内容"),{target:{value:"# Edited title"}});fireEvent.click(screen.getByRole("button",{name:"渲染预览"}));expect(screen.getByRole("heading",{name:"Edited title"})).toBeTruthy();
 });
 
-it("remembers a successful directory across reconnections and isolates servers",async()=>{
+it("remembers a successful directory across reconnections and isolates servers for the same tmux name",async()=>{
  vi.mocked(invoke).mockImplementation(async command=>command==="sftp_home"?"/home/demo":[]);
- const view=render(<SftpPanel sessionId="first" serverId="a" onClose={()=>{}}/>);
+ const view=render(<SftpPanel sessionId="first" serverId="a" tmuxSessionName="work" onClose={()=>{}}/>);
  await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/home/demo"));
  fireEvent.change(screen.getByLabelText("远程路径"),{target:{value:"/workspace/project"}});
  fireEvent.click(screen.getByRole("button",{name:"前往"}));
- await waitFor(()=>expect(localStorage.getItem("dssh.sftp.last-directory.a")).toBe("/workspace/project"));
+ await waitFor(()=>expect(localStorage.getItem('dssh.sftp.last-directory.tmux.["a","work"]')).toBe("/workspace/project"));
  view.unmount();
- const second=render(<SftpPanel sessionId="reconnected" serverId="a" onClose={()=>{}}/>);
+ const second=render(<SftpPanel sessionId="reconnected" serverId="a" tmuxSessionName="work" onClose={()=>{}}/>);
  await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/workspace/project"));
  second.unmount();
- render(<SftpPanel sessionId="other" serverId="b" onClose={()=>{}}/>);
+ render(<SftpPanel sessionId="other" serverId="b" tmuxSessionName="work" onClose={()=>{}}/>);
  await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/home/demo"));
 });
 
 it("falls back to home if the remembered folder is no longer accessible",async()=>{
- localStorage.setItem("dssh.sftp.last-directory.a","/gone");
+ localStorage.setItem('dssh.sftp.last-directory.tmux.["a","work"]',"/gone");
  vi.mocked(invoke).mockImplementation(async(command,args:any)=>{
   if(command==="sftp_home")return "/home/demo";
   if(command==="sftp_list"&&args.path==="/gone")throw new Error("not found");
   return [];
  });
- render(<SftpPanel sessionId="ssh" serverId="a" onClose={()=>{}}/>);
+ render(<SftpPanel sessionId="ssh" serverId="a" tmuxSessionName="work" onClose={()=>{}}/>);
  await waitFor(()=>expect((screen.getByLabelText("远程路径") as HTMLInputElement).value).toBe("/home/demo"));
- expect(localStorage.getItem("dssh.sftp.last-directory.a")).toBe("/home/demo");
+ expect(localStorage.getItem('dssh.sftp.last-directory.tmux.["a","work"]')).toBe("/home/demo");
 });
 
 it("downloads a folder from the context menu after one conflict choice",async()=>{
