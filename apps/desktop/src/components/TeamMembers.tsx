@@ -131,7 +131,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
     return () => { generation.current++; pending.current = false; };
   }, [serviceIdentity]);
   const disabled = busy || !service.url || service.status.state !== "online";
-  // The merged list also renders the Lead; the empty state is about Workers only.
+  // The list and empty state are about workers; the Lead has a compact entry.
   const workers = members.filter(m=>!/^lead\b/i.test(m.role.trim()));
   const startAdd = (member?:TeamMember) => {setAdding(true);setEditing(member);setRole(member?.role??"");setSelected("");setError("");};
   // 「更新终端 / 添加成员」表单出现时把它带到视野里，并把焦点放到第一个输入控件。

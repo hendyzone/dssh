@@ -28,9 +28,9 @@ it("shows a service task brief and opens the existing task card on click",async(
  fireEvent.click(button);expect(await screen.findByRole("article",{name:"任务 T7"})).toBeTruthy();
  expect(loadCard).toHaveBeenCalledWith(board,"alpha","T7");expect(screen.getByText("Full task title")).toBeTruthy();
 });
-it("shows a compact Lead task and roster fallback, with code alone when the brief is unavailable",async()=>{
+it("shows worker roster fallback with code alone when the brief is unavailable",async()=>{
  vi.mocked(taskBrief).mockResolvedValue(null);
- render(<TeamDynamics {...props({members:[{...member,role:"Lead",currentTask:"工作中·beta/T8"}],serviceLive:{[member.email]:{...report,branch:undefined}},live:{...live,snapshot:undefined}})}/>);
+ render(<TeamDynamics {...props({members:[{...member,role:"Worker",currentTask:"工作中·beta/T8"}],serviceLive:{[member.email]:{...report,branch:undefined}},live:{...live,snapshot:undefined}})}/>);
  const button=await screen.findByRole("button",{name:"T8"});expect(button).toBeTruthy();
  await waitFor(()=>expect(taskBrief).toHaveBeenCalledWith(expect.objectContaining({route:board.route}),"beta","T8"));
 });
@@ -87,4 +87,12 @@ it.each(["","待确认·等用户","工作中·无法解析","unstructured note"
  expect(memberTaskTarget({...member,currentTask},bound)).toEqual({project:"alpha",code:"T7",manual:false});
  expect(memberTaskTarget({...member,currentTask})).toBeUndefined();
  expect(memberTaskTarget({...member,currentTask},{...bound,stale:true})).toBeUndefined();
+});
+
+it("does not display or fetch task information for the compact Lead entry",()=>{
+ render(<TeamDynamics {...props({members:[{...member,role:"Lead",currentTask:"工作中·beta/T8"}]})}/>);
+ expect(screen.getByRole("button",{name:/打开 Lead/})).toBeTruthy();
+ expect(screen.queryByRole("button",{name:"T8"})).toBeNull();
+ expect(document.querySelector(".team-live-row")).toBeNull();
+ expect(taskBrief).not.toHaveBeenCalled();
 });
