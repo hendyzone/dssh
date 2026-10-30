@@ -24,10 +24,12 @@ export default function SidePanelSettings({layout, onChange}: {
     onChange(placePanel(layout, source, side, index));
     setDragging(null); setDropTarget(null);
   };
-  const sideButton = (id: string, side: PanelSide, label: string) =>
-    <Button variant="ghost" size="sm" aria-pressed={layout[id].side === side}
-      aria-label={`${label} ${layout[id].side === side ? "（当前）" : ""}`.trim()}
+  const sideButton = (id: string, side: PanelSide, label: string) => {
+    const current = layout[id].side === side;
+    return <Button size="sm" variant={current ? "secondary" : "ghost"} className={`side-panel-settings-side-option${current ? " is-current" : ""}`}
+      aria-pressed={current} aria-label={`${label}侧`}
       onClick={() => onChange(setPanelSide(layout, id, side))}>{label}</Button>;
+  };
   return <div className="side-panel-settings">
     <div className="side-panel-settings-head">
       <strong>侧栏</strong>
