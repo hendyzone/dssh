@@ -26,8 +26,9 @@ export interface ITerminalOptions {
     scrollbarWidth?: number;
     scrollSensitivity?: number;
     onLinkClick?: (url: string, event: MouseEvent) => boolean;
-    /** When false, the built-in plain-text UrlRegexProvider is not registered. Default: true. */
+    /** When false, the built-in plain-text UrlRegexProvider is not registered (use registerLinkProvider instead). Default: true. */
     plainTextUrlLinks?: boolean;
+    /** Skip forwarding mouse reports to the application when this returns true (link clicks, context menu). */
     suppressMouseReport?: (event: MouseEvent) => boolean;
     ghostty?: Ghostty;
 }
