@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 const css = readFileSync(`${process.cwd()}/src/components/TaskLookup.css`, "utf8");
@@ -6,6 +7,7 @@ const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: bridge.invoke }));
 import TaskLookup from "../src/components/TaskLookup";
 import TaskCard from "../src/components/TaskCard";
+import TerminalTaskLayer from "../src/components/TerminalTaskLayer";
 import { boardSource, clearBoardCache, defaultLookupSettings, loadCard } from "../src/lib/taskLookup";
 const source = boardSource({ ...defaultLookupSettings(), boardUrl: "https://board.example.invalid" })!;
 const acceptance = Array.from({length:8}, (_, i) => `验收步骤 ${i + 1}`).join("\n");
@@ -52,4 +54,29 @@ it("clamps acceptance to four lines and expands on explicit request",async()=>{
   expect(css).toMatch(/\.tb-card-acceptance-text.is-collapsed\{[^}]*-webkit-line-clamp:4/);
   fireEvent.click(within(screen.getByRole("article")).getByRole("button",{name:"展开全部"}));expect(text.classList.contains("is-expanded")).toBe(true);
   fireEvent.click(within(screen.getByRole("article")).getByRole("button",{name:"收起"}));expect(text.classList.contains("is-collapsed")).toBe(true);
+});
+it("keeps a newer row when the previously clicked row finishes late", async () => {
+  let finish!: (value: unknown) => void;
+  bridge.invoke.mockImplementation(async (_command, args) =>
+    args.path?.endsWith("/tasks/T1") ? new Promise(resolve => { finish = resolve; }) : response(args.path));
+  function Harness() {
+    const [opened, setOpened] = useState<{ code: string; seq: number } | null>(null);
+    return <>
+      <TaskLookup source={source} inferred={{ project: "demo", reason: "team" }} onOpenTaskDetail={(_, code) => setOpened(o => ({ code, seq: (o?.seq ?? 0) + 1 }))}/>
+      {opened && <TerminalTaskLayer source={source} project="demo" hover={null} opened={opened} onClose={() => setOpened(null)}/>}
+    </>;
+  }
+  render(<Harness />);
+  const details = screen.getByText(/浏览 demo/).closest("details")!;
+  await act(async () => { details.open = true; fireEvent(details, new Event("toggle")); });
+  await screen.findByLabelText("按状态筛选");
+  const list = details.querySelector(".task-list") as HTMLDivElement;
+  const row = (code: string) => within(list).getByText(code).closest("button")!;
+  fireEvent.click(row("T1"));
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  fireEvent.click(row("T2"));
+  await screen.findByRole("article", { name: "任务 T2" });
+  await act(async () => { finish(response("/api/v1/projects/demo/tasks/T1")); });
+  expect(screen.queryByRole("article", { name: "任务 T1" })).toBeNull();
+  expect(screen.getByRole("article", { name: "任务 T2" })).toBeTruthy();
 });

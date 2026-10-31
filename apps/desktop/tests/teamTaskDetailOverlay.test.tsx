@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 
 import TaskLookup from "../src/components/TaskLookup";
+import TerminalTaskLayer from "../src/components/TerminalTaskLayer";
 import { boardSource, clearBoardCache, defaultLookupSettings, saveLookupSettings, teamLookupScope, saveTeamLock } from "../src/lib/taskLookup";
 
 const source = boardSource({ ...defaultLookupSettings(), boardUrl: "http://board.test:8091" })!;
@@ -44,10 +45,17 @@ it("routes browse-list clicks through the overlay opener", async () => {
   expect(screen.queryByRole("article")).toBeNull();
 });
 
-it("mutation: inline TaskCard in panel should fail this contract", async () => {
+it("does not embed a task article in the lookup panel after query", async () => {
   render(<TaskLookup source={source} teamScope={teamScope} onOpenTaskDetail={openDetail}/>);
   fireEvent.change(screen.getByLabelText("任务编号"), { target: { value: "t1090" } });
   fireEvent.click(screen.getByRole("button", { name: /查询/ }));
   await waitFor(() => expect(openDetail).toHaveBeenCalled());
   expect(screen.queryByRole("article")).toBeNull();
+});
+
+it("shows a single close control on the overlay header, not on the card", async () => {
+  render(<TerminalTaskLayer source={source} project="smart-table" hover={null} opened={{ code: "T1090", seq: 1 }} onClose={vi.fn()}/>);
+  const dialog = await screen.findByRole("dialog", { name: "任务详情" });
+  await within(dialog).findByRole("article", { name: /任务 T1090/ });
+  expect(within(dialog).getAllByRole("button", { name: "关闭任务详情" })).toHaveLength(1);
 });

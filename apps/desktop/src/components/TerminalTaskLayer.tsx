@@ -40,7 +40,7 @@ export default function TerminalTaskLayer({ source, project, hover, opened, onCl
     {opened && <div className="task-overlay" role="dialog" aria-label="任务详情">
       <header><strong>任务 · {project}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭任务详情" onClick={onClose}><IconClose size={14}/></Button></header>
       <LookupOutcome state={lookup}/>
-      {card && source && <TaskCard key={`${card.project}/${card.task.code}`} card={card} source={source} onClose={onClose} onOpenCode={(p, c) => void lookup.open(p, c)}/>}
+      {card && source && <TaskCard key={`${card.project}/${card.task.code}`} card={card} source={source} onOpenCode={(p, c) => void lookup.open(p, c)}/>}
     </div>}
   </>;
 }
