@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import SettingsModal from "../src/components/SettingsModal";
@@ -40,7 +40,10 @@ it("accepts a repository URL and tests access without sending the encryption pas
       pat: null,
     }),
   );
-  expect(await screen.findByText(/连接成功/)).toBeTruthy();
+  // Only the wizard's own status line: the update-notes dialog may also mention 「连接成功」.
+  const syncPanel = screen.getByRole("tabpanel", { name: "同步" });
+  const status = await within(syncPanel).findByText(/^连接成功：/, { selector: '[role="status"]' });
+  expect(status.textContent).toBe("连接成功：example/dssh-config（私有仓库）");
 });
 it("rejects invalid repository text with an actionable example", () => {
   setup();
