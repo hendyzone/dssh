@@ -16,7 +16,7 @@ const rows = (value:unknown):Row[] => Array.isArray(value) ? value.filter((v):v 
 const text = (value:unknown) => value == null ? "" : String(value);
 const kinds:Record<string,string>={request:"请求协助",ack:"已收到",progress:"进度",blocked:"阻塞",handoff:"交接",result:"结果",question:"提问",answer:"回答"};
 
-export default function CollaborationPanel({sessionId,profile,lookupPaneId,onLookupScopeChange,onClose,teamNavigation,taskLookup,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange}:{lookupPaneId?:string;onLookupScopeChange?:(paneId:string,scope?:TeamLookupScope)=>void;sessionId:string;profile:CollaborationProfile;onClose:()=>void;teamNavigation?:TeamNavigation;taskLookup?:{source?:BoardSource;inferred?:{project:string;reason:ProjectReason}};officeSnapshot?:OfficeSnapshot;officeVisible?:boolean;onPopOut?:()=>Promise<void>;onRoomOpenChange?:(open:boolean)=>void}){
+export default function CollaborationPanel({sessionId,profile,lookupPaneId,onLookupScopeChange,onClose,teamNavigation,taskLookup,onOpenTaskDetail,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange}:{lookupPaneId?:string;onLookupScopeChange?:(paneId:string,scope?:TeamLookupScope)=>void;sessionId:string;profile:CollaborationProfile;onClose:()=>void;teamNavigation?:TeamNavigation;taskLookup?:{source?:BoardSource;inferred?:{project:string;reason:ProjectReason}};onOpenTaskDetail?:(project:string,code:string)=>void;officeSnapshot?:OfficeSnapshot;officeVisible?:boolean;onPopOut?:()=>Promise<void>;onRoomOpenChange?:(open:boolean)=>void}){
   const lookupScope=teamLookupScope("",profile.project,teamNavigation?.server,profile);
   useEffect(()=>{if(!lookupPaneId)return;onLookupScopeChange?.(lookupPaneId,lookupScope);return()=>onLookupScopeChange?.(lookupPaneId,undefined);},[lookupPaneId,lookupScope?.key,onLookupScopeChange]);
   const [context,setContext]=useState<Row|null>(null);
@@ -82,7 +82,7 @@ export default function CollaborationPanel({sessionId,profile,lookupPaneId,onLoo
     <header data-panel-drag-handle tabIndex={0}><strong>Agent 协作 · {profile.project}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭 Agent 协作" onClick={onClose}><IconClose/></Button></header>
     <div className="collaboration-content">
       <p>{profile.tmuxName || profile.tmuxId} · {profile.workdir}</p>
-      {taskLookup && lookupScope && <details className="task-lookup-details"><summary>查任务（编号 → 状态卡片）</summary><TaskLookup source={taskLookup.source} inferred={taskLookup.inferred} teamScope={lookupScope}/></details>}
+      {taskLookup && lookupScope && <details className="task-lookup-details"><summary>查任务（编号 → 状态卡片）</summary><TaskLookup source={taskLookup.source} inferred={taskLookup.inferred} teamScope={lookupScope} onOpenTaskDetail={onOpenTaskDetail}/></details>}
       {teamNavigation && <TeamMembers sessionId={sessionId} profile={profile} navigation={teamNavigation} board={taskLookup?.source} officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}/>}
       <details><summary>发送接入手册给 Agent</summary><AgentGuide profile={profile}/></details>
       {!sessionId&&<p role="status">终端已断开，请先打开对应终端。</p>}

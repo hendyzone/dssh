@@ -11,10 +11,11 @@ import type { OfficeSnapshot } from "../lib/teamOffice";
 import { teamLookupScope, type BoardSource, type ProjectReason, type TeamLookupScope } from "../lib/taskLookup";
 import { paneTeamProject } from "../lib/tmuxGroups";
 
-export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange, navigation, onClose, taskLookup, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange, focusMember, onFocused}: {
+export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange, navigation, onClose, taskLookup, onOpenTaskDetail, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange, focusMember, onFocused}: {
   onLookupScopeChange?: (paneId:string,scope?:TeamLookupScope)=>void;
   sessionId: string; pane: SessionInfo; profile?: CollaborationProfile; navigation: TeamNavigation; onClose: () => void;
   taskLookup?: { source?: BoardSource; inferred?: { project: string; reason: ProjectReason } };
+  onOpenTaskDetail?: (project: string, code: string) => void;
   onRoomOpenChange?: (open: boolean) => void;
   officeSnapshot?: OfficeSnapshot; officeVisible?: boolean; onPopOut?: () => Promise<void>;
   /** Member to locate (status bar): switches this pane's team to the member's project first. */
@@ -35,7 +36,7 @@ export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange
   return <aside className="workspace-panel collaboration-panel">
     <header data-panel-drag-handle tabIndex={0}><strong>团队{project ? ` · ${project}` : ""}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭团队" onClick={onClose}><IconClose/></Button></header>
     <div className="collaboration-content">
-      {taskLookup && lookupScope && <TaskLookup source={taskLookup.source} inferred={taskLookup.inferred} teamScope={lookupScope}/>}
+      {taskLookup && lookupScope && <TaskLookup source={taskLookup.source} inferred={taskLookup.inferred} teamScope={lookupScope} onOpenTaskDetail={onOpenTaskDetail}/>}
       {!service.url ? <p role="status">请在协作设置中配置团队服务。</p> : !project ? <p role="status">请在团队服务设置中添加要订阅的项目。</p> : <>
         <label className="collaboration-field">团队项目<select value={project} onChange={event=>setSelected(old=>({...old,[pane.id]:event.target.value}))}>
           {service.projects.map(name=><option key={name} value={name}>{name}</option>)}

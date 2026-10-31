@@ -481,6 +481,13 @@ export default function App() {
   // Status bar member: a card opened from it (same overlay as terminal task links) and the member
   // to locate once the team panel is open.
   const [statusTask, setStatusTask] = useState<{tabId: string; project: string; code: string; seq: number} | null>(null);
+  const toggleTaskDetail = useCallback((tabId: string, project: string, code: string) => {
+    setStatusTask(prev =>
+      prev?.tabId === tabId && prev.project === project && prev.code === code
+        ? null
+        : { tabId, project, code, seq: (prev?.seq ?? 0) + 1 },
+    );
+  }, []);
   const [teamFocus, setTeamFocus] = useState<{paneId: string; project: string; key: string; seq: number}>();
   const statusBoard = boardSource(lookupSettings);
   const paneTaskLinks = (pane: SessionInfo) => {
@@ -1305,11 +1312,11 @@ export default function App() {
                   </PanelDock>}
                   {panel === "team" && t.id === activeTabId && (serviceTeamsEnabled || t.panes[t.activePane]?.tmux) && <PanelDock kind="team" side={panelLayout.team.side} onSideChange={next => movePanelToSide("team", next)}>
                     <TeamPanel onLookupScopeChange={onLookupScopeChange} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration}
-                      focusMember={teamFocus?.paneId === t.panes[t.activePane].id ? teamFocus : undefined} onFocused={() => setTeamFocus(undefined)} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                      focusMember={teamFocus?.paneId === t.panes[t.activePane].id ? teamFocus : undefined} onFocused={() => setTeamFocus(undefined)} taskLookup={paneTaskContext(t.panes[t.activePane])} onOpenTaskDetail={(project, code) => toggleTaskDetail(t.id, project, code)} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
                     <PanelDock kind="collaboration" side={panelLayout.collaboration.side} onSideChange={next => movePanelToSide("collaboration", next)}>
-                      <CollaborationPanel lookupPaneId={t.panes[t.activePane].id} onLookupScopeChange={onLookupScopeChange} key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                      <CollaborationPanel lookupPaneId={t.panes[t.activePane].id} onLookupScopeChange={onLookupScopeChange} key={`${activePaneBackend}:${collaborationKey(t.panes[t.activePane].server.id,collaboration)}`} sessionId={activePaneBackend ?? ""} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onOpenTaskDetail={(project, code) => toggleTaskDetail(t.id, project, code)} onClose={()=>togglePanel(t.id,null)} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} teamNavigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                     </PanelDock>
                   )}
                   {panel === "changes" && (
