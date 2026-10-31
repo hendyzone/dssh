@@ -13,7 +13,7 @@ vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn()}));
 const server:ServerEntry={id:'test',name:'Test',host:'host-a',port:22,username:'dev',authMethod:'password'};
 const pane:SessionInfo={id:'pane',server};
 const source=boardSource({...defaultLookupSettings(),boardUrl:'https://board.example.invalid'})!;
-function panel(){return <TeamPanel sessionId='' pane={pane} navigation={{server,servers:[server],onOpen:vi.fn()}} onClose={vi.fn()} taskLookup={{source,inferred:{project:'global-project',reason:'locked'}}}/>;}
+function panel(){return <TeamPanel sessionId='' pane={pane} navigation={{server,servers:[server],onOpen:vi.fn()}} onClose={vi.fn()} onOpenTaskDetail={vi.fn()} taskLookup={{source,inferred:{project:'global-project',reason:'locked'}}}/>;}
 beforeEach(()=>{localStorage.clear();clearBoardCache();saveLookupSettings({lockedProject:'global-project'});service.current={url:'https://team.example.invalid/api/v1',projects:['alpha','beta'],status:{state:'online',token_configured:true},snapshots:{}};vi.mocked(invoke).mockResolvedValue({status:200,body:JSON.stringify({projects:[{slug:'alpha',name:'Alpha'},{slug:'beta',name:'Beta'},{slug:'shared',name:'Shared'}]})});});
 afterEach(cleanup);
 it('changes the task lock with the actual team selector while retaining each team choice',async()=>{
@@ -37,7 +37,7 @@ it('remounts lookup for a different service even with the same selected project'
 
 it('scopes legacy Lead lookup and keeps its unlocked state after the tmux process restarts',async()=>{
  const profile={...emptyProfile(),project:'alpha',workdir:'/srv/example',tmuxName:'lead',tmuxId:'$1',tmuxCreated:1};
- const props={sessionId:'backend',profile,onClose:vi.fn(),teamNavigation:{server,servers:[server],onOpen:vi.fn()},taskLookup:{source,inferred:{project:'global-project',reason:'locked' as const}}};
+ const props={sessionId:'backend',profile,onClose:vi.fn(),onOpenTaskDetail:vi.fn(),teamNavigation:{server,servers:[server],onOpen:vi.fn()},taskLookup:{source,inferred:{project:'global-project',reason:'locked' as const}}};
  const view=render(<CollaborationPanel {...props}/>);
  const details=screen.getByText('查任务（编号 → 状态卡片）').closest('details')!;details.open=true;
  await screen.findByRole('button',{name:'解锁'});expect(screen.getByText('Alpha')).toBeTruthy();

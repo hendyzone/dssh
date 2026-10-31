@@ -31,6 +31,7 @@ it("opens the shared overlay from team lookup instead of embedding a card", asyn
   fireEvent.click(screen.getByRole("button", { name: /查询/ }));
   await waitFor(() => expect(openDetail).toHaveBeenCalledWith("smart-table", "T1090"));
   expect(screen.queryByRole("article", { name: /任务 T1090/ })).toBeNull();
+  expect(document.querySelector(".task-lookup .tb-card")).toBeNull();
   expect(document.querySelector(".task-lookup-outcome .tb-card")).toBeNull();
 });
 

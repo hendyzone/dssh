@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Lock, LockOpen, Search } from "lucide-react";
 import {
   BoardError, listProjects, listStatuses, loadCard, lookupTask, NO_SOURCE, projectReasonLabel, saveLookupSettings, shortName, taskIndex,
   useLookupSettings, saveTeamLock, loadLookupSettings, type TeamLookupScope, type BoardProject, type BoardSource, type BoardStatus, type LookupResult, type ProjectReason, type TaskIndex,
 } from "../lib/taskLookup";
-import TaskCard, { StatusBadge } from "./TaskCard";
+import { StatusBadge } from "./TaskCard";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import "./TaskLookup.css";
@@ -42,8 +42,10 @@ export function useTaskLookup(source?: BoardSource) {
   };
 }
 
-export function LookupOutcome({ state, source, dismissible = false, inline = true, onOpenTaskDetail }: {
-  state: ReturnType<typeof useTaskLookup>; source?: BoardSource; dismissible?: boolean; inline?: boolean;
+/** Lookup progress, errors and ambiguous matches only — never embeds a task card in the panel. */
+export function LookupOutcome({ state, source, onOpenTaskDetail }: {
+  state: ReturnType<typeof useTaskLookup>;
+  source?: BoardSource;
   onOpenTaskDetail?: (project: string, code: string) => void;
 }) {
   const { result, error, busy } = state;
@@ -60,7 +62,6 @@ export function LookupOutcome({ state, source, dismissible = false, inline = tru
         <span className="tb-card-code">{c.task.code}</span><span className="task-list-title">{c.task.title}</span><span className="tb-card-project">{c.project}</span>
       </button>)}
     </div>}
-    {inline && result?.kind === "task" && source && <TaskCard key={`${result.card.project}/${result.card.task.code}`} card={result.card} source={source} onClose={dismissible ? state.clear : undefined} onOpenCode={(p, c) => pick(p, c)}/>}
   </>;
 }
 
@@ -72,8 +73,7 @@ interface TaskLookupProps {
   source?: BoardSource;
   inferred?: { project: string; reason: ProjectReason };
   teamScope?: TeamLookupScope;
-  /** When set, task cards open in the shared terminal overlay instead of embedding in the panel. */
-  onOpenTaskDetail?: (project: string, code: string) => void;
+  onOpenTaskDetail: (project: string, code: string) => void;
 }
 export default function TaskLookup(props: TaskLookupProps) {
   return <ScopedTaskLookup key={props.teamScope?.key ?? "global"} {...props}/>;
@@ -88,31 +88,11 @@ function ScopedTaskLookup({ source, inferred, teamScope, onOpenTaskDetail }: Tas
   const [input, setInput] = useState("");
   const [settingsError, setSettingsError] = useState("");
   const state = useTaskLookup(source);
-  const section = useRef<HTMLElement>(null);
-  const [detailHeight, setDetailHeight] = useState<number>();
   useEffect(() => {
-    if (!onOpenTaskDetail || !state.result || state.result.kind !== "task") return;
+    if (!state.result || state.result.kind !== "task") return;
     onOpenTaskDetail(state.result.card.project, state.result.card.task.code);
     state.clear();
   }, [onOpenTaskDetail, state.result]);
-  useEffect(() => {
-    if (onOpenTaskDetail) return;
-    const panel = section.current?.closest(".workspace-panel");
-    if (!panel || typeof ResizeObserver === "undefined") return;
-    const update = () => { if (panel.clientHeight > 0) setDetailHeight(panel.clientHeight / 2); };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(panel);
-    return () => observer.disconnect();
-  }, [onOpenTaskDetail]);
-  useEffect(() => {
-    if (onOpenTaskDetail || (!state.result && !state.busy)) return;
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.stopPropagation(); state.clear(); }
-    };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [state.result, state.busy]);
   useEffect(() => {
     let live = true;
     setProjectsError("");
@@ -134,7 +114,7 @@ function ScopedTaskLookup({ source, inferred, teamScope, onOpenTaskDetail }: Tas
     try { if (teamScope) saveTeamLock(teamScope,value); else saveLookupSettings({ lockedProject: value }); setSettingsError(""); if (!value) setSelected(locked); }
     catch (e) { setSettingsError(String(e)); }
   };
-  return <section ref={section} className="task-lookup" aria-label="任务查询" style={!onOpenTaskDetail && detailHeight ? {"--task-detail-max-height": `${detailHeight}px`} as CSSProperties : undefined}>
+  return <section className="task-lookup" aria-label="任务查询">
     <div className="task-lookup-project">
       {locked ? <span className="task-lookup-locked" title={teamScope ? "仅锁定当前团队的任务查询" : "锁定后只需输入编号；终端编号识别也使用此项目"}>
         <Lock size={13}/><strong>{lockedName ?? locked}</strong>{lockedName && lockedName !== locked && <small>{locked}</small>}
@@ -156,16 +136,9 @@ function ScopedTaskLookup({ source, inferred, teamScope, onOpenTaskDetail }: Tas
     {source && <p className="task-lookup-hint">{source.label} · 只读</p>}
     {projectsError && <p role="alert" className="collaboration-error">{projectsError}</p>}
     {settingsError && <p role="alert" className="collaboration-error">{settingsError}</p>}
-    {onOpenTaskDetail ? (
-      <LookupOutcome state={state} source={source} inline={false} onOpenTaskDetail={onOpenTaskDetail}/>
-    ) : (
-      <div className="task-lookup-outcome">
-        {((state.busy && state.result?.kind !== "task") || state.error || state.result?.kind === "choices") && <button type="button" className="tb-card-close" aria-label="关闭任务详情" onClick={state.clear}>×</button>}
-        <LookupOutcome state={state} source={source} dismissible/>
-      </div>
-    )}
+    <LookupOutcome state={state} source={source} onOpenTaskDetail={onOpenTaskDetail}/>
     {source && project && <TaskBrowser key={`${source.key}|${project}`} source={source} project={project} slugs={projects.map(p => p.slug)}
-      onOpen={code => onOpenTaskDetail ? onOpenTaskDetail(project, code) : state.toggle(project, code)}/>}
+      onOpen={code => onOpenTaskDetail(project, code)}/>}
   </section>;
 }
 

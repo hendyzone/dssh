@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listProjects, listStatuses, shortName, type BoardSource, type BoardStatus, type IndexTask } from "../lib/taskLookup";
-import { StatusBadge } from "./TaskCard";
+import TaskCard, { StatusBadge } from "./TaskCard";
 import { LookupOutcome, useTaskLookup } from "./TaskLookup";
 import { Button } from "./ui/button";
 import { IconClose } from "./Icons";
@@ -30,6 +30,7 @@ export default function TerminalTaskLayer({ source, project, hover, opened, onCl
   }, [!!opened]);
   const status = hover && statuses.find(s => s.key === hover.task.status_key);
   const who = hover ? shortName(hover.task.assignee, [project, ...slugs]) : "";
+  const card = lookup.result?.kind === "task" ? lookup.result.card : null;
   return <>
     {hover && !opened && <div className="task-hover-card" role="tooltip" style={{ left: hover.x, top: hover.y }}>
       <div className="task-hover-head"><span className="tb-card-code">{hover.task.code}</span><StatusBadge name={status?.name ?? (hover.task.status_key || "未知状态")} color={status?.color}/><small>{who || "未指派"}</small></div>
@@ -38,7 +39,8 @@ export default function TerminalTaskLayer({ source, project, hover, opened, onCl
     </div>}
     {opened && <div className="task-overlay" role="dialog" aria-label="任务详情">
       <header><strong>任务 · {project}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭任务详情" onClick={onClose}><IconClose size={14}/></Button></header>
-      <LookupOutcome state={lookup} source={source}/>
+      <LookupOutcome state={lookup}/>
+      {card && source && <TaskCard key={`${card.project}/${card.task.code}`} card={card} source={source} onClose={onClose} onOpenCode={(p, c) => void lookup.open(p, c)}/>}
     </div>}
   </>;
 }

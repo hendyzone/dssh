@@ -11,10 +11,12 @@ import { boardSource, clearBoardCache, defaultLookupSettings, loadCard, loadLook
 
 const source = boardSource({ ...defaultLookupSettings(), boardUrl: "http://board.test:8091" })!;
 const state: { opened: string[]; calls: string[]; offline?: boolean } = { opened: [], calls: [] };
+const openDetail = vi.fn();
 
 beforeEach(() => {
   clearBoardCache();
   state.opened = []; state.calls = []; state.offline = false;
+  openDetail.mockReset();
   mocks.invoke.mockReset();
   mocks.invoke.mockImplementation(fakeInvoke(state));
 });
@@ -25,7 +27,7 @@ const typeAndSubmit = (value: string) => {
 };
 
 it("locks a project, persists it, and then locates a task by number only", async () => {
-  render(<TaskLookup source={source}/>);
+  render(<TaskLookup source={source} onOpenTaskDetail={openDetail}/>);
   const select = await screen.findByLabelText("查询项目");
   await screen.findByRole("option", { name: "智能台球桌 · smart-table" });
   fireEvent.change(select, { target: { value: "smart-table" } });
@@ -35,13 +37,9 @@ it("locks a project, persists it, and then locates a task by number only", async
   expect(screen.queryByLabelText("查询项目")).toBeNull();
 
   typeAndSubmit("t1090");
-  const card = await screen.findByRole("article", { name: "任务 T1090" });
-  expect(within(card).getByText("击球辅助线样式统一：实线改虚线并补齐全部入口")).toBeTruthy();
-  expect(within(card).getByText("待人工验收")).toBeTruthy();
-  expect(within(card).getByText("cw3d-pi")).toBeTruthy();
-  expect(within(card).getByText("9191 实机核对通过")).toBeTruthy();
+  await waitFor(() => expect(openDetail).toHaveBeenCalledWith("smart-table", "T1090"));
+  expect(screen.queryByRole("article", { name: "任务 T1090" })).toBeNull();
 
-  // Unlock returns to the selector, still on the previously locked project.
   fireEvent.click(screen.getByRole("button", { name: /解锁/ }));
   expect(loadLookupSettings().lockedProject).toBe("");
   expect((screen.getByLabelText("查询项目") as HTMLSelectElement).value).toBe("smart-table");
@@ -49,18 +47,19 @@ it("locks a project, persists it, and then locates a task by number only", async
 
 it("lists candidates for an ambiguous number and opens the chosen one", async () => {
   saveLookupSettings({ lockedProject: "smart-table" });
-  render(<TaskLookup source={source}/>);
+  render(<TaskLookup source={source} onOpenTaskDetail={openDetail}/>);
   typeAndSubmit("1090");
   const choices = await screen.findByLabelText("候选任务");
   expect(within(choices).getByText(/匹配到 2 个任务/)).toBeTruthy();
   fireEvent.click(within(choices).getByText("ST-1090"));
-  expect(await screen.findByRole("article", { name: "任务 ST-1090" })).toBeTruthy();
+  await waitFor(() => expect(openDetail).toHaveBeenCalledWith("smart-table", "ST-1090"));
+  expect(screen.queryByRole("article")).toBeNull();
 });
 
 it("accepts 「项目 编号」 when unlocked and shows clear errors", async () => {
-  render(<TaskLookup source={source}/>);
+  render(<TaskLookup source={source} onOpenTaskDetail={openDetail}/>);
   typeAndSubmit("amail AM-42");
-  expect(await screen.findByRole("article", { name: "任务 AM-42" })).toBeTruthy();
+  await waitFor(() => expect(openDetail).toHaveBeenCalledWith("amail", "AM-42"));
   typeAndSubmit("nope T1");
   expect((await screen.findByRole("alert")).textContent).toContain("看板上没有项目「nope」");
   typeAndSubmit("smart-table T9999");
@@ -72,14 +71,14 @@ it("accepts 「项目 编号」 when unlocked and shows clear errors", async () 
 });
 
 it("explains how to configure when no board is reachable", () => {
-  render(<TaskLookup/>);
+  render(<TaskLookup onOpenTaskDetail={openDetail}/>);
   typeAndSubmit("T1");
   expect(screen.getAllByText(/填写本机可访问的看板地址/).length).toBeGreaterThan(0);
   expect(mocks.invoke).not.toHaveBeenCalled();
 });
 
 it("shows the inferred project and browses tasks with filters", async () => {
-  render(<TaskLookup source={source} inferred={{ project: "smart-table", reason: "team" }}/>);
+  render(<TaskLookup source={source} inferred={{ project: "smart-table", reason: "team" }} onOpenTaskDetail={openDetail}/>);
   expect(screen.getByText(/当前终端项目：smart-table（团队服务名单）/)).toBeTruthy();
   const browser = screen.getByText(/浏览 smart-table 的任务/).closest("details")!;
   await act(async () => { browser.open = true; fireEvent(browser, new Event("toggle")); });
@@ -92,7 +91,8 @@ it("shows the inferred project and browses tasks with filters", async () => {
   const rows = within(browser).getAllByRole("button").filter(b => b.classList.contains("task-list-row"));
   expect(rows).toHaveLength(1);
   fireEvent.click(rows[0]);
-  expect(await screen.findByRole("article", { name: "任务 T1090" })).toBeTruthy();
+  await waitFor(() => expect(openDetail).toHaveBeenCalledWith("smart-table", "T1090"));
+  expect(screen.queryByRole("article")).toBeNull();
 });
 
 it("renders blocked reason prominently, collapses detail, follows dependencies and opens the board", async () => {
@@ -100,8 +100,8 @@ it("renders blocked reason prominently, collapses detail, follows dependencies a
   const card = await loadCard(source, "smart-table", "T1090");
   const open = vi.fn();
   const view = render(<TaskCard card={card} source={source} onOpenCode={open} now={NOW}/>);
-  expect(screen.getByText("3 小时")).toBeTruthy(); // in current column
-  expect(screen.getByText("30 分钟前")).toBeTruthy(); // last update
+  expect(screen.getByText("3 小时")).toBeTruthy();
+  expect(screen.getByText("30 分钟前")).toBeTruthy();
   const detail = screen.getByText("详细记录").closest("details")!;
   expect(detail.open).toBe(false);
   const dep = screen.getByTitle("被阻塞的任务");

@@ -36,14 +36,14 @@ export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange
   return <aside className="workspace-panel collaboration-panel">
     <header data-panel-drag-handle tabIndex={0}><strong>团队{project ? ` · ${project}` : ""}</strong><Button variant="ghost" size="icon-sm" aria-label="关闭团队" onClick={onClose}><IconClose/></Button></header>
     <div className="collaboration-content">
-      {taskLookup && lookupScope && <TaskLookup source={taskLookup.source} inferred={taskLookup.inferred} teamScope={lookupScope} onOpenTaskDetail={onOpenTaskDetail}/>}
+      {taskLookup && lookupScope && onOpenTaskDetail && <TaskLookup source={taskLookup.source} inferred={taskLookup.inferred} teamScope={lookupScope} onOpenTaskDetail={onOpenTaskDetail}/>}
       {!service.url ? <p role="status">请在协作设置中配置团队服务。</p> : !project ? <p role="status">请在团队服务设置中添加要订阅的项目。</p> : <>
         <label className="collaboration-field">团队项目<select value={project} onChange={event=>setSelected(old=>({...old,[pane.id]:event.target.value}))}>
           {service.projects.map(name=><option key={name} value={name}>{name}</option>)}
         </select></label>
         <TeamMembers key={JSON.stringify([service.url,project])} sessionId={sessionId} profile={active} navigation={navigation} board={taskLookup?.source}
           officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
-          focusMember={focusMember?.project===project ? focusMember : undefined} onFocused={onFocused}/>
+          focusMember={focusMember?.project===project ? focusMember : undefined} onFocused={onFocused} onOpenTaskDetail={onOpenTaskDetail}/>
       </>}
     </div>
   </aside>;

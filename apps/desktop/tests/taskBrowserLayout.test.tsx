@@ -5,7 +5,8 @@ const css = readFileSync(`${process.cwd()}/src/components/TaskLookup.css`, "utf8
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: bridge.invoke }));
 import TaskLookup from "../src/components/TaskLookup";
-import { boardSource, clearBoardCache, defaultLookupSettings } from "../src/lib/taskLookup";
+import TaskCard from "../src/components/TaskCard";
+import { boardSource, clearBoardCache, defaultLookupSettings, loadCard } from "../src/lib/taskLookup";
 const source = boardSource({ ...defaultLookupSettings(), boardUrl: "https://board.example.invalid" })!;
 const acceptance = Array.from({length:8}, (_, i) => `验收步骤 ${i + 1}`).join("\n");
 const task = (code: string) => ({code,title:`${code} a long title that should stay on one line`,assignee:"example-worker-with-long-name@example.invalid",status_key:"doing",updated_at:"2026-01-01T00:00:00Z",status_changed_at:"2026-01-01T00:00:00Z",summary:"Summary",acceptance,detail:"Details"});
@@ -15,9 +16,10 @@ const response = (path: string) => ({status:200,body:JSON.stringify(
   path.endsWith("/dependencies") ? {dependencies:[]} :
   path.endsWith("/tasks") ? {tasks:[task("T1"),task("T2")]} : task(path.split("/").at(-1)!)
 )});
-beforeEach(() => { localStorage.clear();clearBoardCache();bridge.invoke.mockReset();bridge.invoke.mockImplementation(async (_command,args) => response(args.path)); });
+const openDetail = vi.fn();
+beforeEach(() => { localStorage.clear();clearBoardCache();openDetail.mockReset();bridge.invoke.mockReset();bridge.invoke.mockImplementation(async (_command,args) => response(args.path)); });
 async function browser() {
-  render(<TaskLookup source={source} inferred={{project:"demo",reason:"team"}}/>);
+  render(<TaskLookup source={source} inferred={{project:"demo",reason:"team"}} onOpenTaskDetail={openDetail}/>);
   const details = screen.getByText(/浏览 demo/).closest("details")!;
   await act(async () => { details.open=true;fireEvent(details,new Event("toggle")); });
   await screen.findByLabelText("按状态筛选");
@@ -34,72 +36,20 @@ it("renders four distinct centered columns with full title and assignee tooltips
   expect(css).toContain("container:task-browser / inline-size");
   expect(css).toMatch(/@container task-browser \(max-width:360px\)[\s\S]*grid-template-areas:"status code title" "\. \. who"/);
 });
-it.each(["button","Escape","same row","empty query"])("closes details through %s without changing list scroll",async method=>{
+it("routes browse-list clicks through the overlay opener without embedding a card", async () => {
   const {list,row}=await browser();list.scrollTop=123;
-  if(method==="empty query")fireEvent.change(screen.getByLabelText("任务编号"),{target:{value:"T1"}});
-  fireEvent.click(row("T1"));const card=await screen.findByRole("article",{name:"任务 T1"});
-  expect(list.scrollTop).toBe(123);expect(card.classList.contains("tb-card-bounded")).toBe(true);
-  if(method==="button")fireEvent.click(screen.getByRole("button",{name:"关闭任务详情"}));
-  if(method==="Escape")fireEvent.keyDown(window,{key:"Escape"});
-  if(method==="same row")fireEvent.click(row("T1"));
-  if(method==="empty query")fireEvent.change(screen.getByLabelText("任务编号"),{target:{value:""}});
-  expect(screen.queryByRole("article",{name:"任务 T1"})).toBeNull();expect(list.scrollTop).toBe(123);
-  expect(css).toMatch(/\.tb-card-bounded\{[^}]*max-height:var\(--task-detail-max-height,50vh\);overflow:auto/);
+  fireEvent.click(row("T1"));
+  await waitFor(() => expect(openDetail).toHaveBeenCalledWith("demo","T1"));
+  expect(list.scrollTop).toBe(123);
+  expect(screen.queryByRole("article",{name:"任务 T1"})).toBeNull();
+  expect(document.querySelector(".task-lookup-outcome .tb-card")).toBeNull();
 });
 it("clamps acceptance to four lines and expands on explicit request",async()=>{
-  const {row}=await browser();fireEvent.click(row("T1"));const card=await screen.findByRole("article",{name:"任务 T1"});
-  const text=card.querySelector(".tb-card-acceptance-text")!;
+  const card=await loadCard(source,"demo","T1");
+  render(<TaskCard card={card} source={source}/>);
+  const text=screen.getByRole("article").querySelector(".tb-card-acceptance-text")!;
   expect(text.textContent).toBe(acceptance);expect(text.classList.contains("is-collapsed")).toBe(true);
   expect(css).toMatch(/\.tb-card-acceptance-text.is-collapsed\{[^}]*-webkit-line-clamp:4/);
-  fireEvent.click(within(card).getByRole("button",{name:"展开全部"}));expect(text.classList.contains("is-expanded")).toBe(true);
-  fireEvent.click(within(card).getByRole("button",{name:"收起"}));expect(text.classList.contains("is-collapsed")).toBe(true);
-  fireEvent.click(row("T2"));const next=await screen.findByRole("article",{name:"任务 T2"});
-  expect(screen.queryByRole("article",{name:"任务 T1"})).toBeNull();expect(next.querySelector(".is-collapsed")).toBeTruthy();
-});
-it.each(["button","Escape","same row","empty query"])("rejects late detail completion after cancellation through %s",async method=>{
-  const {row}=await browser();let finish!:(value:unknown)=>void;
-  bridge.invoke.mockImplementation(async(_command,args)=>args.path.endsWith("/tasks/T1")?new Promise(resolve=>{finish=resolve;}):response(args.path));
-  if(method==="empty query")fireEvent.change(screen.getByLabelText("任务编号"),{target:{value:"T1"}});
-  fireEvent.click(row("T1"));await waitFor(()=>expect(finish).toBeTypeOf("function"));
-  if(method==="button")fireEvent.click(screen.getByRole("button",{name:"关闭任务详情"}));
-  if(method==="Escape")fireEvent.keyDown(window,{key:"Escape"});
-  if(method==="same row")fireEvent.click(row("T1"));
-  if(method==="empty query")fireEvent.change(screen.getByLabelText("任务编号"),{target:{value:""}});
-  await act(async()=>{finish(response("/api/v1/projects/demo/tasks/T1"));});
-  expect(screen.queryByRole("article")).toBeNull();
-});
-it("keeps a newer row when the previously clicked row finishes late",async()=>{
-  const {row}=await browser();let finish!:(value:unknown)=>void;
-  bridge.invoke.mockImplementation(async(_command,args)=>args.path.endsWith("/tasks/T1")?new Promise(resolve=>{finish=resolve;}):response(args.path));
-  fireEvent.click(row("T1"));await waitFor(()=>expect(finish).toBeTypeOf("function"));
-  fireEvent.click(row("T2"));await screen.findByRole("article",{name:"任务 T2"});
-  await act(async()=>{finish(response("/api/v1/projects/demo/tasks/T1"));});
-  expect(screen.queryByRole("article",{name:"任务 T1"})).toBeNull();expect(screen.getByRole("article",{name:"任务 T2"})).toBeTruthy();
-});
-
-it("sizes detail height from the containing panel and disconnects its observer", async () => {
-  let resize!: () => void;
-  const disconnect = vi.fn();
-  const observe = vi.fn();
-  const original = globalThis.ResizeObserver;
-  vi.stubGlobal("ResizeObserver", class {
-    constructor(callback: () => void) { resize = callback; }
-    observe = observe;
-    disconnect = disconnect;
-  });
-  try {
-    const view = render(<aside className="workspace-panel"><TaskLookup source={source}/></aside>);
-    const panel = view.container.querySelector("aside")!;
-    Object.defineProperty(panel, "clientHeight", {value:640, configurable:true});
-    act(() => resize());
-    expect(observe).toHaveBeenCalledWith(panel);
-    expect(screen.getByRole("region", {name:"任务查询"}).style.getPropertyValue("--task-detail-max-height")).toBe("320px");
-    Object.defineProperty(panel, "clientHeight", {value:800});
-    act(() => resize());
-    expect(screen.getByRole("region", {name:"任务查询"}).style.getPropertyValue("--task-detail-max-height")).toBe("400px");
-    view.unmount();
-    expect(disconnect).toHaveBeenCalledOnce();
-  } finally {
-    vi.stubGlobal("ResizeObserver", original);
-  }
+  fireEvent.click(within(screen.getByRole("article")).getByRole("button",{name:"展开全部"}));expect(text.classList.contains("is-expanded")).toBe(true);
+  fireEvent.click(within(screen.getByRole("article")).getByRole("button",{name:"收起"}));expect(text.classList.contains("is-collapsed")).toBe(true);
 });

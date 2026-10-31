@@ -29,7 +29,7 @@ export interface TeamNavigation {
  * The list itself is the single merged view in TeamDynamics (no 「动态 / 成员」 tabs):
  * management operations live in each member's expandable details.
  */
-export default function TeamMembers({ sessionId, profile, navigation, board, officeSnapshot, officeVisible=true, onPopOut, onRoomOpenChange, focusMember, onFocused }: {
+export default function TeamMembers({ sessionId, profile, navigation, board, officeSnapshot, officeVisible=true, onPopOut, onRoomOpenChange, focusMember, onFocused, onOpenTaskDetail }: {
   sessionId: string; profile: CollaborationProfile; navigation: TeamNavigation;
   /** Read-only taskboard (the same source as the task lookup above) for live member status. */
   board?: BoardSource;
@@ -38,6 +38,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
   onRoomOpenChange?: (open: boolean) => void;
   /** Member to locate in the list (opened from the status bar). */
   focusMember?: {key: string; seq: number}; onFocused?: () => void;
+  onOpenTaskDetail?: (project: string, code: string) => void;
 }) {
   const service = useTeamService();
   const projectIssue = teamProjectIssue(service, profile.project);
@@ -254,7 +255,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
     {!projectIssue && <TeamDynamics key={serviceIdentity} sessionId={sessionId} profile={profile} navigation={navigation} members={members} serviceLive={team?.live??{}} serviceAi={team?.ai??{}} aiEnabled={service.status.ai_enabled} serviceIdentity={serviceIdentity} board={board} live={live} onUpdated={async()=>{}}
       pinnedKeys={[noteMember, editing?memberKey(editing):undefined].filter((key):key is string=>!!key)}
       officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
-      focusMember={focusMember} onFocused={onFocused}
+      focusMember={focusMember} onFocused={onFocused} onOpenTaskDetail={onOpenTaskDetail}
       onRefresh={()=>void run(async()=>{await refreshTeamService(profile.project);})} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>}
     {!projectIssue && !workers.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>订阅项目的成员将由团队服务同步。</p></div>}
   </section>;

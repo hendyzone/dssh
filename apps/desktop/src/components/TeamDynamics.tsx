@@ -13,7 +13,6 @@ import type {TeamNavigation} from "./TeamMembers";
 import {Button} from "./ui/button";
 import type {BoardSource} from "../lib/taskLookup";
 import {STATUS_GROUPS,ago,briefKey,taskBrief,type TaskBrief,isLeadMember,liveSnapshot,rankMembers,summarizeTeam,useAgentSessions,type LiveSessions,type LiveStatus,type StatusGroup} from "../lib/agentSessions";
-import {useTaskLookup,LookupOutcome} from "./TaskLookup";
 import TeamLiveSummary from "./TeamLiveSummary";
 import TeamOffice from "./TeamOffice";
 import type { OfficeSnapshot } from "../lib/teamOffice";
@@ -30,7 +29,7 @@ const GROUP_ORDER:readonly {key:StatusGroup;label:string;title?:string}[]=[
 
 /** `live`: the panel's shared collector data (so the merged view shows one snapshot); polled here when omitted. */
 export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,board,live:shared,
-  serviceLive,serviceAi:aiMap={},aiEnabled,serviceIdentity="",onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange,focusMember,onFocused}:{
+  serviceLive,serviceAi:aiMap={},aiEnabled,serviceIdentity="",onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange,focusMember,onFocused,onOpenTaskDetail}:{
   sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource;live?:LiveSessions;
   serviceLive?:Record<string,TeamLive>;
   serviceAi?:Record<string,unknown>; aiEnabled?:boolean|null; serviceIdentity?:string;
@@ -45,6 +44,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   onRoomOpenChange?:(open:boolean)=>void;
   /** Locate this member (status bar click): unfold its group and row, scroll it into view and focus it. */
   focusMember?:{key:string;seq:number}; onFocused?:()=>void;
+  onOpenTaskDetail?:(project:string,code:string)=>void;
 }){
   const self={...profile,username:navigation.server.username};
   const isLead=(m:TeamMember)=>isLeadMember(m,self);
@@ -56,7 +56,6 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   const hasServiceStatus=serviceLive !== undefined && members.some(member=>serviceLive[memberKey(member)]?.match!=="no_agent");
   const ranked=rankMembers(members,snapshot,isLead).map(row=>presentTeamRow(row,serviceLive,live,isLead(row.member)))
     .sort((a,b)=>a.status.rank-b.status.rank||a.index-b.index);
-  const taskLookup = useTaskLookup(board);
   const [serviceBriefs,setServiceBriefs] = useState<{scope:string;values:Record<string,TaskBrief>}>({scope:"",values:{}});
   const targetOf = (member:TeamMember,session?:ReturnType<typeof rankMembers>[number]["session"]) => {
     if (serviceLive !== undefined) return memberTaskTarget(member, memberTaskSession(member, snapshot?.sessions ?? []));
@@ -66,7 +65,6 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   const taskTargets = [...new Map(ranked.flatMap(row=>{const target=targetOf(row.member,row.session);return target?[[briefKey(target.project,target.code),target] as const]:[];})).values()];
   const taskScope = JSON.stringify([serviceIdentity,board?.key,taskTargets]);
   useEffect(()=>{
-    taskLookup.clear();
     if (!board || serviceLive === undefined) return;
     let active=true;
     void Promise.all(taskTargets.map(async target=>{
@@ -170,7 +168,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     // 只有确实有上一张卡时才占一格；没有就不放空信息（同「无当前卡」不渲染的理由）。
     const taskLine=target?<button type="button" className="team-card-line2 team-task-link" disabled={!board}
       title={[target.code,brief?.title||brief?.brief].filter(Boolean).join(" · ")}
-      onClick={event=>{event.preventDefault();event.stopPropagation();void taskLookup.open(target.project,target.code);}}>
+      onClick={event=>{event.preventDefault();event.stopPropagation();onOpenTaskDetail?.(target.project,target.code);}}>
       <b>{target.code}</b>{(brief?.title||brief?.brief)&&<span className="team-card-brief"> · {brief.title||brief.brief}</span>}
     </button>:null;
     const rosterNote=!session&&m.currentTask?.trim()?m.currentTask.trim().split(/\r?\n/)[0]:"";
@@ -243,7 +241,6 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
           }:undefined}/>
         </div>
       : <>
-    <LookupOutcome state={taskLookup} source={board} dismissible/>
     {addForm}
     {GROUP_ORDER.map(group=>{
       if(filtered&&group.key!==activeFilter)return null;
