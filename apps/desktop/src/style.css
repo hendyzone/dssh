@@ -194,6 +194,8 @@ body {
 
 .sidebar-header {
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 4px;
   align-items: center;
   justify-content: space-between;
   padding: 2px 4px;
@@ -216,6 +218,8 @@ body {
 
 .sidebar-actions {
   display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
   gap: 2px;
 }
 

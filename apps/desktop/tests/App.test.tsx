@@ -667,7 +667,9 @@ it("keeps the server list as a rail panel and moves it to the other rail by drag
   fireEvent.dragEnd(connections, {dataTransfer: transfer});
   await act(async () => {});
   expect(view.container.querySelector('.icon-rail-right [data-panel-icon="connections"]')).toBeTruthy();
-  expect(view.container.querySelector(".connections-dock-right .sidebar")).toBeTruthy();
+  expect(view.container.querySelectorAll(".connections-dock-right .sidebar")).toHaveLength(1);
+  expect(view.container.querySelectorAll(".sidebar")).toHaveLength(1);
+  expect(view.container.querySelector(".connections-dock-left")).toBeNull();
   const saved = vi.mocked(saveSettings).mock.calls.at(-1)?.[0];
   expect(saved?.panelLayout?.connections?.side).toBe("right");
   view.unmount();

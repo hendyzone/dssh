@@ -1106,7 +1106,8 @@ export default function App() {
         </div>
       )}
       {rail("left")}
-      {connectionsPanel && <div className={`connections-dock connections-dock-${panelLayout.connections.side}`}>{connectionsPanel}</div>}
+      {panelLayout.connections.side === "left" && connectionsPanel &&
+        <div className="connections-dock connections-dock-left">{connectionsPanel}</div>}
       <main className="main-area">
         {taskStates.some((task) => task.unread) && (
           <div className="task-reminder" role="status">
