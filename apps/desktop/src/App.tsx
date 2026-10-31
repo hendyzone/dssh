@@ -65,6 +65,9 @@ import {
   sortByRecentConnections,
   rememberConnection,
 } from "./lib/recentConnections";
+import { useDetachedTabs, canDetach, hiddenTab, saveDetachedPreviews, loadDetachedPreviews, type TabDescriptor } from "./lib/detachedTabs";
+import { finishTabDrag } from "./lib/tabDetachDrag";
+import { ReopenedPreview } from "./components/DetachedTabWindow";
 import TerminalView from "./components/TerminalView";
 import WebPageView from "./components/WebPageView";
 import FileBookmarks from "./components/FileBookmarks";
@@ -118,7 +121,7 @@ export default function App() {
   const [servers, setServers] = useState<ServerEntry[]>([]);
   const [recentIds, setRecentIds] = useState(loadRecentConnections);
   const [sidebarRevision, setSidebarRevision] = useState(0);
-  const [tabs, setTabs] = useState<TabInfo[]>([]);
+  const [workspaceTabs, setTabs] = useState<TabInfo[]>([]);
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [connectionGroups, setConnectionGroups] = useState<ConnectionGroup[]>(
@@ -129,21 +132,25 @@ export default function App() {
     tabId?: string;
   } | null>(null);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const detached = useDetachedTabs();
+  const tabs=useMemo(()=>workspaceTabs.filter(tab=>!hiddenTab(detached.entries,tab.id)),[workspaceTabs,detached.entries]);
+  const dragCancelled = useRef(false);
   const [webPages, setWebPages] = useState<WebPage[]>([]);
   // Web previews are transient: never persist page contents or stale SSH handles.
   const displayTabs: TabInfo[] = [...tabs, ...webPages.map(page => ({
     id: page.id, customTitle: page.title, panes: [], activePane: 0,
-  }))];
+  }))].filter(tab=>!hiddenTab(detached.entries,tab.id));
   const openPage = (target: PageTarget, sessionId: string) => {
     const existing = webPages.find(page => page.sessionId === sessionId &&
       JSON.stringify(page.target) === JSON.stringify(target));
     if (existing) { setActiveTabId(existing.id); return; }
     const id = crypto.randomUUID();
     const title = target.kind !== "url" ? target.path.split("/").pop()! : new URL(target.url).hostname;
-    setWebPages(previous => [...previous, { id, title, target, sessionId }]);
+    setWebPages(previous => [...previous, { id, title, target, sessionId, server: tabs.flatMap(t=>t.panes).find(p=>backendIds[p.id]===sessionId)?.server }]);
     setActiveTabId(id);
   };
   const closePage = (id: string) => {
+    if(detached.entries.some(e=>e.descriptor.sourceId===id))return;
     setWebPages(previous => previous.filter(page => page.id !== id));
     if (activeTabId === id) setActiveTabId(webPages.filter(page => page.id !== id).at(-1)?.id ?? tabs.at(-1)?.id ?? null);
   };
@@ -160,7 +167,7 @@ export default function App() {
   );
   /** A preview tab's SSH backend → the server it belongs to (bookmarks are per server, not per backend). */
   const pageServerId = (page: WebPage) =>
-    tabs.flatMap(tab => tab.panes).find(pane => backendIds[pane.id] === page.sessionId)?.server.id;
+    page.server?.id ?? tabs.flatMap(tab => tab.panes).find(pane => backendIds[pane.id] === page.sessionId)?.server.id;
   const pageBookmark = (page: WebPage) => {
     const target = page.target;
     if (target.kind === "url") return undefined;
@@ -366,17 +373,21 @@ export default function App() {
     !contextMenu &&
     !groupEditor;
 
-  const closeError = useWindowClose(Object.values(backendIds).some(Boolean));
+  const closeError = useWindowClose(Object.values(backendIds).some(Boolean), detached.entries.length>0);
 
   useEffect(() => {
     let disposed = false;
     applyTheme(getTheme(settings.themeId));
     loadServers()
-      .then(loaded => {
+      .then(async loaded => {
         if (disposed) return;
         setServers(loaded);
         try {
           const saved = loadWorkspace(loaded);
+          const previews=loadDetachedPreviews(loaded);
+          setWebPages(previews.flatMap(d=>d.kind==="preview"?[{...d.page,sessionId:""}]:[]));
+          for(const descriptor of previews) await invoke("tab_restore_preview",{descriptor});
+          if(disposed)return;
           setTabs(saved.tabs);
           setActiveTabId(saved.activeTabId);
           setConnectionGroups(saved.groups);
@@ -430,12 +441,15 @@ export default function App() {
     // Never overwrite the saved workspace with the initial empty render.
     if (!workspaceReady) return;
     try {
-      saveWorkspace({ tabs, activeTabId, groups: connectionGroups, cwds: paneCwds });
+      saveWorkspace({ tabs: workspaceTabs, activeTabId, groups: connectionGroups, cwds: paneCwds });
       setWorkspaceError(null);
     } catch (error) {
       setWorkspaceError(`工作现场保存失败：${String(error)}`);
     }
-  }, [workspaceReady, tabs, activeTabId, connectionGroups, paneCwds]);
+  }, [workspaceReady, workspaceTabs, activeTabId, connectionGroups, paneCwds]);
+  useEffect(()=>{
+    if(workspaceReady)try{saveDetachedPreviews(detached.entries);}catch(error){setWorkspaceError(String(error));}
+  },[workspaceReady,detached.entries]);
   const collaborationPane=tabs.find(t=>t.id===activeTabId)?.panes[tabs.find(t=>t.id===activeTabId)?.activePane??0];
   const activeCollaboration=useActiveCollaboration(collaborationProfiles,collaborationPane,backendIds[collaborationPane?.id??""],paneCwds[collaborationPane?.id??""]);
   const lookupSettings = useLookupSettings();
@@ -547,7 +561,8 @@ export default function App() {
   };
 
   const removeTabs = (tabIds: string[], focusTabId?: string) => {
-    const ids = new Set(tabIds);
+    const ids = new Set(tabIds.filter(id=>!detached.entries.some(e=>e.descriptor.sourceId===id)));
+    if(!ids.size)return;
     const removedPaneIds = tabs
       .filter((tab) => ids.has(tab.id))
       .flatMap((tab) => tab.panes.map((pane) => pane.id));
@@ -662,6 +677,7 @@ export default function App() {
   // ---- 分屏 ----
 
   const splitTab = (tabId: string, dir: "row" | "column") => {
+    if(detached.entries.some(e=>e.descriptor.sourceId===tabId))return;
     setTabs((prev) =>
       prev.map((t) => {
         if (t.id !== tabId) return t;
@@ -883,11 +899,42 @@ export default function App() {
     setConnectionGroups((prev) => prev.filter((g) => g.id !== id));
     setGroupEditor(null);
   };
+  const detachTab = (id: string, position?: {x:number;y:number}) => {
+    if(detached.entries.some(e=>e.descriptor.sourceId===id))return;
+    const tab=tabs.find(t=>t.id===id), page=webPages.find(p=>p.id===id);
+    let descriptor:TabDescriptor;
+    if(page && (page.target.kind==="url" || page.server)) {
+      const {sessionId: _sessionId, ...reference}=page;
+      descriptor={kind:"preview",sourceId:id,page:reference,settings};
+    } else if(canDetach(tab)) descriptor={kind:"terminal",sourceId:id,tab:tab!,settings};
+    else return;
+    void detached.open(descriptor,position);
+  };
+  const endDetachDrag = (id:string) => void finishTabDrag(dragCancelled.current,position=>detachTab(id,position)).catch(()=>{});
+  useEffect(()=>{
+    if(activeTabId && hiddenTab(detached.entries,activeTabId)) setActiveTabId(displayTabs[0]?.id??null);
+    const returning=detached.entries.find(e=>e.phase==="returning");
+    if(returning)setActiveTabId(returning.descriptor.sourceId);
+  },[detached.entries]);
+  useEffect(()=>{
+    const cancel=(e:KeyboardEvent)=>{if(e.key==="Escape")dragCancelled.current=true;};
+    window.addEventListener("keydown",cancel,true);return()=>window.removeEventListener("keydown",cancel,true);
+  },[]);
+  useEffect(()=>{
+    const strip=document.querySelector(".workspace-tab-header");
+    if(!strip)return;
+    const report=()=>{const r=strip.getBoundingClientRect();void invoke("tab_drop_zone",{zone:{x:r.x,y:r.y,width:r.width,height:r.height}}).catch(()=>{});};
+    report();const observer=new ResizeObserver(report);observer.observe(strip);
+    window.addEventListener("resize",report);
+    return()=>{observer.disconnect();window.removeEventListener("resize",report);};
+  });
   const renderTab = (t: TabInfo) => {
     const page = webPages.find(item => item.id === t.id);
     if (page) {
       const saved = pageBookmark(page);
-      return <div key={page.id} role="tab" tabIndex={0}
+      return <div key={page.id} role="tab" tabIndex={0} draggable
+      onDragStart={event=>{dragCancelled.current=false;event.dataTransfer.setData("application/x-dssh-tab",page.id);}}
+      onDragEnd={()=>endDetachDrag(page.id)}
       aria-selected={page.id === activeTabId} className={`tab ${page.id === activeTabId ? "active" : ""}`}
       onClick={() => setActiveTabId(page.id)}
       onKeyDown={event => {
@@ -896,7 +943,7 @@ export default function App() {
         }
       }}
       onAuxClick={event => { if (event.button === 1) { event.preventDefault(); closePage(page.id); } }}
-      onContextMenu={event => { if (page.target.kind === "url") return; event.preventDefault(); setPageMenu({pageId: page.id, x: event.clientX, y: event.clientY}); }}>
+      onContextMenu={event => { event.preventDefault(); setPageMenu({pageId: page.id, x: event.clientX, y: event.clientY}); }}>
       {page.target.kind !== "url" && <Button variant="ghost" size="icon-sm" className={`tab-bookmark${saved ? " is-on" : ""}`}
         aria-label={saved ? "取消收藏" : "收藏"} title={saved ? "取消收藏" : "收藏"}
         onClick={event => { event.stopPropagation(); togglePageBookmark(page); }}>{saved ? "★" : "☆"}</Button>}
@@ -934,7 +981,9 @@ export default function App() {
       <div
         key={t.id}
         draggable={editingTabId !== t.id}
+        onDragEnd={()=>endDetachDrag(t.id)}
         onDragStart={(event) => {
+          dragCancelled.current=false;
           event.dataTransfer.setData("application/x-dssh-tab", t.id);
           event.dataTransfer.effectAllowed = "move";
         }}
@@ -1126,7 +1175,10 @@ export default function App() {
             </div>
           )}
         </div>
-        {webPages.map(page => <WebPageView key={page.id} page={page} active={page.id === activeTabId}/>)}
+        {detached.error && <p role="alert">独立窗口：{detached.error}</p>}
+        {webPages.filter(p=>!hiddenTab(detached.entries,p.id)).map(page => detached.returnedPreviews[page.id]
+          ? <ReopenedPreview key={page.id} id={detached.returnedPreviews[page.id]} page={page} active={page.id===activeTabId} onStatus={s=>detached.state(page.id,s)}/>
+          : <WebPageView key={page.id} page={page} active={page.id === activeTabId}/>)}
         {tabs.length === 0 && webPages.length === 0 ? (
           <div className="welcome">
             <img src={logoUrl} alt="dssh" />
@@ -1147,7 +1199,7 @@ export default function App() {
             <Button variant="outline" size="sm" onClick={() => connect(LOCAL_SHELL)}>打开本地终端</Button>
           </div>
         ) : (
-          tabs.map((t) => {
+          tabs.filter(t=>!hiddenTab(detached.entries,t.id)).map((t) => {
             const local = isLocalShell(t.panes[t.activePane].server);
             const requestedPanel = sidePanels[t.id] ?? null;
             const panel = local && !["tmux", "tasks", "collaboration", "team", "adventure"].includes(requestedPanel ?? "") ? null : requestedPanel;
@@ -1191,7 +1243,7 @@ export default function App() {
                           inputEnabled={terminalInputEnabled}
                           settings={settings}
                           onBackendReady={setBackendId}
-                          onStateChange={setPaneState}
+                          onStateChange={(id,state)=>{setPaneState(id,state);detached.state(t.id,state);}}
                           onCwdChange={setPaneCwd}
                           taskLinks={paneTaskLinks(p)}
                           onOpenPage={openPage}
@@ -1325,6 +1377,7 @@ export default function App() {
         if (!page) return null;
         const saved = pageBookmark(page);
         return <PositionedMenu x={pageMenu.x} y={pageMenu.y} onClose={() => setPageMenu(null)} label="文件标签操作">
+          <MenuItem disabled={page.target.kind!=="url" && !page.server} onClick={()=>{detachTab(page.id);setPageMenu(null);}}>在新窗口打开</MenuItem>
           <MenuItem onClick={() => { togglePageBookmark(page); setPageMenu(null); }}>{saved ? "取消收藏" : "收藏"}</MenuItem>
           <MenuItem onClick={() => { closePage(page.id); setPageMenu(null); }}>关闭标签</MenuItem>
         </PositionedMenu>;
@@ -1336,6 +1389,7 @@ export default function App() {
           onClose={() => setContextMenu(null)}
           label="标签操作"
         >
+          <MenuItem disabled={!canDetach(tabs.find(t=>t.id===contextMenu.tabId))} onClick={()=>{detachTab(contextMenu.tabId);setContextMenu(null);}}>在新窗口打开</MenuItem>
           <MenuItem onClick={() => renameTab(contextMenu.tabId)}>
             重命名
           </MenuItem>

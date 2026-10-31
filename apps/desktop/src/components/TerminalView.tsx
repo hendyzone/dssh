@@ -76,6 +76,7 @@ function scanOsc7(
 
 interface Props {
   session: SessionInfo;
+  detachedId?: string;
   active: boolean;
   /** 弹窗、重命名期间暂停终端键盘输入和自动聚焦。 */
   inputEnabled?: boolean;
@@ -95,6 +96,7 @@ interface Props {
 // 注意：固定使用 Canvas 渲染器（WebGL 路径暂不支持 Kitty graphics）
 export default function TerminalView({
   session,
+  detachedId,
   active,
   inputEnabled = true,
   settings,
@@ -731,7 +733,7 @@ export default function TerminalView({
 
         let newBackendId: string;
         try {
-          newBackendId = local ? await invoke<string>("local_connect", { cols: t.cols, rows: t.rows, cwd: lastCwd ?? null, tmux: session.tmux ? { id: session.tmux.id, created: session.tmux.created } : null, tmuxWorkdir: session.tmuxWorkdir ?? null }) : await invoke<string>("ssh_connect", {
+          newBackendId = detachedId ? await invoke<string>("tab_connect", { id: detachedId, cols: t.cols, rows: t.rows }) : local ? await invoke<string>("local_connect", { cols: t.cols, rows: t.rows, cwd: lastCwd ?? null, tmux: session.tmux ? { id: session.tmux.id, created: session.tmux.created } : null, tmuxWorkdir: session.tmuxWorkdir ?? null }) : await invoke<string>("ssh_connect", {
             params: {
               host: server.host,
               port: server.port,

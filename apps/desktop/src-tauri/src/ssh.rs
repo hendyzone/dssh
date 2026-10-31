@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, State, Manager};
 use tokio::sync::Mutex;
 
 /// 服务器连接参数（与前端 ServerEntry 对应）
@@ -266,6 +266,7 @@ async fn read_terminal_output(
 /// 建立 SSH 会话，返回 session_id；输出通过事件推送
 #[tauri::command]
 pub async fn ssh_connect(
+    window: tauri::WebviewWindow,
     app: AppHandle,
     state: State<'_, SshState>,
     params: ConnectParams,
@@ -279,7 +280,12 @@ pub async fn ssh_connect(
     );
 
     let handle = connect_handle(&params).await?;
-    open_terminal(app, state, params, handle).await
+    let owner = window.label().to_string();
+    let id = open_terminal(app.clone(), state.clone(), params, handle, owner.clone()).await?;
+    if let Err(error) = crate::tab_windows::register(&app, &owner, &id) {
+        let _ = ssh_disconnect(app, state, id).await; return Err(SshError::Other(error));
+    }
+    Ok(id)
 }
 
 /// Authenticate without opening a PTY or starting/attaching a shell.
@@ -344,7 +350,12 @@ pub(crate) async fn connect_handle(params: &ConnectParams) -> Result<ClientHandl
     Ok(handle)
 }
 
-async fn open_terminal(app: AppHandle, state: State<'_, SshState>, params: ConnectParams, handle: ClientHandle) -> Result<String, SshError> {
+async fn open_terminal(app: AppHandle, state: State<'_, SshState>, params: ConnectParams, handle: ClientHandle, owner: String) -> Result<String, SshError> {
+    let handle = Arc::new(handle);
+    if let Some(target)=&params.tmux {
+        let command=crate::tmux::validate_attach_command(target,params.tmux_workdir.as_deref()).map_err(SshError::Other)?;
+        crate::tmux::execute(&handle,&command).await.map_err(SshError::Other)?;
+    }
     // ---- 打开交互式 shell 通道 ----
     let channel = handle.channel_open_session().await?;
     channel
@@ -380,8 +391,8 @@ async fn open_terminal(app: AppHandle, state: State<'_, SshState>, params: Conne
             let data_event = format!("ssh://{sid}/data");
             let exit_event = format!("ssh://{sid}/exit");
             read_terminal_output(&mut read_half, |event| match event {
-                TerminalOutputEvent::Data(text) => { let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &data_event, text); }
-                TerminalOutputEvent::Exit(code) => { let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &exit_event, code); }
+                TerminalOutputEvent::Data(text) => { let _ = app.emit_to(tauri::EventTarget::webview_window(&owner), &data_event, text); }
+                TerminalOutputEvent::Exit(code) => { let _ = app.emit_to(tauri::EventTarget::webview_window(&owner), &exit_event, code); }
             }, TERMINAL_DRAIN_IDLE_TIMEOUT).await;
             tracing::info!("ssh session {sid} read loop ended");
         });
@@ -394,7 +405,7 @@ async fn open_terminal(app: AppHandle, state: State<'_, SshState>, params: Conne
             tmux: params.tmux.clone(),
             tmux_workdir: params.tmux_workdir.clone(),
             startup: Some(startup),
-            handle: Arc::new(handle),
+            handle,
             meta: SessionMeta {
                 host: params.host.clone(),
                 port: params.port,
@@ -467,9 +478,11 @@ pub async fn ssh_resize(
 
 #[tauri::command]
 pub async fn ssh_disconnect(
+    app: AppHandle,
     state: State<'_, SshState>,
     session_id: String,
 ) -> Result<(), SshError> {
+    app.state::<crate::tab_windows::TabWindows>().owners.lock().unwrap().remove(&session_id);
     if let Some(session) = state.sessions.lock().await.remove(&session_id) {
         let _ = session.write_half.close().await;
         let _ = session

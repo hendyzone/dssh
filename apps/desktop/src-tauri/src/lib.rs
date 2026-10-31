@@ -10,6 +10,7 @@ mod forward;
 mod monitor;
 mod preview;
 mod office;
+mod tab_windows;
 mod servers;
 mod sftp;
 mod sftp_tree;
@@ -31,6 +32,14 @@ where F: Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
             invoke.resolver.reject("Command is not available in this window");
             return true;
         }
+        if invoke.message.webview_ref().label().starts_with("detached-") {
+            let app = invoke.message.webview_ref().app_handle();
+            let permitted = match (app.try_state::<tab_windows::TabWindows>(), invoke.message.payload()) {
+                (Some(state), tauri::ipc::InvokeBody::Json(args)) => tab_windows::allowed(&state, invoke.message.webview_ref().label(), invoke.message.command(), args),
+                _ => false,
+            };
+            if !permitted { invoke.resolver.reject("Detached window target is not permitted"); return true; }
+        }
         dispatch(invoke)
     })
 }
@@ -51,6 +60,8 @@ pub fn run() {
             app.manage(local_shell::LocalState::default());
             app.manage(preview::PreviewState::default());
             app.manage(office::OfficeState::default());
+            app.manage(tab_windows::TabWindows::default());
+            if let Some(main)=app.get_webview_window("main") {tab_windows::observe_native_drag(&main);}
             app.manage(monitor::MonitorState::default());
             app.manage(forward::ForwardState::default());
             app.manage(team_service::initialize(app.handle()).map_err(std::io::Error::other)?);
@@ -74,6 +85,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             office::window_event(window, event);
+            tab_windows::window_event(window, event);
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 window.state::<local_shell::LocalState>().shutdown();
                 let service = window.state::<team_service::TeamService>().inner().clone();
@@ -108,6 +120,17 @@ pub fn run() {
             team_service::rest::team_service_refresh,
             team_service::ai::team_service_ai_refresh,
             team_service::ai::team_service_capabilities,
+            tab_windows::tab_snapshot,
+            tab_windows::tab_main_mount,
+            tab_windows::tab_restore_preview,
+            tab_windows::tab_open,
+            tab_windows::tab_connect,
+            tab_windows::tab_ready,
+            tab_windows::tab_return,
+            tab_windows::tab_failed,
+            tab_windows::tab_quit,
+            tab_windows::tab_drag_end,
+            tab_windows::tab_drop_zone,
             office::open_office_window,
             office::office_publish_snapshot,
             office::office_request_snapshot,

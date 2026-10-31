@@ -614,3 +614,11 @@ mod live_tests {
 pub async fn tmux_copy_buffer(ssh: State<'_, SshState>, local: State<'_, LocalState>, session_id: String) -> Result<String, String> {
     execute_session(&ssh, &local, &session_id, "unset TMUX; tmux save-buffer -", Duration::from_secs(12)).await.map_err(|_| "未能读取 tmux 复制内容，请先在 tmux 中选择并复制文字".into())
 }
+
+/// Check the same incarnation/worktree before signalling a reconnect is ready.
+/// The actual attach command repeats these guards to cover changes after probing.
+pub(crate) fn validate_attach_command(target:&Target,workdir:Option<&str>)->Result<String,String>{
+    let command=match workdir {Some(root)=>crate::collaboration::member_attach_command(target,root)?,None=>attach_command(target)?};
+    let (guard,_)=command.rsplit_once("; exec env ").ok_or("Invalid attach command")?;
+    Ok(format!("{guard}; true"))
+}

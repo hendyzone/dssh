@@ -3,6 +3,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { useWindowClose } from "../src/lib/useWindowClose";
 import { readFileSync } from "node:fs";
 const mock = vi.hoisted(() => ({
+  invoke: vi.fn(),
   listen: vi.fn(),
   destroy: vi.fn(),
   confirm: vi.fn(),
@@ -11,6 +12,7 @@ const mock = vi.hoisted(() => ({
     | null
     | ((e: { preventDefault: () => void }) => Promise<void>),
 }));
+vi.mock("@tauri-apps/api/core",()=>({invoke:mock.invoke}));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     onCloseRequested: mock.listen,
@@ -127,4 +129,11 @@ test("the packaged main window has the destroy permission required by the close 
   expect(capability.windows).toEqual(["main"]);
   expect(capability.permissions).toContain("core:window:allow-destroy");
   expect(capability.permissions).toContain("dialog:allow-confirm");
+});
+
+test("detached sessions participate in exit confirmation and close only after acceptance",async()=>{
+  renderHook(()=>useWindowClose(false,true));
+  mock.confirm.mockResolvedValueOnce(false);await close();
+  expect(mock.invoke).not.toHaveBeenCalled();expect(mock.destroy).not.toHaveBeenCalled();
+  await close();expect(mock.invoke).toHaveBeenCalledWith("tab_quit");expect(mock.destroy).toHaveBeenCalledTimes(1);
 });

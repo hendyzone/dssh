@@ -45,6 +45,8 @@ portable-pty = "0.9"
 custom-protocol = ["tauri/custom-protocol"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# GTK consumes Escape during native HTML drag-and-drop. Observe its cancellation signal.
+gtk = "0.18"
 keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]

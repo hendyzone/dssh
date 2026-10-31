@@ -1,5 +1,5 @@
 import {defaultLookupSettings,saveLookupSettings,teamLookupScope} from "../src/lib/taskLookup";
-import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "../src/App";
 import { deleteServer, loadServers, saveSettings } from "../src/store";
@@ -97,6 +97,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Unmount before restoring IPC mocks; task cleanup can trigger App effects.
+  cleanup();
   removeTask("osc-source-pane");
   focusTask("");
   vi.restoreAllMocks();

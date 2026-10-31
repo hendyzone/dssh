@@ -1399,3 +1399,9 @@ input[type="range"] {
 .connections-dock{display:flex;flex:0 0 auto;min-width:0;min-height:0}
 .connections-dock-right .sidebar{border-right:0;border-left:1px solid var(--ui-border)}
 .icon-rail{flex:0 0 36px;height:100%}
+
+.detached-window { height:100vh; display:flex; flex-direction:column; overflow:hidden; background:var(--bg-primary); color:var(--text-primary); }
+.detached-header { display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--border-color); }
+.detached-header [role=tab] { cursor:grab; padding:6px; }
+.detached-move { flex:1; opacity:.65; cursor:move; }
+.detached-window > .panes { flex:1; min-height:0; }
