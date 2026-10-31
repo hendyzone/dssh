@@ -1,9 +1,11 @@
+import type { ServerEntry } from "../types";
 export type PageTarget = { kind: "html" | "markdown" | "image"; path: string } | { kind: "url"; url: string };
 export interface WebPage {
   id: string;
   title: string;
   target: PageTarget;
   sessionId: string;
+  server?: ServerEntry;
 }
 
 /** A whole selected path/URL, never shell text or an arbitrary URI scheme. */

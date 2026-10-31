@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "detached",
+  "description": "Detached tab content: events and window chrome only; targets are guarded by app commands.",
+  "windows": ["detached-*"],
+  "permissions": ["core:event:default", "core:window:allow-start-dragging"]
+}

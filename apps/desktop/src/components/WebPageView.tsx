@@ -26,7 +26,8 @@ function MarkdownImage({ source, alt, page }: { source?: string; alt?: string; p
   return <img src={data ?? external} alt={alt ?? ""} referrerPolicy="no-referrer" onError={() => setFailed(true)}/>;
 }
 
-export default function WebPageView({ page, active }: { page: WebPage; active: boolean }) {
+export default function WebPageView({ page, active, onStatus, restricted=false }: { page: WebPage; active: boolean; onStatus?: (status:string)=>void; restricted?:boolean }) {
+  const statusRef=useRef(onStatus);statusRef.current=onStatus;
   const [revision, setRevision] = useState(0);
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,8 +66,8 @@ export default function WebPageView({ page, active }: { page: WebPage; active: b
     setHtml(null);
     setError(null);
     invoke<string>(page.target.kind === "image" ? "sftp_read_image" : "sftp_read_text", { sessionId: page.sessionId, path: page.target.path })
-      .then(text => { if (!disposed) setHtml(text); })
-      .catch(reason => { if (!disposed) setError(String(reason)); });
+      .then(text => { if (!disposed) {setHtml(text);if(page.target.kind==="markdown")statusRef.current?.("connected");} })
+      .catch(reason => { if (!disposed) {setError(String(reason));statusRef.current?.("disconnected");} });
     return () => { disposed = true; };
   }, [page, revision]);
   const address = page.target.kind !== "url" ? page.target.path : page.target.url;
@@ -74,7 +75,7 @@ export default function WebPageView({ page, active }: { page: WebPage; active: b
     <div className="web-page-toolbar">
       <Button variant="outline" size="sm" onClick={() => setRevision(value => value + 1)}>刷新网页</Button>
       {page.target.kind === "image" && <Button variant="outline" size="sm" onClick={() => setActualSize(value => !value)}>{actualSize ? "适应窗口" : "原始尺寸"}</Button>}
-      {page.target.kind !== "url" && <Button variant="outline" size="sm" disabled={downloading} onClick={() => void download()}>{downloading ? "下载中…" : "下载"}</Button>}
+      {!restricted && page.target.kind !== "url" && <Button variant="outline" size="sm" disabled={downloading} onClick={() => void download()}>{downloading ? "下载中…" : "下载"}</Button>}
       <span title={address}>{address}</span>
     </div>
     <p className="web-page-hint">{page.target.kind === "html"
@@ -82,7 +83,7 @@ export default function WebPageView({ page, active }: { page: WebPage; active: b
       : page.target.kind === "markdown" ? "Markdown 预览 · 支持 1 MB 以内的 UTF-8 文档及文档中的相对路径图片。"
       : page.target.kind === "image" ? "图片预览 · 支持 20 MB 以内的 PNG、JPEG、GIF、WebP、BMP、SVG、ICO、AVIF。"
       : "部分网站禁止内嵌显示；若无法加载，可在系统浏览器中打开。"}
-      {page.target.kind === "url" && <Button variant="ghost" size="sm" onClick={() => {
+      {!restricted && page.target.kind === "url" && <Button variant="ghost" size="sm" onClick={() => {
         void invoke("taskboard_open", { url: address }).catch(reason => setError(String(reason)));
       }}>在系统浏览器打开</Button>}
     </p>
@@ -104,16 +105,18 @@ export default function WebPageView({ page, active }: { page: WebPage; active: b
         img: ({ src, alt }) => <MarkdownImage source={src} alt={alt} page={page}/>,
         a: ({ href, children }) => <a href={href} onClick={event => {
           event.preventDefault();
-          if (href && /^https?:\/\//i.test(href)) void invoke("taskboard_open", { url: href }).catch(reason => setError(String(reason)));
+          if (!restricted && href && /^https?:\/\//i.test(href)) void invoke("taskboard_open", { url: href }).catch(reason => setError(String(reason)));
         }}>{children}</a>,
       }}>{html}</ReactMarkdown>
     </article>}
     {page.target.kind === "image" && html !== null && !error && <div className={`web-page-image${actualSize ? " actual-size" : ""}`}>
-      <img src={html} alt={page.title} onError={() => setError("图片损坏或当前系统不支持此格式")}/>
+      <img src={html} alt={page.title} onLoad={()=>statusRef.current?.("connected")} onError={() => {setError("图片损坏或当前系统不支持此格式");statusRef.current?.("disconnected");}}/>
     </div>}
     {(page.target.kind === "url" || (page.target.kind === "html" && html !== null)) && <iframe
       key={revision}
       title={page.title}
+      onLoad={() => statusRef.current?.("connected")}
+      onError={() => statusRef.current?.("disconnected")}
       sandbox="allow-scripts allow-forms allow-downloads"
       referrerPolicy="no-referrer"
       src={page.target.kind === "url" ? page.target.url : undefined}

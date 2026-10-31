@@ -1,7 +1,7 @@
 //! Local interactive terminals: Unix PTYs and Windows ConPTY.
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize, SlavePty};
 use std::{collections::HashMap, io::{Read, Write}, sync::{Arc, Mutex}};
-use tauri::{Emitter, State};
+use tauri::{Emitter, State, Manager};
 
 struct Session {
     master: Box<dyn MasterPty + Send>,
@@ -11,6 +11,7 @@ struct Session {
     command: Option<CommandBuilder>,
     killer: Option<Box<dyn ChildKiller + Send + Sync>>,
     cwd: Option<String>,
+    owner: String,
 }
 impl Drop for Session {
     fn drop(&mut self) { if let Some(child) = self.killer.as_mut() { let _ = child.kill(); } }
@@ -57,7 +58,7 @@ fn connect(state: &LocalState, cols: u16, rows: u16, cwd: Option<String>, tmux: 
     let id = format!("local-{:032x}", rand::random::<u128>());
     state.sessions.lock().map_err(|e| e.to_string())?.insert(id.clone(), Session {
         master: pair.master, slave: Some(pair.slave), writer: Arc::new(Mutex::new(writer)), reader: Some(reader),
-        command: Some(command), killer: None, cwd,
+        command: Some(command), killer: None, cwd, owner: "main".into(),
     });
     Ok(id)
 }
@@ -94,6 +95,7 @@ fn start(app: tauri::AppHandle, state: &LocalState, session_id: String) -> Resul
     session.killer = Some(child.clone_killer());
     drop(slave);
     let mut reader = session.reader.take().ok_or("本地终端无法读取")?;
+    let owner = session.owner.clone();
     let registry = state.sessions.clone();
     drop(sessions);
     let (status_tx, status_rx) = std::sync::mpsc::channel();
@@ -113,16 +115,16 @@ fn start(app: tauri::AppHandle, state: &LocalState, session_id: String) -> Resul
                 Ok(0) => break,
                 Ok(n) => {
                     let text = decode(&mut pending, &buffer[..n], false);
-                    if !text.is_empty() { let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &format!("local://{session_id}/data"), text); }
+                    if !text.is_empty() { let _ = app.emit_to(tauri::EventTarget::webview_window(&owner), &format!("local://{session_id}/data"), text); }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => break,
             }
         }
         let tail = decode(&mut pending, &[], true);
-        if !tail.is_empty() { let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &format!("local://{session_id}/data"), tail); }
+        if !tail.is_empty() { let _ = app.emit_to(tauri::EventTarget::webview_window(&owner), &format!("local://{session_id}/data"), tail); }
         let code = status_rx.recv().unwrap_or(-1);
-        let _ = app.emit_to(tauri::EventTarget::webview_window("main"), &format!("local://{session_id}/exit"), code);
+        let _ = app.emit_to(tauri::EventTarget::webview_window(&owner), &format!("local://{session_id}/exit"), code);
     });
     Ok(())
 }
@@ -221,9 +223,18 @@ mod tests {
 }
 
 #[tauri::command]
-pub async fn local_connect(state: State<'_, LocalState>, cols: u16, rows: u16, cwd: Option<String>, tmux: Option<crate::tmux::Target>, tmux_workdir: Option<String>) -> Result<String, String> {
+pub async fn local_connect(window: tauri::WebviewWindow, app: tauri::AppHandle, state: State<'_, LocalState>, cols: u16, rows: u16, cwd: Option<String>, tmux: Option<crate::tmux::Target>, tmux_workdir: Option<String>) -> Result<String, String> {
     let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || connect(&state, cols, rows, cwd, tmux, tmux_workdir)).await.map_err(|e| e.to_string())?
+    let owner = window.label().to_string();
+    let check=tmux.as_ref().map(|target|crate::tmux::validate_attach_command(target,tmux_workdir.as_deref())).transpose()?;
+    let copy = state.clone();
+    let id = tauri::async_runtime::spawn_blocking(move || connect(&copy, cols, rows, cwd, tmux, tmux_workdir)).await.map_err(|e| e.to_string())??;
+    state.sessions.lock().map_err(|e|e.to_string())?.get_mut(&id).ok_or("Local connection disappeared")?.owner=owner.clone();
+    if let Err(error)=crate::tab_windows::register(&app,&owner,&id) {let _=disconnect(&state,id);return Err(error);}
+    if let Some(command)=check {
+        if let Err(error)=execute(&state,&id,&command,std::time::Duration::from_secs(12)).await {app.state::<crate::tab_windows::TabWindows>().owners.lock().unwrap().remove(&id);let _=disconnect(&state,id);return Err(error);}
+    }
+    Ok(id)
 }
 
 /// Control commands run separately from the interactive PTY, with bounded output/time.
@@ -271,7 +282,8 @@ pub async fn local_resize(state: State<'_, LocalState>, session_id: String, cols
 }
 
 #[tauri::command]
-pub async fn local_disconnect(state: State<'_, LocalState>, session_id: String) -> Result<(), String> {
+pub async fn local_disconnect(app: tauri::AppHandle, state: State<'_, LocalState>, session_id: String) -> Result<(), String> {
     let state = state.inner().clone();
+    app.state::<crate::tab_windows::TabWindows>().owners.lock().unwrap().remove(&session_id);
     tauri::async_runtime::spawn_blocking(move || disconnect(&state, session_id)).await.map_err(|e| e.to_string())?
 }

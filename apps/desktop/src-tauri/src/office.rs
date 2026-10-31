@@ -40,6 +40,11 @@ pub fn command_allowed(label: &str, command: &str) -> bool {
         label if label.starts_with("preview-") => {
             matches!(command, "take_pending_image" | "desktop_report_error")
         }
+        label if label.starts_with("detached-") => matches!(command,
+            "tab_snapshot" | "tab_connect" | "tab_ready" | "tab_return" | "tab_failed" | "tab_drag_end" |
+            "ssh_start" | "ssh_write" | "ssh_resize" | "ssh_disconnect" |
+            "local_start" | "local_write" | "local_resize" | "local_disconnect" |
+            "sftp_read_text" | "sftp_read_image" | "desktop_report_error"),
         _ => false,
     }
 }

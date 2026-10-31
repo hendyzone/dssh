@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 
 /** Own the close request end-to-end; never recursively request another close. */
-export function useWindowClose(hasActiveSession: boolean): string | null {
-  const activeRef = useRef(hasActiveSession);
-  activeRef.current = hasActiveSession;
+export function useWindowClose(hasActiveSession: boolean, hasDetachedTabs = false): string | null {
+  const activeRef = useRef(hasActiveSession || hasDetachedTabs);
+  const detachedRef = useRef(hasDetachedTabs); detachedRef.current=hasDetachedTabs;
+  activeRef.current = hasActiveSession || hasDetachedTabs;
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const appWindow = getCurrentWindow();
@@ -30,7 +32,10 @@ export function useWindowClose(hasActiveSession: boolean): string | null {
             }))
           )
             return;
-          if (!disposed) await appWindow.destroy();
+          if (!disposed) {
+            if(detachedRef.current) await invoke("tab_quit");
+            await appWindow.destroy();
+          }
         } catch (reason) {
           if (!disposed) setError(`关闭窗口失败，请重试：${String(reason)}`);
         } finally {
