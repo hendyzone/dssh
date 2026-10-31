@@ -45,6 +45,6 @@
 @container monitor-center (max-width: 200px) {
   .pane-member .pane-member-card { display: none; }
 }
-@container monitor-center (max-width: 90px) {
+@container monitor-center (max-width: 60px) {
   .pane-member .pane-member-name { display: none; }
 }
