@@ -128,3 +128,17 @@ function visibleIds(layout: PanelLayout) {
 function labelOf(id: string) {
   return {sftp: "文件 · SFTP", tmux: "tmux 会话", team: "团队 · 打开成员终端", connections: "服务器与连接"}[id] ?? id;
 }
+
+it("uses a server icon and show/hide hints for the connection panel entry", () => {
+  const onSelect = vi.fn();
+  const options = {side: "left" as const, items: railPanels(defaultLayout(), "left"),
+    active: "connections", onSelect, onMove: vi.fn()};
+  const view = render(<IconRail {...options}/>);
+  const button = screen.getByRole("button", {name: "服务器与连接"});
+  expect(button.querySelector("svg.lucide-server")).toBeTruthy();
+  expect(button.title).toBe("隐藏连接面板");
+  fireEvent.click(button);
+  expect(onSelect).toHaveBeenCalledWith("connections");
+  view.rerender(<IconRail {...options} active={null}/>);
+  expect(button.title).toBe("显示连接面板");
+});

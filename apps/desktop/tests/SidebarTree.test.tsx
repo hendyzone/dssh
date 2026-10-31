@@ -182,7 +182,7 @@ it("preserves the narrow sidebar width and toolbar actions across collapse and e
   expect(options.onImport).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByTitle("新建连接"));
   expect(options.onAdd).toHaveBeenCalledWith();
-  fireEvent.click(screen.getByRole("button", { name: "收起连接栏" }));
+  fireEvent.click(screen.getByRole("button", { name: "收窄连接栏" }));
   expect((view.container.querySelector(".sidebar") as HTMLElement).style.width).toBe("44px");
   fireEvent.click(screen.getByRole("button", { name: "展开连接栏" }));
   expect((view.container.querySelector(".sidebar") as HTMLElement).style.width).toBe("220px");

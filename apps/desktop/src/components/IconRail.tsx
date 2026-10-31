@@ -15,6 +15,9 @@ export default function IconRail({side, items, active, onSelect, onMove}: {
 }) {
   const [dragging, setDragging] = useState<PanelId | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const actionLabel = (item: PanelDefinition) => item.id === "connections"
+    ? (active === "connections" ? "隐藏连接面板" : "显示连接面板")
+    : item.label;
   const end = () => { setDragging(null); setDropIndex(null); };
   const indexAt = (event: DragEvent<HTMLElement>) => {
     const buttons = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-panel-icon]")];
@@ -48,7 +51,7 @@ export default function IconRail({side, items, active, onSelect, onMove}: {
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-sm" data-panel-icon={item.id}
                 className={active === item.id ? "active" : ""} aria-pressed={active === item.id}
-                aria-label={item.label} title={item.label}
+                aria-label={item.label} title={actionLabel(item)}
                 draggable onDragStart={event => {
                   setDragging(item.id);
                   event.dataTransfer.effectAllowed = "move";
@@ -58,7 +61,7 @@ export default function IconRail({side, items, active, onSelect, onMove}: {
                 <PanelIcon id={item.id}/>
               </Button>
             </TooltipTrigger>
-            <TooltipContent side={side === "right" ? "left" : "right"} sideOffset={10}>{item.label}</TooltipContent>
+            <TooltipContent side={side === "right" ? "left" : "right"} sideOffset={10}>{actionLabel(item)}</TooltipContent>
           </Tooltip>
         </div>
       ))}

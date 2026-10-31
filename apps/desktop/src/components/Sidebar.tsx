@@ -367,8 +367,8 @@ export default function Sidebar({
             variant="ghost"
             size="icon-sm"
             className="icon-btn sidebar-collapse-toggle"
-            title={sidebarCollapsed ? "展开连接栏" : "收起连接栏"}
-            aria-label={sidebarCollapsed ? "展开连接栏" : "收起连接栏"}
+            title={sidebarCollapsed ? "展开连接栏" : "收窄连接栏"}
+            aria-label={sidebarCollapsed ? "展开连接栏" : "收窄连接栏"}
             aria-expanded={!sidebarCollapsed}
             onClick={toggleSidebar}
           >
