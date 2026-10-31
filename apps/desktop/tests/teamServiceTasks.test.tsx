@@ -3,11 +3,9 @@ import {beforeEach,expect,it,vi} from "vitest";
 import TeamDynamics from "../src/components/TeamDynamics";
 import {serviceMemberState,memberTaskTarget,memberTaskSession} from "../src/lib/teamServicePresentation";
 import {taskBrief,parseAgentSessions} from "../src/lib/agentSessions";
-import {loadCard} from "../src/lib/taskLookup";
 import {emptyProfile} from "../src/lib/collaboration";
 vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn()}));
 vi.mock("../src/lib/agentSessions",async original=>({...await original<any>(),taskBrief:vi.fn()}));
-vi.mock("../src/lib/taskLookup",async original=>({...await original<any>(),loadCard:vi.fn()}));
 const member={project:"alpha",email:"worker@example.invalid",role:"Worker",host:"host.example.invalid",port:22,username:"dev",workdir:"/repo",tmux:{id:"$1",created:1,name:"worker"},currentTask:""};
 const server={id:"host",name:"Example",host:member.host,port:22,username:"dev",authMethod:"password" as const};
 const report={key:member.email,match:"exact" as const,state:"running" as const,detail:"",branch:"task/alpha-T7"};
@@ -15,18 +13,20 @@ const board={key:"board",webUrl:"https://board.example.invalid",route:{kind:"dir
 const bound=parseAgentSessions({sessions:[{host:member.host,session:member.tmux.name,project:"alpha",task_code:"T7",host_ok:true,state:"running",worktree:"/repo"}]}).sessions[0];
 const live={snapshot:{sessions:[bound],now:1,ttlSeconds:180,alertAfterSeconds:600,collectedAt:1},briefs:{},statusNames:{},offline:false,error:""};
 const props=(extra:any={})=>({sessionId:"",profile:{...emptyProfile(),project:"alpha"},navigation:{server,servers:[server],onOpen:vi.fn()},members:[member],onUpdated:vi.fn(),board,live,serviceLive:{[member.email]:report},serviceIdentity:"https://team.example.invalid/alpha",...extra});
-beforeEach(()=>{vi.mocked(taskBrief).mockReset().mockImplementation(async(_source,project,code)=>({code,title:project+" task title",brief:"Focused task brief"}));vi.mocked(loadCard).mockReset().mockResolvedValue({project:"alpha",task:{code:"T7",title:"Full task title",status_key:"doing",assignee:"",updated_at:"",status_changed_at:"",summary:"",acceptance:""},slugs:[],dependencies:[],dependents:[]} as any);});
+beforeEach(()=>{vi.mocked(taskBrief).mockReset().mockImplementation(async(_source,project,code)=>({code,title:project+" task title",brief:"Focused task brief"}));});
 it("maps service branch and collector-bound project-qualified task, falling back only to a valid roster task",()=>{
  expect(serviceMemberState(member,report,bound)).toMatchObject({branch:"task/alpha-T7",project:"alpha",taskCode:"T7"});
  expect(serviceMemberState({...member,currentTask:"工作中·beta/T8"},{...report,branch:undefined})).toMatchObject({branch:"",project:"beta",taskCode:"T8"});
  expect(memberTaskTarget({...member,currentTask:"arbitrary private note"})).toBeUndefined();
 });
 it("shows a service task brief and opens the existing task card on click",async()=>{
- render(<TeamDynamics {...props()}/>);
+ const openDetail=vi.fn();
+ render(<TeamDynamics {...props({onOpenTaskDetail:openDetail})}/>);
  const button=await screen.findByRole("button",{name:"T7 · alpha task title"});
  expect(taskBrief).toHaveBeenCalledWith(expect.objectContaining({route:board.route}),"alpha","T7");
- fireEvent.click(button);expect(await screen.findByRole("article",{name:"任务 T7"})).toBeTruthy();
- expect(loadCard).toHaveBeenCalledWith(board,"alpha","T7");expect(screen.getByText("Full task title")).toBeTruthy();
+ fireEvent.click(button);
+ await waitFor(()=>expect(openDetail).toHaveBeenCalledWith("alpha","T7"));
+ expect(screen.queryByRole("article",{name:"任务 T7"})).toBeNull();
 });
 it("shows worker roster fallback with code alone when the brief is unavailable",async()=>{
  vi.mocked(taskBrief).mockResolvedValue(null);
