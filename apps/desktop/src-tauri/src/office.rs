@@ -604,13 +604,18 @@ mod tests {
         assert_eq!(events.load(Ordering::SeqCst), 0);
     }
     #[test]
-    fn office_capability_contains_only_listen_and_unlisten() {
+    fn office_capability_contains_only_events_and_fullscreen_permissions() {
         let capability: serde_json::Value =
             serde_json::from_str(include_str!("../capabilities/office.json")).unwrap();
         assert_eq!(capability["windows"], serde_json::json!(["office"]));
         assert_eq!(
             capability["permissions"],
-            serde_json::json!(["core:event:allow-listen", "core:event:allow-unlisten"])
+            serde_json::json!([
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:window:allow-is-fullscreen",
+                "core:window:allow-set-fullscreen"
+            ])
         );
     }
     fn screen(name: &str, x: i32, width: u32, scale: f64) -> Display {
@@ -655,6 +660,29 @@ mod tests {
             assert!(!command_allowed("office", command), "{command}");
         }
         assert!(command_allowed("main", "ssh_connect"));
+    }
+    #[test]
+    fn detached_windows_allow_only_reconnect_and_preview_commands() {
+        for label in ["detached-123", "detached-a0b1c2"] {
+            for command in [
+                "tab_snapshot", "tab_connect", "tab_ready", "tab_return", "tab_failed",
+                "tab_drag_end", "ssh_start", "ssh_write", "ssh_resize", "ssh_disconnect",
+                "local_start", "local_write", "local_resize", "local_disconnect",
+                "sftp_read_text", "sftp_read_image", "desktop_report_error",
+            ] {
+                assert!(command_allowed(label, command), "{label} must allow {command}");
+            }
+            for command in [
+                "servers_upsert", "servers_list", "team_service_configure", "ssh_connect",
+                "local_connect", "sftp_save_text", "collaboration_request", "tab_open",
+                "tab_quit", "tab_main_mount", "tab_drop_zone", "tab_restore_preview",
+                "office_publish_snapshot", "updater_install_mode", "plugin:updater|check",
+                "plugin:updater|download", "plugin:updater|install",
+                "plugin:updater|download_and_install", "unknown_command",
+            ] {
+                assert!(!command_allowed(label, command), "{label} must deny {command}");
+            }
+        }
     }
     #[test]
     fn unknown_windows_and_preview_cannot_call_terminal_commands() {
