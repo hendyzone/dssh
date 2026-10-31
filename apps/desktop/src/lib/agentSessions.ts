@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BoardError, cached, formatAge, get, isIdentifier, listStatuses, taskIndex, type IndexTask, type BoardSource } from "./taskLookup";
+import { BoardError, cached, formatAge, get, isIdentifier, listProjects, listStatuses, taskIndex, taskIndexProjects, buildProjectParentMap, type IndexTask, type BoardSource } from "./taskLookup";
 import { memberActivity, memberActivityLabels, type TeamMember } from "./teamMembers";
 import { isTeamLead, type LeadPanelSelf } from "./teamLead";
 
@@ -263,6 +263,8 @@ export function taskLifecycle(source: BoardSource, project: string, code: string
 export interface LiveSessions {
   tasks?: (IndexTask & {project:string})[];
   taskProjects?: string[];
+  /** Child slug → parent slug from the board catalog. */
+  parentBy?: Record<string, string>;
   snapshot?: SessionsSnapshot;
   /** `briefKey(project, code)` → brief. */
   briefs: Record<string, TaskBrief>;
@@ -292,16 +294,23 @@ export function useAgentSessions(source: BoardSource | undefined, members: (Pick
       const current = sourceRef.current;
       if (!current || document.hidden) return;
       try {
-        const projects: string[] = JSON.parse(projectsKey);
+        const memberProjects: string[] = JSON.parse(projectsKey);
+        let indexProjects = memberProjects;
+        let parentBy: Record<string, string> = {};
+        try {
+          const catalog = await listProjects(current);
+          parentBy = buildProjectParentMap(catalog);
+          indexProjects = taskIndexProjects(memberProjects, catalog);
+        } catch { /* roster-only fallback */ }
         const [sessions, indexes] = await Promise.all([
           fetchAgentSessions(current).then(snapshot=>({snapshot})).catch(error=>({error})),
-          Promise.allSettled(projects.map(project=>taskIndex(current,project,true))),
+          Promise.allSettled(indexProjects.map(project=>taskIndex(current,project,true))),
         ]);
         if (!live) return;
         const tasks: NonNullable<LiveSessions["tasks"]> = [];
         const taskProjects: string[] = [];
-        indexes.forEach((result,i)=>{if(result.status==="fulfilled"){taskProjects.push(projects[i]);tasks.push(...result.value.tasks.map(task=>({...task,project:projects[i]})));}});
-        setState(prev=>({...prev,tasks,taskProjects}));
+        indexes.forEach((result,i)=>{if(result.status==="fulfilled"){taskProjects.push(indexProjects[i]);tasks.push(...result.value.tasks.map(task=>({...task,project:indexProjects[i]})));}});
+        setState(prev=>({...prev,tasks,taskProjects,parentBy}));
         if ("error" in sessions) throw sessions.error;
         setState(prev => ({ ...prev, snapshot:sessions.snapshot, offline: false, error: "", fetchedAt: Date.now() }));
       } catch (e) {

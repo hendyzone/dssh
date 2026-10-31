@@ -1,8 +1,8 @@
 import {fireEvent,render,screen,within,waitFor} from "@testing-library/react";
 import {expect,it,vi} from "vitest";
 import TeamDynamics from "../src/components/TeamDynamics";
-import {parseAgentSessions,type LiveSessions} from "../src/lib/agentSessions";
-import {teamPanelStatus} from "../src/lib/teamPanelStatus";
+import {parseAgentSessions,type LiveSessions,briefKey} from "../src/lib/agentSessions";
+import {teamPanelStatus,memberDoingTaskFromIndex} from "../src/lib/teamPanelStatus";
 import {emptyProfile} from "../src/lib/collaboration";
 import type {TeamMember} from "../src/lib/teamMembers";
 import type {ServerEntry} from "../src/types";
@@ -62,7 +62,7 @@ it("T14 keeps the original office snapshot, including Lead seats",()=>{
 it("T13 fetches actual doing ownership even when the collector has no bound card",async()=>{
  clearBoardCache();
  const source=boardSource({...defaultLookupSettings(),boardUrl:"http://board.example.test"})!;
- transport.invoke.mockImplementation(async(_cmd:string,args:{path:string})=>({status:200,body:JSON.stringify(args.path==="/api/v1/agent-sessions"?{sessions:[],collector_offline:true,last_collected_at:100}:args.path.endsWith("/tasks")?{tasks:makeLive().tasks}:{} )}));
+ transport.invoke.mockImplementation(async(_cmd:string,args:{path:string})=>({status:200,body:JSON.stringify(args.path==="/api/v1/projects"?{projects:[{slug:"demo",name:"Demo",parent:""}]}:args.path==="/api/v1/agent-sessions"?{sessions:[],collector_offline:true,last_collected_at:100}:args.path.endsWith("/tasks")?{tasks:makeLive().tasks}:{} )}));
  const p=props([worker]);
  render(<TeamDynamics {...p} live={undefined} board={source}/>);
  await screen.findByText("工作中 · 采集离线");
@@ -70,4 +70,13 @@ it("T13 fetches actual doing ownership even when the collector has no bound card
  expect(screen.getByRole("button",{name:"0 可派活"})).toBeTruthy();
  const parsed=parseAgentSessions({sessions:[{session:"x",lease_status:"unknown",collector_last_report_at:123}],collector_offline:true,last_collected_at:123});
  expect(parsed).toMatchObject({collectorOffline:true,collectedAt:123,sessions:[{leaseStatus:"unknown",collectorLastReportAt:123}]});
+});
+it("T15 treats doing cards in child board projects as working for parent roster members",()=>{
+ const parentWorker={...worker,project:"dcollab",email:"dcollab-cw1-codex@example.test",tmux:{...worker.tmux,name:"worker-dcollab-cw1-codex"}};
+ const live={...makeLive(),tasks:[{project:"dssh",code:"T15",title:"子项目卡",status_key:"doing",assignee:"dcollab-cw1-codex",updated_at:""}],taskProjects:["dcollab","dssh"],parentBy:{dssh:"dcollab"},
+   briefs:{[briefKey("dssh","T15")]:{code:"T15",title:"子项目卡",brief:""}}};
+ const baseProps=props([parentWorker],live);
+ render(<TeamDynamics {...baseProps} serviceLive={undefined}/>);
+ expect(screen.getByText("工作中")).toBeTruthy();
+ expect(memberDoingTaskFromIndex(parentWorker, live)).toEqual({ project: "dssh", code: "T15" });
 });
