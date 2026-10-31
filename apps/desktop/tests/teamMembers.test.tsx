@@ -178,10 +178,11 @@ const asSession = (over: Partial<AgentSession> & {session:string}): AgentSession
   model:"gpt-6", lastLine:"", ...over,
 });
 const liveOf = (sessions: AgentSession[]): LiveSessions => ({
+  tasks:[],taskProjects:["demo"],
   snapshot:{sessions, now:NOW, ttlSeconds:180, alertAfterSeconds:600, collectedAt:NOW},
   briefs:{}, statusNames:{}, offline:false, error:"",
 });
-const worker = (over: Partial<TeamMember>): TeamMember => ({...member, ...over});
+const worker = (over: Partial<TeamMember>): TeamMember => ({...member,currentTask:"空闲", ...over});
 
 function renderMerged(members: TeamMember[], live: LiveSessions, ai:Record<string,unknown>={}) {
   return render(<TeamDynamics sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}} members={members} onUpdated={async()=>{}} board={board} live={live} serviceAi={ai}/>);
@@ -281,17 +282,16 @@ it("drops the filter when the live summary disappears instead of trapping an emp
   expect(screen.getByRole("region", {name:"空闲（Lead 手写）成员"})).toBeTruthy();
 });
 
-it("keeps the Lead as a compact row whose details still manage the roster", async () => {
+it("keeps only a compact Lead navigation entry outside the roster", async () => {
   const lead = {...member, email:"lead@example.test", role:"Lead", tmux:{id:"$1", created:100, name:"lead"}, currentTask:"协调团队"};
-  const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}});
+  const idle = worker({email:"idle@example.test",role:"c"});
   serviceRoster([lead,idle]);
-  render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
-  expect(await screen.findByRole("region", {name:"Lead成员"})).toBeTruthy();
-  expect(document.querySelector(".team-live-group-lead .team-compact-row")).toBeTruthy();
-  await expand(await screen.findByRole("button", {name:"打开 · lead"}));
-  expect(screen.getByRole("button", {name:"编辑备注 · lead"})).toBeTruthy();
-  expect(screen.getByRole("button", {name:"更新终端"})).toBeTruthy();
-  expect(screen.getByRole("button", {name:"从团队移除"})).toBeTruthy();
+  const onOpen=vi.fn();
+  render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen}}/>);
+  fireEvent.click(await screen.findByRole("button", {name:"打开 Lead · lead"}));
+  await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(lead,server));
+  expect(screen.queryByRole("region", {name:"Lead成员"})).toBeNull();
+  expect(screen.queryByRole("button",{name:"编辑备注 · lead"})).toBeNull();
 });
 
 it("keeps a member's details open when it moves to another group", async () => {
@@ -331,19 +331,19 @@ it("shows the empty state when the roster only contains the Lead", async () => {
   const lead = {...member, email:"lead@example.test", role:"Lead", tmux:{...member.tmux, name:"lead"}};
   serviceRoster([lead]);
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
-  await screen.findByRole("region", {name:"Lead成员"});
+  await screen.findByRole("button", {name:"打开 Lead · lead"});
   expect(screen.getByText("把成员终端放在一起")).toBeTruthy();
 });
 
-it("counts only workers in the title and still lists the Lead last", async () => {
+it("counts only workers in the title and omits the Lead group", async () => {
   const lead = {...member, email:"lead@example.test", role:"Lead", tmux:{id:"$1", created:100, name:"lead"}};
   const idle = worker({email:"idle@example.test", role:"c", tmux:{...member.tmux, name:"worker-demo-c"}});
   serviceRoster([lead,idle]);
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
-  await screen.findByRole("region", {name:"Lead成员"});
+  await screen.findByRole("button", {name:"打开 Lead · lead"});
   expect(screen.getByText("团队 · 1 人")).toBeTruthy();          // 口径 = worker 数，不含 Lead
   const groups = [...document.querySelectorAll(".team-live-group")].map(g => g.getAttribute("aria-label"));
-  expect(groups[groups.length - 1]).toBe("Lead成员");
+  expect(groups).not.toContain("Lead成员");
 });
 
 it("shows and honours the 清除筛选 button", async () => {

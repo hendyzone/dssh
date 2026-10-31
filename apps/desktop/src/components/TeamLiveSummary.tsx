@@ -24,7 +24,7 @@ export default function TeamLiveSummary({ board, live, summary, filter, onFilter
     { key: "available" as const, label: "可派活", count: summary.available, tone: "idle",
       title: "worker 空闲，名下没有进行中 / 阻塞 / 待验收的卡" },
   ];
-  return <div className="team-live-counts" role="group" aria-label="团队汇总">
+  return <>{live.snapshot?.collectorOffline&&<p role="status" className="team-live-offline">采集离线{live.snapshot.collectedAt?` · 最后上报 ${new Date(live.snapshot.collectedAt*1000).toLocaleString()}`:""}</p>}<div className="team-live-counts" role="group" aria-label="团队汇总">
     {chips.map(chip => <button type="button" key={chip.key}
       className={`team-count is-${chip.tone}${chip.count ? "" : " is-zero"}${filter === chip.key ? " is-on" : ""}`}
       aria-pressed={filter === chip.key}
@@ -33,5 +33,5 @@ export default function TeamLiveSummary({ board, live, summary, filter, onFilter
       onClick={() => onFilter?.(chip.key)}>
       <b>{chip.count}</b><span>{chip.label}</span>
     </button>)}
-  </div>;
+  </div></>;
 }

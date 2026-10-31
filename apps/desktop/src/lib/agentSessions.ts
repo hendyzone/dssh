@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BoardError, cached, formatAge, get, isIdentifier, listStatuses, type BoardSource } from "./taskLookup";
+import { BoardError, cached, formatAge, get, isIdentifier, listStatuses, taskIndex, type IndexTask, type BoardSource } from "./taskLookup";
 import { memberActivity, memberActivityLabels, type TeamMember } from "./teamMembers";
 
 /**
@@ -12,11 +12,12 @@ export interface AgentSession {
   state: string; stateDetail: string; stateSince: number;
   hostOk: boolean; hostError: string; stale: boolean; seenAt: number;
   taskCode: string; taskStatus: string;
+  leaseStatus?: string; collectorLastReportAt?: number;
   worktree: string; branch: string;
   commitHash: string; commitTime: number; commitSubject: string;
   dirty: number; model: string; contextPct?: number; lastLine: string;
 }
-export interface SessionsSnapshot { sessions: AgentSession[]; now: number; ttlSeconds: number; alertAfterSeconds: number; collectedAt: number }
+export interface SessionsSnapshot { sessions: AgentSession[]; now: number; ttlSeconds: number; alertAfterSeconds: number; collectedAt: number; collectorOffline?: boolean }
 export interface TaskBrief { code: string; title: string; brief: string }
 
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -33,13 +34,14 @@ export function parseAgentSessions(raw: unknown): SessionsSnapshot {
       state: str(s.state) || "unknown", stateDetail: str(s.state_detail), stateSince: num(s.state_since),
       hostOk: s.host_ok !== false, hostError: str(s.host_error), stale: s.stale === true, seenAt: num(s.seen_at),
       taskCode: str(s.task_code), taskStatus: str(s.task_status),
+      leaseStatus: str(s.lease_status), collectorLastReportAt: num(s.collector_last_report_at),
       worktree: str(s.worktree), branch: str(s.branch),
       commitHash: str(s.commit_hash), commitTime: num(s.commit_time), commitSubject: str(s.commit_subject),
       dirty: num(s.dirty), model: str(s.model), lastLine: str(s.last_line),
       ...(typeof s.context_pct === "number" ? { contextPct: s.context_pct } : {}),
     }));
   const now = num(data.now) || Math.floor(Date.now() / 1000);
-  return { sessions, now, ttlSeconds: num(data.ttl_seconds) || 180, alertAfterSeconds: num(data.alert_after_seconds) || 600, collectedAt: num(data.last_collected_at) };
+  return { sessions, now, ttlSeconds: num(data.ttl_seconds) || 180, alertAfterSeconds: num(data.alert_after_seconds) || 600, collectedAt: num(data.last_collected_at), collectorOffline: data.collector_offline === true };
 }
 
 // ---------- member ↔ session ----------
@@ -257,6 +259,8 @@ export function taskLifecycle(source: BoardSource, project: string, code: string
 }
 
 export interface LiveSessions {
+  tasks?: (IndexTask & {project:string})[];
+  taskProjects?: string[];
   snapshot?: SessionsSnapshot;
   /** `briefKey(project, code)` → brief. */
   briefs: Record<string, TaskBrief>;
@@ -272,11 +276,12 @@ const empty = (): LiveSessions => ({ briefs: {}, statusNames: {}, offline: false
  * Poll the collector every minute while mounted (skipped while the window is hidden); the timer
  * dies with the component. Briefs and status names are fetched for the given members' cards only.
  */
-export function useAgentSessions(source: BoardSource | undefined, members: Pick<TeamMember, "host" | "workdir" | "email" | "tmux">[], interval = SESSION_REFRESH_MS): LiveSessions {
+export function useAgentSessions(source: BoardSource | undefined, members: (Pick<TeamMember, "host" | "workdir" | "email" | "tmux"> & {project?:string})[], interval = SESSION_REFRESH_MS): LiveSessions {
   const [state, setState] = useState<LiveSessions>(empty);
   const sourceRef = useRef(source);
   sourceRef.current = source;
   const key = source?.key ?? "";
+  const projectsKey = JSON.stringify([...new Set(members.map(m=>m.project).filter((p):p is string=>!!p && isIdentifier(p)))].sort());
   useEffect(() => {
     setState(empty());
     if (!key) return;
@@ -285,8 +290,18 @@ export function useAgentSessions(source: BoardSource | undefined, members: Pick<
       const current = sourceRef.current;
       if (!current || document.hidden) return;
       try {
-        const snapshot = await fetchAgentSessions(current);
-        if (live) setState(prev => ({ ...prev, snapshot, offline: false, error: "", fetchedAt: Date.now() }));
+        const projects: string[] = JSON.parse(projectsKey);
+        const [sessions, indexes] = await Promise.all([
+          fetchAgentSessions(current).then(snapshot=>({snapshot})).catch(error=>({error})),
+          Promise.allSettled(projects.map(project=>taskIndex(current,project,true))),
+        ]);
+        if (!live) return;
+        const tasks: NonNullable<LiveSessions["tasks"]> = [];
+        const taskProjects: string[] = [];
+        indexes.forEach((result,i)=>{if(result.status==="fulfilled"){taskProjects.push(projects[i]);tasks.push(...result.value.tasks.map(task=>({...task,project:projects[i]})));}});
+        setState(prev=>({...prev,tasks,taskProjects}));
+        if ("error" in sessions) throw sessions.error;
+        setState(prev => ({ ...prev, snapshot:sessions.snapshot, offline: false, error: "", fetchedAt: Date.now() }));
       } catch (e) {
         if (live) setState(prev => ({ ...prev, offline: true, error: e instanceof Error ? e.message : String(e) }));
       }
@@ -294,7 +309,7 @@ export function useAgentSessions(source: BoardSource | undefined, members: Pick<
     void refresh();
     const timer = window.setInterval(() => void refresh(), interval);
     return () => { live = false; window.clearInterval(timer); };
-  }, [key, interval]);
+  }, [key, interval, projectsKey]);
   const targets = state.snapshot ? briefTargets(members.map(m => matchSession(m, state.snapshot!.sessions))) : [];
   const targetsKey = JSON.stringify(targets);
   useEffect(() => {
