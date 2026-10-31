@@ -674,3 +674,29 @@ it("keeps the server list as a rail panel and moves it to the other rail by drag
   expect(saved?.panelLayout?.connections?.side).toBe("right");
   view.unmount();
 });
+
+it.each(["left", "right"])("shares one connection-panel visibility state on the %s side", async side => {
+  localStorage.setItem("dssh.sidebar.collapsed", "true");
+  const view = render(<App/>);
+  await act(async () => {});
+  if (side === "right") {
+    const source = view.container.querySelector('[data-panel-icon="connections"]')!;
+    const transfer = {effectAllowed: "", dropEffect: "", value: "",
+      setData(_key: string, value: string) { this.value = value; }, getData() { return this.value; }};
+    fireEvent.dragStart(source, {dataTransfer: transfer});
+    fireEvent.drop(view.container.querySelector(".icon-rail-right")!, {dataTransfer: transfer});
+    fireEvent.dragEnd(source, {dataTransfer: transfer});
+  }
+  const rail = view.container.querySelector('[data-panel-icon="connections"]') as HTMLButtonElement;
+  expect(rail.closest(`.icon-rail-${side}`)).toBeTruthy();
+  expect(view.container.querySelector(".sidebar-collapsed")).toBeNull();
+  fireEvent.click(view.container.querySelector('.sidebar-hide-toggle')!);
+  expect(view.container.querySelector(".sidebar")).toBeNull();
+  expect(view.container.querySelectorAll('[data-panel-icon="connections"]')).toHaveLength(1);
+  expect(rail.title).toBe("显示连接面板");
+  fireEvent.click(rail);
+  expect(view.container.querySelectorAll(".sidebar")).toHaveLength(1);
+  fireEvent.click(rail);
+  expect(view.container.querySelector(".sidebar")).toBeNull();
+  view.unmount();
+});

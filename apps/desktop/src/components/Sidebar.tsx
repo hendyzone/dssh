@@ -1,7 +1,7 @@
 import { PositionedMenu, MenuItem } from "./ui/positioned-menu";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { History, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { History, PanelLeftClose } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState, useRef } from "react";
 import type { MouseEvent } from "react";
@@ -29,6 +29,7 @@ interface Props {
   onEdit: (s: ServerEntry) => void;
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
+  onHide: () => void;
   onServersChanged?: (servers: ServerEntry[]) => void;
 }
 
@@ -43,26 +44,9 @@ export default function Sidebar({
   onEdit,
   onDelete,
   onOpenSettings,
+  onHide,
   onServersChanged,
 }: Props) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem("dssh.sidebar.collapsed") === "true";
-    } catch {
-      return false;
-    }
-  });
-  const toggleSidebar = () => {
-    const next = !sidebarCollapsed;
-    setSidebarCollapsed(next);
-    setContextMenu(undefined);
-    setFolderMenu(null);
-    try {
-      localStorage.setItem("dssh.sidebar.collapsed", String(next));
-    } catch {
-      // Collapsing still works when storage is unavailable.
-    }
-  };
   const cloneBusy = useRef(false);
   const [grouping, setGrouping] = useState(false);
   const groupingLock = useRef(false);
@@ -341,8 +325,8 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`sidebar${dragging ? " sidebar-resizing" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
-      style={{ width: sidebarCollapsed ? 44 : width }}
+      className={`sidebar${dragging ? " sidebar-resizing" : ""}`}
+      style={{ width }}
       onClickCapture={(event) => {
         if (editing.suppressClick.current) {
           event.preventDefault();
@@ -366,13 +350,12 @@ export default function Sidebar({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="icon-btn sidebar-collapse-toggle"
-            title={sidebarCollapsed ? "展开连接栏" : "收窄连接栏"}
-            aria-label={sidebarCollapsed ? "展开连接栏" : "收窄连接栏"}
-            aria-expanded={!sidebarCollapsed}
-            onClick={toggleSidebar}
+            className="icon-btn sidebar-hide-toggle"
+            title="隐藏连接面板"
+            aria-label="隐藏连接面板"
+            onClick={onHide}
           >
-            {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            <PanelLeftClose size={16} />
           </Button>
           <Button
             variant="ghost"

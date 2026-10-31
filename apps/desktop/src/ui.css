@@ -4,19 +4,6 @@
 @import "tw-animate-css";
 @source "./";
 
-.sidebar.sidebar-collapsed {
-  padding: 12px 7px;
-}
-.sidebar-collapsed > :not(.sidebar-header),
-.sidebar-collapsed .sidebar-brand,
-.sidebar-collapsed .sidebar-actions > :not(.sidebar-collapse-toggle) {
-  display: none;
-}
-.sidebar-collapsed .sidebar-header {
-  padding: 2px 0;
-  justify-content: center;
-}
-
 @layer base {
   [data-slot] {
     border-style: solid;

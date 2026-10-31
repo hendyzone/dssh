@@ -1092,7 +1092,8 @@ export default function App() {
     ? <Sidebar recentIds={recentIds} key={sidebarRevision} servers={servers} onConnect={connect}
         onAdd={(group) => { setNewServerGroup(group); setFormTarget(undefined); }}
         onImport={() => setShowImport(true)} onEdit={(s) => setFormTarget(s)}
-        onDelete={removeServer} onServersChanged={setServers} onOpenSettings={() => setShowSettings(true)}/>
+        onDelete={removeServer} onServersChanged={setServers} onOpenSettings={() => setShowSettings(true)}
+        onHide={() => setConnectionsOpen(false)}/>
     : null;
 
   return (

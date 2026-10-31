@@ -114,6 +114,7 @@ const props = () => ({
   onEdit: vi.fn(),
   onDelete: vi.fn(),
   onOpenSettings: vi.fn(),
+  onHide: vi.fn(),
 });
 
 it("nests folders, counts descendants and persists folding without hiding ungrouped connections", () => {
@@ -171,8 +172,9 @@ it("clones a connection through the backend without exposing credentials", async
   expect(invoke).toHaveBeenCalledWith("servers_clone",{id:"1"});
 });
 
-it("preserves the narrow sidebar width and toolbar actions across collapse and expand", () => {
+it("ignores the obsolete collapsed setting and delegates hiding to the parent", () => {
   localStorage.setItem("dssh.sidebar.width", "220");
+  localStorage.setItem("dssh.sidebar.collapsed", "true");
   const options = { ...props(), onImport: vi.fn() };
   const view = render(<Sidebar {...options} />);
   expect((view.container.querySelector(".sidebar") as HTMLElement).style.width).toBe("220px");
@@ -182,9 +184,8 @@ it("preserves the narrow sidebar width and toolbar actions across collapse and e
   expect(options.onImport).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByTitle("新建连接"));
   expect(options.onAdd).toHaveBeenCalledWith();
-  fireEvent.click(screen.getByRole("button", { name: "收窄连接栏" }));
-  expect((view.container.querySelector(".sidebar") as HTMLElement).style.width).toBe("44px");
-  fireEvent.click(screen.getByRole("button", { name: "展开连接栏" }));
-  expect((view.container.querySelector(".sidebar") as HTMLElement).style.width).toBe("220px");
+  fireEvent.click(screen.getByRole("button", { name: "隐藏连接面板" }));
+  expect(options.onHide).toHaveBeenCalledOnce();
+  expect(view.container.querySelector(".sidebar-collapsed")).toBeNull();
   expect(localStorage.getItem("dssh.sidebar.width")).toBe("220");
 });
