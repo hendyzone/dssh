@@ -13,6 +13,7 @@ import type { TabInfo } from "../types";
 import { GROUP_COLORS, type ConnectionGroup } from "../lib/connectionGroups";
 import { useDialogFocus } from "../lib/useDialogFocus";
 import { isComposingKey } from "../lib/keyboard";
+import { clampConnectionTabScroll } from "../lib/connectionTabScroll";
 import "./ConnectionGroups.css";
 
 export function ConnectionTabStrip({
@@ -36,9 +37,9 @@ export function ConnectionTabStrip({
   onNewTab: () => void;
   onMove: (tabId: string, groupId?: string) => void;
 }) {
-  const stripRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const strip = stripRef.current;
+    const strip = scrollRef.current;
     if (!strip) return;
     const onWheel = (event: WheelEvent) => {
       // Keep native horizontal gestures and Ctrl+wheel zoom intact.
@@ -53,15 +54,24 @@ export function ConnectionTabStrip({
         0,
         Math.min(maxScroll, strip.scrollLeft + event.deltaY * unit),
       );
+      clampConnectionTabScroll(strip);
     };
+    const onScroll = () => clampConnectionTabScroll(strip);
     // A native non-passive listener allows cancelling vertical page scrolling.
     strip.addEventListener("wheel", onWheel, { passive: false });
-    return () => strip.removeEventListener("wheel", onWheel);
+    strip.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      strip.removeEventListener("wheel", onWheel);
+      strip.removeEventListener("scroll", onScroll);
+    };
   }, []);
   useEffect(() => {
-    stripRef.current
-      ?.querySelector<HTMLElement>('.tab[aria-selected="true"]')
+    const strip = scrollRef.current;
+    if (!strip) return;
+    strip
+      .querySelector<HTMLElement>('.tab[aria-selected="true"]')
       ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    clampConnectionTabScroll(strip);
   }, [activeTabId, tabs]);
   const rendered = new Set<string>();
   const renderGroup = (group: ConnectionGroup) => {
@@ -122,58 +132,62 @@ export function ConnectionTabStrip({
       </div>
     );
   };
-  return (
-    <div
-      ref={stripRef}
-      className="tab-bar connection-tab-bar"
-      role="tablist"
-      aria-label="已打开的连接"
-    >
+  const tabNodes = (
+    <>
       {tabs.map((tab) => {
         const group = groups.find((g) => g.id === tab.groupId);
         if (!group) return renderTab(tab);
         return rendered.has(group.id) ? null : renderGroup(group);
       })}
       {groups.filter((g) => !rendered.has(g.id)).map(renderGroup)}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="tab-new"
-        aria-label="新建标签"
-        title="新建标签 (⌘T / Ctrl+T)"
-        onClick={onNewTab}
-      >
-        <Plus size={16} aria-hidden="true" />
-      </Button>
-      {tabs.length > 0 && (
+    </>
+  );
+  return (
+    <div className="tab-bar connection-tab-bar" role="tablist" aria-label="已打开的连接">
+      <div ref={scrollRef} className="connection-tab-scroll" data-tab-scroll="">
+        {tabNodes}
+      </div>
+      <div className="connection-tab-toolbar" data-tab-toolbar="">
         <Button
           variant="ghost"
           size="sm"
-          className="connection-create"
-          aria-label="新建分组"
-          onClick={onCreate}
-          title="新建分组：将当前连接加入新分组"
+          className="tab-new"
+          aria-label="新建标签"
+          title="新建标签 (⌘T / Ctrl+T)"
+          onClick={onNewTab}
         >
-          <FolderPlus size={16} aria-hidden="true" />
+          <Plus size={16} aria-hidden="true" />
         </Button>
-      )}
-      {groups.length > 0 && (
-        <span
-          className="connection-ungroup-drop"
-          title="将连接拖到此处移出分组"
-          onDragOver={(event) => {
-            if (event.dataTransfer.types.includes("application/x-dssh-tab"))
+        {tabs.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="connection-create"
+            aria-label="新建分组"
+            onClick={onCreate}
+            title="新建分组：将当前连接加入新分组"
+          >
+            <FolderPlus size={16} aria-hidden="true" />
+          </Button>
+        )}
+        {groups.length > 0 && (
+          <span
+            className="connection-ungroup-drop"
+            title="将连接拖到此处移出分组"
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("application/x-dssh-tab"))
+                event.preventDefault();
+            }}
+            onDrop={(event) => {
               event.preventDefault();
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            const id = event.dataTransfer.getData("application/x-dssh-tab");
-            if (tabs.some((t) => t.id === id)) onMove(id);
-          }}
-        >
-          拖到此处移出分组
-        </span>
-      )}
+              const id = event.dataTransfer.getData("application/x-dssh-tab");
+              if (tabs.some((t) => t.id === id)) onMove(id);
+            }}
+          >
+            拖到此处移出分组
+          </span>
+        )}
+      </div>
     </div>
   );
 }
