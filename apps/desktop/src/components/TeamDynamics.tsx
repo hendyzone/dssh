@@ -3,6 +3,7 @@ import TeamServiceAi from "./TeamServiceAi";
 import {serviceAi} from "../lib/serviceAi";
 import type { TeamLive } from "../lib/teamService";
 import { memberTaskTarget, memberTaskSession, serviceMemberStatus } from "../lib/teamServicePresentation";
+import { memberDoingTaskFromIndex } from "../lib/teamPanelStatus";
 import {useEffect,useRef,useState,type ReactNode} from "react";
 import {ExternalLink,Plus,RefreshCw} from "lucide-react";
 import {type CollaborationProfile} from "../lib/collaboration";
@@ -44,7 +45,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   onRoomOpenChange?:(open:boolean)=>void;
 }){
   const self={...profile,username:navigation.server.username};
-  const isLead=(m:TeamMember)=>serviceLive === undefined ? isLeadMember(m,self) : /^lead\b/i.test(m.role.trim());
+  const isLead=(m:TeamMember)=>isLeadMember(m,self);
   const members=rosterMembers.filter(m=>!isLead(m));      // Worker rows feed the shared live collector.
   const own=useAgentSessions(shared?undefined:board,members);
   const live=shared??own;
@@ -57,7 +58,11 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   }).sort((a,b)=>a.status.rank-b.status.rank||a.index-b.index);
   const taskLookup = useTaskLookup(board);
   const [serviceBriefs,setServiceBriefs] = useState<{scope:string;values:Record<string,TaskBrief>}>({scope:"",values:{}});
-  const targetOf = (member:TeamMember,session?:ReturnType<typeof rankMembers>[number]["session"]) => serviceLive === undefined ? (session?.taskCode ? {project:session.project,code:session.taskCode} : undefined) : memberTaskTarget(member,memberTaskSession(member,snapshot?.sessions??[]));
+  const targetOf = (member:TeamMember,session?:ReturnType<typeof rankMembers>[number]["session"]) => {
+    if (serviceLive !== undefined) return memberTaskTarget(member, memberTaskSession(member, snapshot?.sessions ?? []));
+    if (session?.taskCode) return { project: session.project, code: session.taskCode };
+    return memberDoingTaskFromIndex(member, live) ?? memberTaskTarget(member, session);
+  };
   const taskTargets = [...new Map(ranked.flatMap(row=>{const target=targetOf(row.member,row.session);return target?[[briefKey(target.project,target.code),target] as const]:[];})).values()];
   const taskScope = JSON.stringify([serviceIdentity,board?.key,taskTargets]);
   useEffect(()=>{

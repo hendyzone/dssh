@@ -35,6 +35,9 @@ export function serviceMemberAvatar(member: TeamMember, report: TeamLive | undef
 export function memberTaskTarget(member: Pick<TeamMember,"currentTask">, session?: AgentSession): {project:string;code:string;manual:boolean}|undefined {
   const manual=member.currentTask?.match(/^工作中\s*·\s*([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?=\s|$)/);
   if(manual)return {project:manual[1],code:manual[2],manual:true};
+  const rosterLine=(member.currentTask??"").trim().split(/\r?\n/)[0]??"";
+  const rosterPair=rosterLine.match(/^([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\s|$)/);
+  if(rosterPair && !member.currentTask?.startsWith("空闲"))return {project:rosterPair[1],code:rosterPair[2],manual:true};
   if(member.currentTask?.startsWith("空闲"))return;
   const valid=(value:string)=>/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value);
   if (session && !session.stale && session.hostOk && session.state !== "gone" && valid(session.project) && valid(session.taskCode))

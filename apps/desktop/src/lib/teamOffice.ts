@@ -6,6 +6,7 @@ import { collaborationKey, type CollaborationProfile, type CollaborationSession 
 import { briefKey, matchSession, type SessionsSnapshot, type TaskBrief } from "./agentSessions";
 import { resolveTeamAvatar, type TeamAvatarStatus } from "./teamAvatar";
 import { matchingServers, memberKey, type TeamMember } from "./teamMembers";
+import { isTeamLead } from "./teamLead";
 import { sameSshEndpoint } from "./tmuxTabs";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
 import type { ServerEntry } from "../types";
@@ -196,7 +197,6 @@ export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record
     if (!project) { project = { id: officeKey(identity), name: source.project, sources: [] }; projects.set(identity, project); }
     const roster = rosters[source.id] ?? { availability: source.backendId ? "loading" : "offline", notice: source.backendId ? "正在读取团队…" : "连接 Lead 所在服务器后可读取团队", members: [] };
     const members = (roster.availability === "ready" || source.service) ? roster.members.map(member => {
-      const boundLead = !!source.server && matchingServers(member, [source.server]).length > 0 && member.tmux.id === source.profile.tmuxId && member.tmux.created === source.profile.tmuxCreated && member.workdir === source.profile.workdir;
       const live = roster.live?.[memberKey(member)];
       const machines = (roster.machines ?? {}) as Record<string, { online?: boolean; version?: string }>;
       const display = memberDisplay(member, live, machines);
@@ -206,9 +206,13 @@ export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record
       const forTaskDone = forTask && board?.forTasks?.[briefKey(forTask.project, forTask.code)] === "done" ? true : undefined;
       const machineName = display.machine;
       const machineRecord = machineName ? machines[machineName] : undefined;
+      const panelSelf = source.server ? {
+        tmuxId: source.profile.tmuxId, tmuxCreated: source.profile.tmuxCreated,
+        workdir: source.profile.workdir, username: source.server.username,
+      } : undefined;
       return {
         id: officeKey(JSON.stringify([source.id, memberKey(member)])), name: display.title,
-        isLead: /^lead\b/i.test(member.role.trim()) || boundLead,
+        isLead: isTeamLead(member, panelSelf),
         status: source.service ? serviceMemberAvatar(member, live, context.boards?.[source.id]?.offline ? undefined : matchSession(member, context.boards?.[source.id]?.snapshot?.sessions??[])) : resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id], live, source.service),
         paletteKey: officeKey(memberKey(member)),
         ai: serviceAi(roster.ai?.[memberKey(member)]), aiEnabled: roster.aiEnabled,

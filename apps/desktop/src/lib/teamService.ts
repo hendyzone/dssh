@@ -39,6 +39,8 @@ export interface TeamServiceProject {
   offline: boolean;
   status: TeamConnectionState;
   identity: string;
+  /** Human-readable project title when the team service provides one. */
+  title?: string;
 }
 export interface ProjectCatalog { state: "unknown" | "ready" | "error"; projects: string[]; message?: string }
 export interface TeamServiceState {
@@ -133,10 +135,12 @@ function snapshotOf(value: unknown, url: string, status: TeamServiceStatus, hist
       old?.seq === value.seq ? old.receivedAt : null);
     const cached = historical || value.offline === true;
     const offline = status.state !== 'online';
+    const title = typeof value.title === "string" && value.title.trim() ? value.title.trim()
+      : typeof value.display_name === "string" && value.display_name.trim() ? value.display_name.trim() : undefined;
     return { project: value.project, seq: value.seq, lseq: sequence(value.lseq) ? value.lseq : 0,
       members, ai: value.ai, live: liveMap(value.live), machines: object(value.machines) ? value.machines : {},
       receivedAt: savedAt ?? (cached || offline ? cachedTime : Date.now()), offline, status: status.state,
-      identity: serviceProjectIdentity(url, value.project) };
+      identity: serviceProjectIdentity(url, value.project), ...(title ? { title } : {}) };
   } catch { return; }
 }
 function loadCache() {

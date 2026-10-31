@@ -5,6 +5,7 @@ import { isLeadMember } from "../lib/agentSessions";
 import { memberConnection, memberKey, type TeamMember } from "../lib/teamMembers";
 import { memberDisplay, type MachinesMap } from "../lib/memberDisplay";
 import { serviceMemberStatus } from "../lib/teamServicePresentation";
+import { projectDisplayTitle } from "../lib/teamServiceProjects";
 import type { TeamServiceState } from "../lib/teamService";
 import type { CollaborationSession } from "../lib/collaboration";
 import type { ServerEntry } from "../types";
@@ -42,7 +43,7 @@ export default function AdventurePanel({ service, servers, sessions, onOpen, onC
     const empty = missing ? "项目不可用或无权访问" : !snapshot
       ? service.status.state === "connecting" ? "正在读取名单…" : "名单不可用"
       : unavailable ? "名单不可用 · 团队服务离线" : "未设置 Lead";
-    return { project, leads, empty, rank: Math.min(6, ...leads.map(lead => priority[lead.status.tone] ?? 5)) };
+    return { project, projectTitle: projectDisplayTitle(project, service), leads, empty, rank: Math.min(6, ...leads.map(lead => priority[lead.status.tone] ?? 5)) };
   }).sort((a, b) => a.rank - b.rank || a.project.localeCompare(b.project));
 
   const open = async (key: string, member: TeamMember, server: ServerEntry) => {
@@ -62,8 +63,8 @@ export default function AdventurePanel({ service, servers, sessions, onOpen, onC
     <div className="adventure-projects">
       {!service.url ? <p className="adventure-empty">未配置团队服务</p>
         : !projects.length ? <p className="adventure-empty">未订阅项目</p>
-        : projects.map(({ project, leads, empty }) => <section key={project} aria-label={project} className="adventure-project">
-          <h3>{project}</h3>
+        : projects.map(({ project, projectTitle, leads, empty }) => <section key={project} aria-label={projectTitle} className="adventure-project">
+          <h3>{projectTitle}</h3>
           {leads.length ? leads.map(({ member, key, display, server, status }) => <div key={key}>
             <button className="adventure-lead" disabled={!server || pending[key]} aria-label={`打开 Lead · ${project} · ${display.title}`}
               onClick={() => server && void open(key, member, server)}>

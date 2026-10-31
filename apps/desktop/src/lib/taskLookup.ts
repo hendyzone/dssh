@@ -22,7 +22,7 @@ export interface BoardTask extends IndexTask {
 }
 export interface BoardStatus { key: string; name: string; color: string }
 export interface BoardDependency { code: string; title: string; status_key: string; completed: boolean }
-export interface BoardProject { slug: string; name: string; archived?: boolean }
+export interface BoardProject { slug: string; name: string; archived?: boolean; parent?: string }
 export interface TaskIndex { project: string; tasks: IndexTask[]; byCode: Map<string, IndexTask>; fetchedAt: number }
 
 export type BoardErrorKind = "config" | "unreachable" | "project" | "task" | "format" | "input";
@@ -187,8 +187,42 @@ export function listProjects(source: BoardSource, force = false): Promise<BoardP
     const data = await get<{ projects?: unknown }>(source, "/api/v1/projects");
     if (!data || !Array.isArray(data.projects)) throw new BoardError("format", "看板返回格式无效");
     return data.projects.filter((p): p is Record<string, unknown> => !!p && typeof p === "object" && typeof (p as { slug?: unknown }).slug === "string")
-      .map(p => ({ slug: str(p.slug), name: str(p.name) || str(p.slug), archived: p.archived === true }));
+      .map(p => {
+        const parent = typeof p.parent === "string" && p.parent.trim() ? p.parent.trim() : undefined;
+        return { slug: str(p.slug), name: str(p.name) || str(p.slug), archived: p.archived === true, ...(parent ? { parent } : {}) };
+      });
   }, force);
+}
+/** `child` → immediate parent slug (from GET /api/v1/projects). */
+export function buildProjectParentMap(projects: BoardProject[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const project of projects) if (project.parent) map[project.slug] = project.parent;
+  return map;
+}
+/** Member roster project plus direct child projects on the board. */
+export function taskIndexProjects(memberProjects: string[], catalog: BoardProject[]): string[] {
+  const children = new Map<string, string[]>();
+  for (const project of catalog) {
+    if (!project.parent) continue;
+    const list = children.get(project.parent) ?? [];
+    list.push(project.slug);
+    children.set(project.parent, list);
+  }
+  const out = new Set<string>();
+  for (const root of memberProjects) {
+    if (!isIdentifier(root)) continue;
+    out.add(root);
+    for (const child of children.get(root) ?? []) out.add(child);
+  }
+  return [...out].sort();
+}
+/** Task belongs to the member's roster project or a descendant board project. */
+export function taskInMemberScope(taskProject: string, memberProject: string, parentBy: Record<string, string>): boolean {
+  if (taskProject === memberProject) return true;
+  for (let current = taskProject; parentBy[current]; current = parentBy[current]) {
+    if (parentBy[current] === memberProject) return true;
+  }
+  return false;
 }
 export function listStatuses(source: BoardSource, project: string): Promise<BoardStatus[]> {
   return cached(`${source.key}|statuses|${project}`, async () => {

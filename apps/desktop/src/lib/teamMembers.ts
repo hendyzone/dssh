@@ -4,6 +4,8 @@ import { findTmuxTab, sameSshEndpoint } from "./tmuxTabs";
 
 export interface TeamMember {
   id?: string;
+  /** Optional display name from the roster when no mailbox is stored. */
+  name?: string;
   project: string;
   email: string;
   role: string;
@@ -69,7 +71,8 @@ export function parseMember(value: unknown, project: string): TeamMember {
   const tenure = m.tenure === "resident" || m.tenure === "temporary" ? m.tenure : undefined;
   const forTask = typeof m.for_task === "string" && m.for_task.length <= 64 && /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(m.for_task)
     ? m.for_task : undefined;
-  return { ...info, ...ai, ...(tenure ? {tenure} : {}), ...(forTask ? {for_task:forTask} : {}), ...(validId ? {id:m.id} : {}), project, email:m.email, role:m.role, host:m.host, port:m.port, username:m.username, workdir:m.workdir,
+  const validName = typeof m.name === "string" && validText(m.name, 80) ? m.name.trim() : undefined;
+  return { ...info, ...ai, ...(tenure ? {tenure} : {}), ...(forTask ? {for_task:forTask} : {}), ...(validId ? {id:m.id} : {}), ...(validName ? {name: validName} : {}), project, email:m.email, role:m.role, host:m.host, port:m.port, username:m.username, workdir:m.workdir,
     tmux:{id:m.tmux.id, created:m.tmux.created, name:m.tmux.name},
     ...(Number.isSafeInteger(m.rev) && Number(m.rev) > 0 ? {rev:m.rev} : {}),
     ...(validText(m.updatedAt, 80) ? {updatedAt:m.updatedAt} : {}) };

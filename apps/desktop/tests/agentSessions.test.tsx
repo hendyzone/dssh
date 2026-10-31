@@ -180,6 +180,13 @@ describe("Lead 备注 freshness and offline fallback", () => {
     expect(isLeadMember(member("x", { role: "协调", tmux: { id: "$9", created: 9, name: "x" }, workdir: "/lead" }), self)).toBe(true);
     expect(isLeadMember(member("x", { role: "Leader-ish worker" }), self)).toBe(false);
   });
+  it("recognises Lead by tmux *-lead suffix or mailbox *-lead when role has no Lead prefix", () => {
+    const tmuxLead = member("datrix", { role: "claude · Opus 5.5", tmux: { id: "$3", created: 1, name: "datrix-lead" } });
+    expect(/^lead\b/i.test(tmuxLead.role)).toBe(false);
+    expect(isLeadMember(tmuxLead)).toBe(true);
+    expect(isLeadMember(member("x", { role: "worker", email: "dcollab-cw1-lead@example.invalid" }))).toBe(true);
+    expect(isLeadMember(member("x", { role: "worker", email: "plain-worker@example.invalid" }))).toBe(false);
+  });
 });
 
 describe("briefTargets", () => {

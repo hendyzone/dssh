@@ -6,7 +6,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 
 import {
   BoardError, boardSource, buildIndex, clearBoardCache, defaultLookupSettings, findTaskCodes, formatAge, inferProject, loadLookupSettings,
-  lookupTask, parseQuery, resolveCode, saveLookupSettings, shortName, TASK_LOOKUP_KEY, taskIndex,
+  lookupTask, parseQuery, resolveCode, saveLookupSettings, shortName, TASK_LOOKUP_KEY, taskIndex, taskIndexProjects, buildProjectParentMap,
   type IndexTask,
 } from "../src/lib/taskLookup";
 import { collaborationKey, emptyProfile, type CollaborationProfile } from "../src/lib/collaboration";
@@ -156,5 +156,22 @@ describe("lookupTask", () => {
     expect(calls).toEqual(["/api/v1/projects/smart-table/tasks"]);
     expect(mocks.invoke).toHaveBeenCalledWith("taskboard_get", expect.objectContaining({ index: true, route: { kind: "direct", url: "http://board.test:8091" } }));
     expect(buildIndex("x", idx("A-1")).byCode.has("A-1")).toBe(true);
+  });
+});
+
+describe("taskIndexProjects", () => {
+  const catalog = [
+    { slug: "dcollab", name: "d协作" },
+    { slug: "dssh", name: "dssh", parent: "dcollab" },
+    { slug: "amail", name: "amail", parent: "dcollab" },
+    { slug: "smart-table", name: "芯流" },
+    { slug: "nst-vision", name: "视觉", parent: "smart-table" },
+  ];
+  it("includes direct child slugs for each roster project", () => {
+    expect(taskIndexProjects(["dcollab"], catalog).sort()).toEqual(["amail", "dcollab", "dssh"].sort());
+    expect(taskIndexProjects(["demo"], catalog)).toEqual(["demo"]);
+  });
+  it("maps child to parent for assignment scope", () => {
+    expect(buildProjectParentMap(catalog)).toEqual({ dssh: "dcollab", amail: "dcollab", "nst-vision": "smart-table" });
   });
 });
