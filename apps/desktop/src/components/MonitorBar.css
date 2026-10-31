@@ -16,13 +16,23 @@
   margin-left: auto;
   white-space: nowrap;
 }
+/* Centre slot (current pane member): only the space the monitor leaves free; empty when unused. */
+.monitor-center {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  container: monitor-center / inline-size;
+}
 .monitor-summary-net {
   color: var(--ui-muted);
   font-size: 11px;
 }
 .monitor-error {
   color: var(--ui-danger);
-  flex: 1;
+  /* Content-sized basis: the centre slot never squeezes the error and its retry button. */
+  flex: 1 1 auto;
 }
 .monitor-error button {
   margin-left: 12px;

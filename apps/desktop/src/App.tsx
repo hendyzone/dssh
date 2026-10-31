@@ -39,6 +39,8 @@ import {
   IconSplitV,
 } from "./components/Icons";
 import MonitorBar from "./components/MonitorBar";
+import PaneMemberStatus from "./components/PaneMemberStatus";
+import TerminalTaskLayer from "./components/TerminalTaskLayer";
 import LinuxTitleBar, { linuxTitleBar } from "./components/LinuxTitleBar";
 import { LOCAL_SHELL, isLocalShell } from "./lib/localShell";
 import TmuxPanel from "./components/TmuxPanel";
@@ -476,6 +478,11 @@ export default function App() {
     inferred: inferProject(lookupSettings,pane,teamService,
       activeTeamLookup?.paneId===pane.id && collaborationPane?.id===pane.id && ["team","collaboration"].includes(sidePanels[activeTabId??""]??"") ? activeTeamLookup.scope : undefined),
   });
+  // Status bar member: a card opened from it (same overlay as terminal task links) and the member
+  // to locate once the team panel is open.
+  const [statusTask, setStatusTask] = useState<{tabId: string; project: string; code: string; seq: number} | null>(null);
+  const [teamFocus, setTeamFocus] = useState<{paneId: string; project: string; key: string; seq: number}>();
+  const statusBoard = boardSource(lookupSettings);
   const paneTaskLinks = (pane: SessionInfo) => {
     if (!lookupSettings.terminalLinks) return undefined;
     const { source, inferred } = paneTaskContext(pane);
@@ -1219,6 +1226,15 @@ export default function App() {
                       flexDirection: t.splitDir === "column" ? "column" : "row",
                     }}
                   >
+                    {statusTask?.tabId === t.id && statusBoard && (
+                      <TerminalTaskLayer
+                        source={statusBoard}
+                        project={statusTask.project}
+                        hover={null}
+                        opened={{ code: statusTask.code, seq: statusTask.seq }}
+                        onClose={() => setStatusTask(null)}
+                      />
+                    )}
                     {t.panes.map((p, i) => (
                       <div
                         key={p.id}
@@ -1286,7 +1302,8 @@ export default function App() {
                       onClose={() => togglePanel(t.id, null)}/>
                   </PanelDock>}
                   {panel === "team" && t.id === activeTabId && (serviceTeamsEnabled || t.panes[t.activePane]?.tmux) && <PanelDock kind="team" side={panelLayout.team.side} onSideChange={next => movePanelToSide("team", next)}>
-                    <TeamPanel onLookupScopeChange={onLookupScopeChange} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
+                    <TeamPanel onLookupScopeChange={onLookupScopeChange} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration}
+                      focusMember={teamFocus?.paneId === t.panes[t.activePane].id ? teamFocus : undefined} onFocused={() => setTeamFocus(undefined)} taskLookup={paneTaskContext(t.panes[t.activePane])} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (
                     <PanelDock kind="collaboration" side={panelLayout.collaboration.side} onSideChange={next => movePanelToSide("collaboration", next)}>
@@ -1361,6 +1378,16 @@ export default function App() {
                   detailsOpen={panel === "monitor"}
                   onDetailsToggle={() => togglePanel(t.id, "monitor")}
                   targetId={"monitor-dock-" + t.id}
+                  center={t.id === activeTabId ? <PaneMemberStatus
+                    pane={t.panes[t.activePane]}
+                    profile={collaboration}
+                    board={statusBoard}
+                    onOpenTask={task => setStatusTask(previous => ({ tabId: t.id, ...task, seq: (previous?.seq ?? 0) + 1 }))}
+                    onOpenMember={member => {
+                      setTeamFocus(previous => ({ paneId: t.panes[t.activePane].id, ...member, seq: (previous?.seq ?? 0) + 1 }));
+                      setSidePanels(previous => ({ ...previous, [t.id]: "team" }));
+                    }}
+                  /> : undefined}
                 />}
               </div>
             );

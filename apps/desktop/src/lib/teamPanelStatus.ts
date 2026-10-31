@@ -1,6 +1,8 @@
-import type {AgentSession, LiveSessions, LiveStatus} from "./agentSessions";
+import {liveSnapshot, rankMembers, type AgentSession, type LiveSessions, type LiveStatus} from "./agentSessions";
 import {taskInMemberScope} from "./taskLookup";
-import type {TeamMember} from "./teamMembers";
+import {memberKey, type TeamMember} from "./teamMembers";
+import type {TeamLive} from "./teamService";
+import {serviceMemberStatus} from "./teamServicePresentation";
 
 function memberAssigneeKeys(member: TeamMember): Set<string> {
   return new Set([member.email.trim().toLowerCase(), member.email.split("@")[0].trim().toLowerCase(), member.tmux.name.replace(/^worker-/,"").toLowerCase()].filter(Boolean));
@@ -35,4 +37,24 @@ export function teamPanelStatus(member:TeamMember, base:LiveStatus, collector:Ag
   if(base.group==="available" && (!/^空闲/.test(member.currentTask?.trim()??"") || !indexReady))
     return {rank:8,tone:"none",group:"other",label:"待确认",needsHuman:false,duration:""};
   return base;
+}
+
+type TeamRow = {member:TeamMember;session?:AgentSession;status:LiveStatus};
+/** A worker row of the team list: collector status, then the team service report, then assignment. */
+export function presentTeamRow<R extends TeamRow>(row:R, serviceLive:Record<string,TeamLive>|undefined, live:LiveSessions, lead=false):R {
+  const original=row.session;
+  const report=serviceLive?.[memberKey(row.member)];
+  const presented:R=serviceLive===undefined || report?.match==="no_agent" ? row : {
+    ...row,...serviceMemberStatus(row.member,report,row.session,liveSnapshot(live)?.now??Date.now()/1000,lead),
+  };
+  return {...presented,status:teamPanelStatus(row.member,presented.status,original,live,lead)};
+}
+/** The Lead entry of the team toolbar. */
+export function teamLeadStatus(member:TeamMember, serviceLive:Record<string,TeamLive>|undefined, live:LiveSessions):LiveStatus {
+  return serviceMemberStatus(member,serviceLive?.[memberKey(member)],undefined,liveSnapshot(live)?.now??Date.now()/1000,true).status;
+}
+/** One member's status dot, read exactly as the team panel shows that member. */
+export function teamMemberStatus(member:TeamMember, {serviceLive, live, lead}:{serviceLive?:Record<string,TeamLive>;live:LiveSessions;lead:boolean}):LiveStatus {
+  if(lead)return teamLeadStatus(member,serviceLive,live);
+  return presentTeamRow(rankMembers([member],liveSnapshot(live))[0],serviceLive,live).status;
 }

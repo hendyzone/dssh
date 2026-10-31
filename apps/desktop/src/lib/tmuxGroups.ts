@@ -65,9 +65,10 @@ export function compareTmuxGroups(a: string, b: string): number {
 /** Key used in the collapsed-folder set for a Workers project sub-folder. */
 export const workerSubgroupKey = (project: string) => `${WORKER_GROUP}\u0000${project}`;
 
+export interface PaneRosterMember { project: string; host?: string; port?: number; username?: string; tmux: { id: string; created: number; name?: string } }
 export interface PaneTeamService {
   projects: string[];
-  snapshots: Record<string, { members: { project: string; host?: string; port?: number; username?: string; tmux: { id: string; created: number; name?: string } }[] } | undefined>;
+  snapshots: Record<string, { members: PaneRosterMember[] } | undefined>;
 }
 
 /**
@@ -93,6 +94,25 @@ export function paneTeamProject(
 }
 
 type ProjectPane = { server?: {host:string;port:number;username:string}; tmux?: {id:string;created:number;name:string} };
+interface RosterService<M extends PaneRosterMember> { projects: string[]; snapshots: Record<string, { members: M[] } | undefined> }
+
+/**
+ * Roster members whose tmux incarnation is this pane: endpoint + tmux id/created first; only when
+ * nothing matches that strictly, the same tmux id/created under the same session name.
+ */
+function paneRosterMatches<M extends PaneRosterMember>(pane: ProjectPane | undefined, service: RosterService<M>): { project: string; member: M }[] {
+  if (!pane?.tmux) return [];
+  const tmux = pane.tmux;
+  const endpoint = pane.server;
+  const collect = (test: (member: M) => boolean) => [...new Set(service.projects)].flatMap(project =>
+    (service.snapshots[project]?.members ?? []).filter(member => member.project === project && test(member)).map(member => ({ project, member })));
+  const strict = collect(member => member.tmux.id === tmux.id && member.tmux.created === tmux.created &&
+    !!endpoint && member.host?.trim().toLowerCase() === endpoint.host.trim().toLowerCase() &&
+    member.port === endpoint.port && member.username === endpoint.username);
+  if (strict.length) return strict;
+  return collect(member => member.tmux.name === tmux.name && member.tmux.id === tmux.id && member.tmux.created === tmux.created);
+}
+
 /** Strict shared identity mapping; UI selection/fallback belongs to the caller. */
 export function sessionTeamProject(pane: ProjectPane | undefined, service: PaneTeamService): string | undefined {
   if (!pane?.tmux) return;
@@ -100,16 +120,15 @@ export function sessionTeamProject(pane: ProjectPane | undefined, service: PaneT
     const project = leadProject(pane.tmux.name);
     if (service.projects.includes(project) && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(project)) return project;
   }
-  const endpoint = pane.server;
-  const projects = service.projects.filter(project => service.snapshots[project]?.members.some(member =>
-    member.project === project && member.tmux.id === pane.tmux!.id && member.tmux.created === pane.tmux!.created &&
-    endpoint && member.host?.trim().toLowerCase() === endpoint.host.trim().toLowerCase() &&
-    member.port === endpoint.port && member.username === endpoint.username));
-  const unique = [...new Set(projects)];
-  if (unique.length) return unique.length === 1 ? unique[0] : undefined;
-  const byName = service.projects.filter(project => service.snapshots[project]?.members.some(member =>
-    member.project === project && member.tmux.name === pane.tmux!.name &&
-    member.tmux.id === pane.tmux!.id && member.tmux.created === pane.tmux!.created));
-  const fallback = [...new Set(byName)];
-  return fallback.length === 1 ? fallback[0] : undefined;
+  const unique = [...new Set(paneRosterMatches(pane, service).map(match => match.project))];
+  return unique.length === 1 ? unique[0] : undefined;
+}
+
+/**
+ * The roster member this pane is, by the same identity mapping as {@link sessionTeamProject}
+ * (team panel follow and pixel office). Ambiguous or unmatched panes have no member.
+ */
+export function sessionTeamMember<M extends PaneRosterMember>(pane: ProjectPane | undefined, service: RosterService<M>): { project: string; member: M } | undefined {
+  const matches = paneRosterMatches(pane, service);
+  return matches.length === 1 ? matches[0] : undefined;
 }

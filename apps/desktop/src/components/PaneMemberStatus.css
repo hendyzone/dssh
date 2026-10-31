@@ -1,0 +1,50 @@
+/* Status bar centre (MonitorBar `center`): dot · member · card. */
+.pane-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pane-member button {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pane-member button:hover:not(:disabled) {
+  color: var(--ui-accent);
+  text-decoration: underline;
+}
+.pane-member button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.pane-member button:disabled {
+  cursor: default;
+}
+.pane-member .pane-member-name {
+  color: var(--ui-fg);
+  max-width: 220px;
+}
+.pane-member .pane-member-card {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--ui-muted);
+}
+/* Narrow windows: drop the card first, then the name; the monitor never yields. */
+@container monitor-center (max-width: 200px) {
+  .pane-member .pane-member-card { display: none; }
+}
+@container monitor-center (max-width: 90px) {
+  .pane-member .pane-member-name { display: none; }
+}

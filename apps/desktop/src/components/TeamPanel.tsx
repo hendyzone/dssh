@@ -11,17 +11,23 @@ import type { OfficeSnapshot } from "../lib/teamOffice";
 import { teamLookupScope, type BoardSource, type ProjectReason, type TeamLookupScope } from "../lib/taskLookup";
 import { paneTeamProject } from "../lib/tmuxGroups";
 
-export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange, navigation, onClose, taskLookup, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange}: {
+export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange, navigation, onClose, taskLookup, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange, focusMember, onFocused}: {
   onLookupScopeChange?: (paneId:string,scope?:TeamLookupScope)=>void;
   sessionId: string; pane: SessionInfo; profile?: CollaborationProfile; navigation: TeamNavigation; onClose: () => void;
   taskLookup?: { source?: BoardSource; inferred?: { project: string; reason: ProjectReason } };
   onRoomOpenChange?: (open: boolean) => void;
   officeSnapshot?: OfficeSnapshot; officeVisible?: boolean; onPopOut?: () => Promise<void>;
+  /** Member to locate (status bar): switches this pane's team to the member's project first. */
+  focusMember?: {project: string; key: string; seq: number}; onFocused?: () => void;
 }) {
   const service = useTeamService();
   // Manual choice is per pane (tab): switching tabs must not lock another tab's project.
   const [selected, setSelected] = useState<Record<string, string>>({});
   const project = paneTeamProject(pane, selected[pane.id], profile?.project, service);
+  useEffect(()=>{
+    if(focusMember && focusMember.project!==project && service.projects.includes(focusMember.project))
+      setSelected(old=>({...old,[pane.id]:focusMember.project}));
+  },[focusMember?.seq,focusMember?.project,project,pane.id]);
   // A local terminal is only a navigation destination; it never identifies this team.
   const lookupScope = teamLookupScope(service.url, project ?? profile?.project ?? "", navigation.server, profile);
   useEffect(()=>{onLookupScopeChange?.(pane.id,lookupScope);return()=>onLookupScopeChange?.(pane.id,undefined);},[pane.id,lookupScope?.key,onLookupScopeChange]);
@@ -35,7 +41,8 @@ export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange
           {service.projects.map(name=><option key={name} value={name}>{name}</option>)}
         </select></label>
         <TeamMembers key={JSON.stringify([service.url,project])} sessionId={sessionId} profile={active} navigation={navigation} board={taskLookup?.source}
-          officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}/>
+          officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
+          focusMember={focusMember?.project===project ? focusMember : undefined} onFocused={onFocused}/>
       </>}
     </div>
   </aside>;

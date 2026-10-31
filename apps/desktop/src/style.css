@@ -609,6 +609,8 @@ body {
   flex: 1;
   min-width: 0;
   display: flex;
+  /* Anchors the task card opened from the status bar. */
+  position: relative;
 }
 
 .panel-dock {

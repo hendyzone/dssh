@@ -67,14 +67,15 @@
 .team-dynamics .team-live-card:last-child{border-bottom:0}
 .team-dynamics .team-live-card>summary.team-card-head{display:grid;grid-template-columns:7px minmax(0,1fr) auto auto;
  align-items:center;gap:2px 8px;padding:6px 2px;min-width:0}
-.team-dynamics .team-live-dot{width:7px;height:7px;border-radius:50%;background:var(--ui-muted);flex:none}
-.team-dynamics .team-live-dot.is-bad{background:var(--ui-danger,#e06c75);
+/* The status bar's pane member (PaneMemberStatus) shares these dots with the team list. */
+:is(.team-dynamics,.pane-member) .team-live-dot{width:7px;height:7px;border-radius:50%;background:var(--ui-muted);flex:none}
+:is(.team-dynamics,.pane-member) .team-live-dot.is-bad{background:var(--ui-danger,#e06c75);
  box-shadow:0 0 0 2px color-mix(in srgb,var(--ui-danger,#e06c75) 25%,transparent)}
-.team-dynamics .team-live-dot.is-warn,.team-dynamics .team-live-dot.is-wait,
-.team-dynamics .team-live-dot.is-lead{background:#d19a66}
-.team-dynamics .team-live-dot.is-run,.team-dynamics .team-live-dot.is-review{background:var(--ui-accent)}
-.team-dynamics .team-live-dot.is-idle,.team-dynamics .team-live-dot.is-gone,
-.team-dynamics .team-live-dot.is-offline,.team-dynamics .team-live-dot.is-none{background:var(--ui-muted)}
+:is(.team-dynamics,.pane-member) .team-live-dot.is-warn,:is(.team-dynamics,.pane-member) .team-live-dot.is-wait,
+:is(.team-dynamics,.pane-member) .team-live-dot.is-lead{background:#d19a66}
+:is(.team-dynamics,.pane-member) .team-live-dot.is-run,:is(.team-dynamics,.pane-member) .team-live-dot.is-review{background:var(--ui-accent)}
+:is(.team-dynamics,.pane-member) .team-live-dot.is-idle,:is(.team-dynamics,.pane-member) .team-live-dot.is-gone,
+:is(.team-dynamics,.pane-member) .team-live-dot.is-offline,:is(.team-dynamics,.pane-member) .team-live-dot.is-none{background:var(--ui-muted)}
 .team-dynamics .team-ai-identity{font-size:13px;min-width:0;max-width:100%;text-align:left;justify-self:start;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 /* AI content belongs to its own row, not the status-dot track. */
 .team-dynamics .team-live-card>summary.team-card-head>.team-service-ai{grid-column:1/-1;min-width:0}

@@ -1,8 +1,8 @@
-import {teamPanelStatus} from "../lib/teamPanelStatus";
+import {presentTeamRow,teamLeadStatus} from "../lib/teamPanelStatus";
 import TeamServiceAi from "./TeamServiceAi";
 import {serviceAi} from "../lib/serviceAi";
 import type { TeamLive } from "../lib/teamService";
-import { memberTaskTarget, memberTaskSession, serviceMemberStatus } from "../lib/teamServicePresentation";
+import { memberTaskTarget, memberTaskSession } from "../lib/teamServicePresentation";
 import { memberDoingTaskFromIndex } from "../lib/teamPanelStatus";
 import {useEffect,useRef,useState,type ReactNode} from "react";
 import {ExternalLink,Plus,RefreshCw} from "lucide-react";
@@ -30,7 +30,7 @@ const GROUP_ORDER:readonly {key:StatusGroup;label:string;title?:string}[]=[
 
 /** `live`: the panel's shared collector data (so the merged view shows one snapshot); polled here when omitted. */
 export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,board,live:shared,
-  serviceLive,serviceAi:aiMap={},aiEnabled,serviceIdentity="",onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange}:{
+  serviceLive,serviceAi:aiMap={},aiEnabled,serviceIdentity="",onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange,focusMember,onFocused}:{
   sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource;live?:LiveSessions;
   serviceLive?:Record<string,TeamLive>;
   serviceAi?:Record<string,unknown>; aiEnabled?:boolean|null; serviceIdentity?:string;
@@ -43,6 +43,8 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   /** Pixel room, shared by the team panel and the collaboration panel. */
   officeSnapshot?:OfficeSnapshot; officeVisible?:boolean; onPopOut?:()=>Promise<void>;
   onRoomOpenChange?:(open:boolean)=>void;
+  /** Locate this member (status bar click): unfold its group and row, scroll it into view and focus it. */
+  focusMember?:{key:string;seq:number}; onFocused?:()=>void;
 }){
   const self={...profile,username:navigation.server.username};
   const isLead=(m:TeamMember)=>isLeadMember(m,self);
@@ -52,10 +54,8 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   const snapshot=liveSnapshot(live);
   const leadMember=rosterMembers.find(isLead);
   const hasServiceStatus=serviceLive !== undefined && members.some(member=>serviceLive[memberKey(member)]?.match!=="no_agent");
-  const ranked=rankMembers(members,snapshot,isLead).map(row=>{const original=row.session; const presented=serviceLive === undefined || serviceLive[memberKey(row.member)]?.match === "no_agent" ? row : {
-    ...row,...serviceMemberStatus(row.member,serviceLive[memberKey(row.member)],row.session,snapshot?.now??Date.now()/1000,isLead(row.member)),
-  }; return {...presented,status:teamPanelStatus(row.member,presented.status,original,live,isLead(row.member))};
-  }).sort((a,b)=>a.status.rank-b.status.rank||a.index-b.index);
+  const ranked=rankMembers(members,snapshot,isLead).map(row=>presentTeamRow(row,serviceLive,live,isLead(row.member)))
+    .sort((a,b)=>a.status.rank-b.status.rank||a.index-b.index);
   const taskLookup = useTaskLookup(board);
   const [serviceBriefs,setServiceBriefs] = useState<{scope:string;values:Record<string,TaskBrief>}>({scope:"",values:{}});
   const targetOf = (member:TeamMember,session?:ReturnType<typeof rankMembers>[number]["session"]) => {
@@ -105,10 +105,44 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   const liveReady=hasServiceStatus || !!snapshot;
   useEffect(()=>{if(!liveReady)setFilter(undefined);},[liveReady]);
 
+  // Locating waits until the roster has the member, then unfolds its group/row and focuses it once.
+  const sectionRef=useRef<HTMLElement>(null);
+  const [locating,setLocating]=useState<string>();
+  const [located,setLocated]=useState<string>();
+  const groupOf=(key?:string)=>key?ranked.find(row=>memberKey(row.member)===key)?.status.group:undefined;
+  const focusGroup=groupOf(focusMember?.key);
+  const focusLead=!!focusMember && !!leadMember && memberKey(leadMember)===focusMember.key;
+  useEffect(()=>{
+    if(!focusMember||(!focusGroup&&!focusLead))return;
+    if(focusGroup){
+      setRoomOpen(false);setFilter(undefined);
+      setOpenGroups(old=>({...old,[focusGroup]:true}));
+      setOpenMembers(old=>({...old,[focusMember.key]:true}));
+    }
+    setLocated(focusMember.key);setLocating(focusMember.key);
+  },[focusMember?.seq,focusMember?.key,focusGroup,focusLead]);
+  // Live data arriving after the click can move the located row to another group: keep that group
+  // open and give the remounted row its focus back.
+  const locatedGroup=groupOf(located);
+  const lastLocatedGroup=useRef(locatedGroup);
+  useEffect(()=>{
+    const moved=!!lastLocatedGroup.current && !!locatedGroup && lastLocatedGroup.current!==locatedGroup;
+    lastLocatedGroup.current=locatedGroup;
+    if(moved && document.activeElement===document.body)setLocating(located);
+  },[locatedGroup]);
+  useEffect(()=>{
+    if(!locating)return;
+    const target=[...(sectionRef.current?.querySelectorAll<HTMLElement>("[data-member-key]")??[])].find(element=>element.dataset.memberKey===locating);
+    if(!target)return;
+    target.scrollIntoView?.({block:"nearest"});
+    (target.querySelector<HTMLElement>("summary")??target).focus();
+    setLocating(undefined);onFocused?.();
+  });
   const toggleFilter=(key:StatusGroup)=>setFilter(old=>old===key?undefined:key);
   const activeFilter=liveReady?filter:undefined;                   // never filter without live counts
   const groupOpen=(key:StatusGroup)=>{
     if(activeFilter===key)return true;                             // a filtered group must be visible
+    if(key===locatedGroup&&openGroups[key]===undefined)return true; // the member located from the status bar
     return openGroups[key]??!COMPACT_GROUPS.has(key);              // idle rows start folded
   };
   const filtered=!!activeFilter;
@@ -150,7 +184,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       <Button size="sm" aria-label={`打开终端 · ${display.title}`} disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(m,server))}>打开终端</Button>
     </div>;
     if(compact){
-      return <details className={`team-compact-row team-live-row${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={key} open={open} onToggle={e=>toggleMember(key,(e.currentTarget as HTMLDetailsElement).open)} data-state={session?.state??"none"} data-group={status.group}>
+      return <details className={`team-compact-row team-live-row${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={key} data-member-key={key} open={open} onToggle={e=>toggleMember(key,(e.currentTarget as HTMLDetailsElement).open)} data-state={session?.state??"none"} data-group={status.group}>
         <summary className="team-compact-head">
           <span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>
           {identity}
@@ -162,7 +196,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
         {details}
       </details>;
     }
-    return <details className={`team-ai-row team-live-row team-live-card${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={key} open={open} onToggle={e=>toggleMember(key,(e.currentTarget as HTMLDetailsElement).open)} data-state={session?.state??"none"} data-group={status.group}>
+    return <details className={`team-ai-row team-live-row team-live-card${status.needsHuman?" team-live-alert":status.group==="waitLead"?" team-live-wait-lead":""}`} key={key} data-member-key={key} open={open} onToggle={e=>toggleMember(key,(e.currentTarget as HTMLDetailsElement).open)} data-state={session?.state??"none"} data-group={status.group}>
       <summary className="team-card-head">
         <span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>
         {identity}
@@ -186,10 +220,10 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       {details}
     </details>;
   };
-  return <section className="team-dynamics" aria-label="团队动态">
+  return <section className="team-dynamics" aria-label="团队动态" ref={sectionRef}>
     <div className="team-toolbar">
       <div className="team-toolbar-title"><strong>团队 · {members.length} 人</strong><small>{serviceLive !== undefined?"团队服务实时同步":"看板实时 · 每分钟刷新"}</small></div>
-      {leadMember&&(()=>{const {server}=connection(leadMember);const display=memberDisplay(leadMember);const status=serviceMemberStatus(leadMember,serviceLive?.[memberKey(leadMember)],undefined,snapshot?.now??Date.now()/1000,true).status;return <Button size="sm" variant="ghost" className="team-lead-entry" aria-label={`打开 Lead · ${display.title}`} disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(leadMember,server))}><span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>{display.title}</Button>;})()}
+      {leadMember&&(()=>{const {server}=connection(leadMember);const display=memberDisplay(leadMember);const status=teamLeadStatus(leadMember,serviceLive,live);return <Button size="sm" variant="ghost" className="team-lead-entry" data-member-key={memberKey(leadMember)} aria-label={`打开 Lead · ${display.title}`} disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(leadMember,server))}><span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>{display.title}</Button>;})()}
       <TeamLiveSummary serviceMode={hasServiceStatus} board={board} live={live} summary={summarizeTeam(ranked,snapshot??(hasServiceStatus?{sessions:[],now:Date.now()/1000,ttlSeconds:180,alertAfterSeconds:600,collectedAt:0}:undefined))} filter={activeFilter} onFilter={toggleFilter}/>
       {activeFilter&&<Button size="sm" variant="ghost" onClick={()=>setFilter(undefined)}>清除筛选</Button>}
       <div className="team-toolbar-actions">

@@ -27,11 +27,14 @@ export default function MonitorBar({
   detailsOpen,
   onDetailsToggle,
   targetId,
+  center,
 }: {
   backendId: string | null;
   detailsOpen?: boolean;
   onDetailsToggle?: () => void;
   targetId?: string;
+  /** Middle of the bar (current pane member); gets only the space the monitor leaves free. */
+  center?: ReactNode;
 }) {
   const [enabled, setEnabled] = useState(false);
   const [localExpanded, setExpanded] = useState(false);
@@ -53,6 +56,7 @@ export default function MonitorBar({
           backendId={backendId}
           targetId={targetId}
           expanded={expanded}
+          center={center}
           onExpand={toggle}
           onClose={close}
           onStop={() => {
@@ -75,6 +79,7 @@ export default function MonitorBar({
             <IconMonitor size={13} />
             {backendId ? "开启监控" : "连接后可开启监控"}
           </Button>
+          {center !== undefined && <div className="monitor-center">{center}</div>}
         </div>
       )}
     </div>
@@ -84,6 +89,7 @@ function MonitorSession({
   backendId,
   targetId,
   expanded,
+  center,
   onExpand,
   onClose,
   onStop,
@@ -91,6 +97,7 @@ function MonitorSession({
   backendId: string;
   targetId?: string;
   expanded: boolean;
+  center?: ReactNode;
   onExpand: () => void;
   onClose: () => void;
   onStop: () => void;
@@ -202,6 +209,7 @@ function MonitorSession({
         ) : (
           <span role="status">正在采集 Linux 系统指标…</span>
         )}
+        {center !== undefined && <div className="monitor-center">{center}</div>}
         <Button
           variant="outline"
           size="sm"
