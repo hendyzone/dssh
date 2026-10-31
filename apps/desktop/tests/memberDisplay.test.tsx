@@ -14,9 +14,15 @@ describe("memberDisplay", () => {
     expect(memberDisplay(member()).title).toBe("alpha-cw1-codex");
     expect(memberDisplay(member({ role: "worker（DeepSeek Harness，deepseek-v4-flash）" })).title).toBe("alpha-cw1-codex");
   });
-  it("falls back to the stable member id when there is no mailbox", () => {
-    expect(memberBox(member({ email: "", id: "member-1" }))).toBe("member-1");
-    expect(memberDisplay(member({ email: "", id: "member-1" })).title).toBe("member-1");
+  it("falls back to the stable member id when there is no mailbox, tmux name, or roster name", () => {
+    const bare = member({ email: "", id: "member-1", tmux: { id: "$1", created: 1, name: " " } });
+    expect(memberBox(bare)).toBe("member-1");
+    expect(memberDisplay(bare).title).toBe("member-1");
+  });
+  it("prefers tmux session name over member id when the mailbox is empty", () => {
+    const tmux = { id: "$3", created: 2, name: "smart-table-lead" };
+    expect(memberBox(member({ email: "", id: "member-31ef", tmux }))).toBe("smart-table-lead");
+    expect(memberDisplay(member({ email: "", id: "member-31ef", tmux })).title).toBe("smart-table-lead");
   });
   it("infers the tool from the live child or the box suffix", () => {
     expect(memberTool(member())).toBe("codex");

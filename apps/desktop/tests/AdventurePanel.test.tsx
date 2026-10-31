@@ -55,10 +55,36 @@ it("updates order with live snapshots and does not show stale offline data as wo
 });
 it("uses the existing Lead role boundary instead of names and includes all registered Leads", () => {
   const service=fixture();
-  service.snapshots.alpha.members.push({...member("alpha","Lead · claude"),email:"second-lead@example.invalid"}, {...member("alpha","Leadership"),email:"looks-like-lead@example.invalid"});
+  service.snapshots.alpha.members.push({...member("alpha","Lead · claude"),email:"second-lead@example.invalid"}, {...member("alpha","Leadership"),email:"plain-worker@example.invalid"});
   render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
   expect(screen.getByText("second-lead")).toBeTruthy();
-  expect(screen.queryByText("looks-like-lead")).toBeNull();
+  expect(screen.queryByText("plain-worker")).toBeNull();
+});
+it("lists Leads without Lead role when tmux ends with -lead and shows tmux name without email", () => {
+  const service = fixture();
+  const worker = member("alpha", "worker");
+  const lead = {...member("alpha", "claude · Opus"), email: "", id: "member-31efabcd",
+    tmux: { id: "$8", created: 2, name: "smart-table-lead" }, host: servers[0].host};
+  service.snapshots.alpha.members = [worker, lead];
+  service.snapshots.alpha.live = {
+    [memberKey(lead)]: { key: memberKey(lead), state: "idle", match: "exact", detail: "", machine: "East" },
+  };
+  render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
+  expect(within(screen.getByRole("region", { name: "alpha" })).getByText("smart-table-lead")).toBeTruthy();
+  expect(screen.queryByText(/member-31ef/)).toBeNull();
+});
+it("prefers team snapshot project title over slug in section headings", () => {
+  const service = fixture();
+  service.projects = ["new_smart_table"];
+  service.snapshots = {
+    new_smart_table: {
+      ...service.snapshots.alpha, project: "new_smart_table", title: "芯流-计算中心",
+      members: [member("new_smart_table", "Lead · codex")],
+      live: {}, identity: "x",
+    },
+  };
+  render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
+  expect(screen.getByRole("heading", { level: 3, name: "芯流-计算中心" })).toBeTruthy();
 });
 it("registers the Crown entry on the right for SSH and local terminals", () => {
   const onSelect=vi.fn();

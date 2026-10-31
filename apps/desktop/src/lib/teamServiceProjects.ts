@@ -6,3 +6,9 @@ export function teamProjectIssue(service: TeamServiceState, project: string): st
   if (service.catalog.state === "error") return service.catalog.message;
   if (!service.catalog.projects.includes(project)) return `团队服务中没有项目 ${project}，或当前令牌无权访问。`;
 }
+
+/** Prefer team snapshot title/display_name; otherwise the project slug. */
+export function projectDisplayTitle(project: string, service: Pick<TeamServiceState, "snapshots">): string {
+  const title = service.snapshots[project]?.title?.trim();
+  return title || project;
+}

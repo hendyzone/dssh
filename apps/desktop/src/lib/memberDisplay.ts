@@ -16,10 +16,15 @@ const TOOL_PATTERNS: [RegExp, string][] = [
 ];
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 
-/** Title: the mailbox (email local part); no email falls back to the stable member id. */
-export function memberBox(member: Pick<TeamMember, "email" | "id"> & Partial<Pick<TeamMember, "tmux">>): string {
+/** Title: mailbox local → tmux session name → roster name → stable id. */
+export function memberBox(member: Pick<TeamMember, "email" | "id" | "name" | "tmux">): string {
   const local = (member.email ?? "").split("@")[0].trim();
-  return local || member.id || member.tmux?.name || "member";
+  if (local) return local;
+  const tmux = (member.tmux?.name ?? "").trim();
+  if (tmux) return tmux;
+  const name = (member.name ?? "").trim();
+  if (name) return name;
+  return member.id || "member";
 }
 
 /** Tool from the live child, the box name, or the role text; unknown tools stay hidden. */

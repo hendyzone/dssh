@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BoardError, cached, formatAge, get, isIdentifier, listStatuses, taskIndex, type IndexTask, type BoardSource } from "./taskLookup";
 import { memberActivity, memberActivityLabels, type TeamMember } from "./teamMembers";
+import { isTeamLead, type LeadPanelSelf } from "./teamLead";
 
 /**
  * Live member status from the taskboard collector (`GET /api/v1/projects/<p>/agent-sessions`).
@@ -169,10 +170,11 @@ export function noteFreshness(updatedAt: string | undefined, nowMs = Date.now())
   return { age: formatAge(updatedAt, nowMs) + "前", stale: nowMs - at > NOTE_STALE_MS };
 }
 
-/** The Lead: role starting with 「Lead」, or the very tmux session the team panel is bound to. */
-export function isLeadMember(m: Pick<TeamMember, "role" | "tmux" | "workdir" | "username">, self?: { tmuxId: string; tmuxCreated: number; workdir: string; username: string }) {
-  return /^lead\b/i.test(m.role.trim()) || (!!self && m.tmux.id === self.tmuxId && m.tmux.created === self.tmuxCreated && m.workdir === self.workdir && m.username === self.username);
+/** @see isTeamLead — shared by team panel, adventure guild, and pixel office. */
+export function isLeadMember(m: Pick<TeamMember, "role" | "tmux" | "email" | "workdir" | "username">, self?: LeadPanelSelf) {
+  return isTeamLead(m, self);
 }
+export { isTeamLead } from "./teamLead";
 
 type Matchable = Pick<TeamMember, "host" | "workdir" | "email" | "tmux" | "currentTask">;
 /** Live data is used only while the board answers; an offline board falls back to the roster's hand-written state. */

@@ -44,7 +44,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   onRoomOpenChange?:(open:boolean)=>void;
 }){
   const self={...profile,username:navigation.server.username};
-  const isLead=(m:TeamMember)=>serviceLive === undefined ? isLeadMember(m,self) : /^lead\b/i.test(m.role.trim());
+  const isLead=(m:TeamMember)=>isLeadMember(m,self);
   const members=rosterMembers.filter(m=>!isLead(m));      // Worker rows feed the shared live collector.
   const own=useAgentSessions(shared?undefined:board,members);
   const live=shared??own;
