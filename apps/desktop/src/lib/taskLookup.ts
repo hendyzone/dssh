@@ -200,7 +200,7 @@ export function buildProjectParentMap(projects: BoardProject[]): Record<string, 
   return map;
 }
 /** Member roster project plus direct child projects on the board. */
-export function taskIndexProjects(memberProjects: string[], catalog: BoardProject[]): string[] {
+export function taskIndexProjects(memberProjects: string[], catalog: BoardProject[], recursive = false): string[] {
   const children = new Map<string, string[]>();
   for (const project of catalog) {
     if (!project.parent) continue;
@@ -212,7 +212,13 @@ export function taskIndexProjects(memberProjects: string[], catalog: BoardProjec
   for (const root of memberProjects) {
     if (!isIdentifier(root)) continue;
     out.add(root);
-    for (const child of children.get(root) ?? []) out.add(child);
+    const pending = [...(children.get(root) ?? [])];
+    while (pending.length) {
+      const child = pending.shift()!;
+      if (!isIdentifier(child) || out.has(child)) continue;
+      out.add(child);
+      if (recursive) pending.push(...(children.get(child) ?? []));
+    }
   }
   return [...out].sort();
 }
@@ -419,3 +425,19 @@ export function useTaskIndex(source: BoardSource | undefined, project: string | 
   }, [key]);
   return index;
 }
+
+/** Browse a project tree without letting one unreadable project hide its siblings. */
+export async function browseProjectTasks(source: BoardSource, project: string, force = false) {
+  const catalog = await listProjects(source, force);
+  const projects = taskIndexProjects([project], catalog, true);
+  const results = await Promise.all(projects.map(async project => {
+    try {
+      const [index, statuses] = await Promise.all([taskIndex(source, project, force), listStatuses(source, project).catch(() => [] as BoardStatus[])]);
+      return {project, tasks: index.tasks.map(task => ({...task, project})), statuses, error: ""};
+    } catch (error) {
+      return {project, tasks: [], statuses: [] as BoardStatus[], error: error instanceof Error ? error.message : String(error)};
+    }
+  }));
+  return {projects, tasks: results.flatMap(r => r.tasks), results};
+}
+export type BrowsedTasks = Awaited<ReturnType<typeof browseProjectTasks>>;
