@@ -47,7 +47,7 @@ it("serializes only display fields, never server credentials, profiles, handles 
  expect(result.mailAvailability).toBe("unavailable");
 });
 it("keeps stable unique workstations across additions/removals, puts registered Lead first, and does not invent a Lead",()=>{
- const found=sources(),id=found[0].id;const lead={...member,email:"lead@example.test",role:"Lead"};
+ const found=sources(),id=found[0].id;const lead={...member,email:"lead@example.test",role:"Lead",tmux:{id:"$3",created:124,name:"lead"}};
  const first=buildOfficeSnapshot(found,{[id]:ready()},context());expect(first.projects[0].sources[0].members).toHaveLength(1);expect(first.projects[0].sources[0].members[0].isLead).toBe(false);
  const expanded=buildOfficeSnapshot(found,{[id]:ready([member,lead])},context()).projects[0].sources[0].members;
  expect(expanded.map(m=>m.name)).toEqual(["lead","worker"]);expect(expanded[1].id).toBe(first.projects[0].sources[0].members[0].id);expect(expanded[0].id).not.toBe(expanded[1].id);

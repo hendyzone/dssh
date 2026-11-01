@@ -8,7 +8,7 @@ import type { ServerEntry } from "../src/types";
 
 const server = (id: string): ServerEntry => ({id, name: id, host: `${id}.example.invalid`, port: 22, username: "demo", authMethod: "password"});
 const servers = [server("east"), server("west")];
-const member = (project: string, role: string, host = servers[0].host): TeamMember => ({project, email: `${project}-${role.startsWith("Lead") ? "lead-codex" : "worker"}@example.invalid`, role, host, port:22, username:"demo", workdir:`/work/${project}`, tmux:{id:"$1",created:1,name:project}});
+const member = (project: string, role: string, host = servers[0].host): TeamMember => ({project, email: `${project}-${role.startsWith("Lead") ? "lead-codex" : "worker"}@example.invalid`, role, host, port:22, username:"demo", workdir:`/work/${project}`, tmux:{id:"$1",created:1,name:role.startsWith("Lead") ? `${project}-lead` : project}});
 function fixture(): TeamServiceState {
   const snapshots: Record<string, TeamServiceProject> = {};
   for (const [project, state, host] of [["alpha", "idle", servers[0].host], ["beta", "stuck", servers[1].host]] as const) {
@@ -24,7 +24,7 @@ it("lists subscribed Leads only, prioritizes stuck, and opens the exact member a
   expect(screen.getAllByRole("heading",{level:3}).map(x=>x.textContent)).toEqual(["beta","alpha"]);
   expect(screen.queryByText(/-worker/)).toBeNull();
   expect(screen.getByText("codex · West")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button",{name:"打开 Lead · beta · beta-lead-codex"}));
+  fireEvent.click(screen.getByRole("button",{name:"打开 Lead · beta · beta-lead"}));
   await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(service.snapshots.beta.members[1],servers[1]));
 });
 it("keeps missing rosters, no Lead, unavailable connections and click errors local to their row", async () => {
@@ -55,7 +55,7 @@ it("updates order with live snapshots and does not show stale offline data as wo
 });
 it("uses the existing Lead role boundary instead of names and includes all registered Leads", () => {
   const service=fixture();
-  service.snapshots.alpha.members.push({...member("alpha","Lead · claude"),email:"second-lead@example.invalid"}, {...member("alpha","Leadership"),email:"plain-worker@example.invalid"});
+  service.snapshots.alpha.members.push({...member("alpha","Lead · claude"),email:"second-lead@example.invalid",tmux:{id:"$5",created:5,name:"second-lead"}}, {...member("alpha","Leadership"),email:"plain-worker@example.invalid"});
   render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
   expect(screen.getByText("second-lead")).toBeTruthy();
   expect(screen.queryByText("plain-worker")).toBeNull();
@@ -94,4 +94,20 @@ it("registers the Crown entry on the right for SSH and local terminals", () => {
   fireEvent.click(button);expect(onSelect).toHaveBeenCalledWith("adventure");
   view.rerender(<ToolRail side="right" local active="adventure" onSelect={onSelect}/>);
   expect(screen.getByRole("button",{name:"冒险团"}).getAttribute("aria-pressed")).toBe("true");
+});
+// dssh/T86: Lead names in the guild carry no machine segment; the click still opens that exact member.
+it("shows Leads without the -cwN machine segment and still opens the same member", async () => {
+  const service = fixture(), onOpen = vi.fn().mockResolvedValue(undefined);
+  const withTmux = {...member("alpha", "Lead · claude"), email: "nst-vision-cw2-lead@example.invalid", tmux: { id: "$7", created: 7, name: "nst-vision-lead" }};
+  const noTmux = {...member("beta", "Lead · codex", servers[1].host), email: "dcollab-cw1-lead@example.invalid", tmux: { id: "", created: 0, name: "" }};
+  service.snapshots.alpha.members = [member("alpha", "worker"), withTmux];
+  service.snapshots.beta.members = [member("beta", "worker"), noTmux];
+  service.snapshots.alpha.live = {}; service.snapshots.beta.live = {};
+  const { container } = render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={onOpen} onClose={()=>{}}/>);
+  expect(within(screen.getByRole("region", { name: "alpha" })).getByText("nst-vision-lead")).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: "beta" })).getByText("dcollab-lead")).toBeTruthy();
+  expect(container.textContent).not.toMatch(/-cw\d/);
+  fireEvent.click(screen.getByRole("button", { name: "打开 Lead · alpha · nst-vision-lead" }));
+  await waitFor(() => expect(onOpen).toHaveBeenCalledWith(withTmux, servers[0]));
+  expect(withTmux.email).toBe("nst-vision-cw2-lead@example.invalid");
 });

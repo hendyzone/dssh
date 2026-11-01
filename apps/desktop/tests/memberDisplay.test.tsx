@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { memberBox, memberDisplay, memberMachine, memberModel, memberTool } from "../src/lib/memberDisplay";
+import { MACHINE_SEGMENT, memberBox, memberDisplay, memberMachine, memberModel, memberTool, withoutMachine } from "../src/lib/memberDisplay";
+import { memberKey } from "../src/lib/teamMembers";
 import type { TeamMember } from "../src/lib/teamMembers";
 
 const member = (over: Partial<TeamMember> = {}): TeamMember => ({
@@ -64,5 +65,58 @@ describe("memberDisplay", () => {
     });
     expect(memberDisplay(member({ role: "worker" })).subtitle).toBe("codex");
     expect(memberDisplay(member({ role: "worker", email: "box@example.invalid" })).subtitle).toBe("");
+  });
+});
+
+// dssh/T86: Leads move between machines, so their title never carries the `-cwN` machine segment.
+describe("Lead title without the machine segment", () => {
+  const noTmux = { id: "", created: 0, name: "" };
+  it("prefers the Lead's tmux session name over the mailbox", () => {
+    const lead = member({ email: "nst-vision-cw2-lead@example.invalid", role: "Lead", tmux: { id: "$7", created: 7, name: "nst-vision-lead" } });
+    expect(memberBox(lead)).toBe("nst-vision-lead");
+    expect(memberDisplay(lead).title).toBe("nst-vision-lead");
+    // Recognised by the shared isLeadMember rule alone (mailbox ends in -lead), not only by role.
+    const byMailbox = member({ email: "dcollab-cw1-lead@example.invalid", role: "worker", tmux: { id: "$8", created: 8, name: "dcollab-lead" } });
+    expect(memberDisplay(byMailbox).title).toBe("dcollab-lead");
+  });
+  it("falls back to the mailbox local part without the machine segment when there is no tmux", () => {
+    expect(memberDisplay(member({ email: "dcollab-cw1-lead@example.invalid", role: "Lead", tmux: noTmux })).title).toBe("dcollab-lead");
+    expect(memberDisplay(member({ email: "nst-vision-cw2-lead@example.invalid", role: "worker", tmux: noTmux })).title).toBe("nst-vision-lead");
+    // A tmux name that still carries a machine segment is cleaned the same way.
+    expect(memberDisplay(member({ email: "", role: "Lead", tmux: { id: "$9", created: 9, name: "alpha-cw3-lead" } })).title).toBe("alpha-lead");
+  });
+  it("keeps worker titles exactly as before", () => {
+    expect(memberDisplay(member()).title).toBe("alpha-cw1-codex");
+    expect(memberDisplay(member({ email: "amail-cw3-dsh@example.invalid", tmux: { id: "$4", created: 4, name: "worker-amail-cw3-dsh" } })).title).toBe("amail-cw3-dsh");
+    expect(memberDisplay(member({ email: "", id: "member-9", tmux: { id: "$5", created: 5, name: "worker-alpha-cw2-pi" } })).title).toBe("worker-alpha-cw2-pi");
+  });
+  it("lets the caller's Lead knowledge override the roster-only check", () => {
+    const selfLead = member({ email: "alpha-cw2-claude@example.invalid", role: "协调", tmux: { id: "$1", created: 1, name: "alpha-coordinator" } });
+    expect(memberDisplay(selfLead).title).toBe("alpha-cw2-claude");
+    expect(memberDisplay(selfLead, undefined, {}, true).title).toBe("alpha-coordinator");
+    expect(memberDisplay(member({ email: "dcollab-cw1-lead@example.invalid", role: "Lead" }), undefined, {}, false).title).toBe("dcollab-cw1-lead");
+  });
+  it("does not change the mailbox, member key or tool inference of a Lead", () => {
+    const lead = member({ email: "nst-vision-cw2-lead@example.invalid", role: "Lead · claude", tmux: { id: "$7", created: 7, name: "nst-vision-lead" } });
+    expect(memberKey(lead)).toBe("nst-vision-cw2-lead@example.invalid");
+    expect(lead.email).toBe("nst-vision-cw2-lead@example.invalid");
+    expect(memberTool(member({ email: "alpha-cw1-claude-lead@example.invalid", role: "Lead", tmux: { id: "$7", created: 7, name: "alpha-lead" } }))).toBe("claude");
+  });
+  it.each([
+    ["nst-vision-cw2-lead", "nst-vision-lead"],
+    ["dcollab-cw1-lead", "dcollab-lead"],
+    ["leadkit-cw3-lead", "leadkit-lead"],
+    ["alpha-cw12-lead", "alpha-lead"],
+    ["alpha-CW2-lead", "alpha-lead"],
+    ["alpha-lead-cw1", "alpha-lead"],
+    ["alpha-cw1-cw2-lead", "alpha-lead"],
+    ["nst-vision-lead", "nst-vision-lead"],
+    ["alpha-cwx-lead", "alpha-cwx-lead"],
+    ["alpha-cw1x-lead", "alpha-cw1x-lead"],
+    ["alphacw1-lead", "alphacw1-lead"],
+    ["cw1", "cw1"],
+  ])("machine segment rule %s → %s", (input, expected) => {
+    expect(MACHINE_SEGMENT.source).toBe("-cw\\d+(?=-|$)");
+    expect(withoutMachine(input)).toBe(expected);
   });
 });

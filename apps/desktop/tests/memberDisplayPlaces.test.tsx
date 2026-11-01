@@ -63,3 +63,13 @@ it("keeps the role in the details instead of using it as the title", async () =>
   await waitFor(() => expect(row.open).toBe(true));
   expect(await screen.findByText(/角色：worker（Codex，gpt-6）/)).toBeTruthy();
 });
+
+// dssh/T86: the team panel shows the Lead without the machine segment — in the Lead entry and in the list —
+// while workers keep their mailbox name.
+it("shows the Lead without its machine segment in the team panel; workers unchanged", () => {
+  const lead: TeamMember = { ...member, email: "alpha-cw2-lead@example.invalid", role: "Lead", tmux: { id: "$3", created: 3, name: "alpha-lead" }, workdir: "/lead-repo" };
+  const { container } = render(<TeamDynamics sessionId="ssh" profile={profile} navigation={navigation} members={[member, lead]} onUpdated={async () => {}} />);
+  expect(screen.getByRole("button", { name: "打开 Lead · alpha-lead" })).toBeTruthy();
+  expect(container.textContent).not.toContain("alpha-cw2-lead");
+  expect(screen.getByTitle("alpha-cw1-codex · worker-alpha-cw1-codex").firstChild?.textContent).toBe("alpha-cw1-codex");
+});

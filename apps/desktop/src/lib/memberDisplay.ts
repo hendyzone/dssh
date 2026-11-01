@@ -1,5 +1,6 @@
 /** One naming rule for every place that shows a team member (room, member list, details). */
 import type { TeamMember } from "./teamMembers";
+import { isLeadMember } from "./agentSessions";
 
 export interface MemberLiveInfo { child?: string; model?: string | null; machine?: string | null; host?: string }
 export interface MachineInfo { online?: boolean; version?: string; host?: string }
@@ -16,8 +17,11 @@ const TOOL_PATTERNS: [RegExp, string][] = [
 ];
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 
-/** Title: mailbox local → tmux session name → roster name → stable id. */
-export function memberBox(member: Pick<TeamMember, "email" | "id" | "name" | "tmux">): string {
+type BoxFields = Pick<TeamMember, "email" | "id" | "name" | "tmux">;
+type LeadFields = Pick<TeamMember, "role" | "workdir" | "username">;
+
+/** Mailbox box name: mailbox local → tmux session name → roster name → stable id. Tool inference reads this. */
+function mailboxBox(member: BoxFields): string {
   const local = (member.email ?? "").split("@")[0].trim();
   if (local) return local;
   const tmux = (member.tmux?.name ?? "").trim();
@@ -27,9 +31,30 @@ export function memberBox(member: Pick<TeamMember, "email" | "id" | "name" | "tm
   return member.id || "member";
 }
 
+/**
+ * Machine segment in a box name: a `-cw<digits>` part between dashes or at the end
+ * (`nst-vision-cw2-lead` → `nst-vision-lead`, `dcollab-cw1-lead` → `dcollab-lead`).
+ */
+export const MACHINE_SEGMENT = /-cw\d+(?=-|$)/gi;
+export const withoutMachine = (name: string): string => name.replace(MACHINE_SEGMENT, "") || name;
+
+/**
+ * Title. Workers: the mailbox box name. Leads move between machines, so their title never carries
+ * the machine segment: tmux session name (`<project>-lead`) → mailbox local → roster name → id,
+ * each without `-cwN`. Display only — mailbox, member key and connections are untouched.
+ */
+export function memberBox(member: BoxFields & Partial<LeadFields>, lead = isLeadMember({ role: "", workdir: "", username: "", ...member })): string {
+  if (!lead) return mailboxBox(member);
+  for (const source of [member.tmux?.name, (member.email ?? "").split("@")[0], member.name]) {
+    const text = (source ?? "").trim();
+    if (text) return withoutMachine(text);
+  }
+  return member.id || "member";
+}
+
 /** Tool from the live child, the box name, or the role text; unknown tools stay hidden. */
 export function memberTool(member: TeamMember, live?: MemberLiveInfo): string | undefined {
-  for (const source of [live?.child, memberBox(member)]) {
+  for (const source of [live?.child, mailboxBox(member)]) {
     if (!source) continue;
     const text = String(source).toLowerCase();
     for (const [pattern, tool] of TOOL_PATTERNS) if (pattern.test(text)) return tool;
@@ -81,13 +106,14 @@ export interface MemberDisplay {
   responsibilities?: string;
 }
 
-export function memberDisplay(member: TeamMember, live?: MemberLiveInfo, machines: MachinesMap = {}): MemberDisplay {
+/** `lead` lets a caller that knows more (the team panel's own Lead session) override the roster-only check. */
+export function memberDisplay(member: TeamMember, live?: MemberLiveInfo, machines: MachinesMap = {}, lead?: boolean): MemberDisplay {
   const tool = memberTool(member, live);
   const model = memberModel(member, live);
   const machine = memberMachine(member, live, machines);
   const modelLabel = model && model.toLowerCase() !== (tool ?? "").toLowerCase() ? model : undefined;
   return {
-    title: memberBox(member),
+    title: memberBox(member, lead ?? isLeadMember(member)),
     subtitle: [tool, modelLabel].filter(Boolean).join(" · "),
     ...(machine ? { machine } : {}),
     role: member.role ?? "",

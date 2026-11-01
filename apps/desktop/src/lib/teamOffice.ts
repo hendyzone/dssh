@@ -199,20 +199,21 @@ export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record
     const members = (roster.availability === "ready" || source.service) ? roster.members.map(member => {
       const live = roster.live?.[memberKey(member)];
       const machines = (roster.machines ?? {}) as Record<string, { online?: boolean; version?: string }>;
-      const display = memberDisplay(member, live, machines);
+      const panelSelf = source.server ? {
+        tmuxId: source.profile.tmuxId, tmuxCreated: source.profile.tmuxCreated,
+        workdir: source.profile.workdir, username: source.server.username,
+      } : undefined;
+      const isLead = isTeamLead(member, panelSelf);
+      const display = memberDisplay(member, live, machines, isLead);
       const tenure: OfficeMember["tenure"] = member.tenure === "temporary" ? "temporary" : "resident";
       const forTask = tenure === "temporary" ? parseForTask(member.for_task) : undefined;
       const board = context.boards?.[source.id];
       const forTaskDone = forTask && board?.forTasks?.[briefKey(forTask.project, forTask.code)] === "done" ? true : undefined;
       const machineName = display.machine;
       const machineRecord = machineName ? machines[machineName] : undefined;
-      const panelSelf = source.server ? {
-        tmuxId: source.profile.tmuxId, tmuxCreated: source.profile.tmuxCreated,
-        workdir: source.profile.workdir, username: source.server.username,
-      } : undefined;
       return {
         id: officeKey(JSON.stringify([source.id, memberKey(member)])), name: display.title,
-        isLead: isTeamLead(member, panelSelf),
+        isLead,
         status: source.service ? serviceMemberAvatar(member, live, context.boards?.[source.id]?.offline ? undefined : matchSession(member, context.boards?.[source.id]?.snapshot?.sessions??[])) : resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id], live, source.service),
         paletteKey: officeKey(memberKey(member)),
         ai: serviceAi(roster.ai?.[memberKey(member)]), aiEnabled: roster.aiEnabled,

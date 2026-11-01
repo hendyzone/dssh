@@ -153,7 +153,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     const {member:m,session,status}=row;
     const compact=COMPACT_GROUPS.has(status.group);
     const key=memberKey(m);
-    const display=memberDisplay(m,{model:session?.model,host:session?.host});
+    const display=memberDisplay(m,{model:session?.model,host:session?.host},undefined,isLead(m));
     const ai=serviceAi(aiMap[key]);
     const aiTarget=serviceIdentity ? {project:profile.project,key,identity:serviceIdentity} : undefined;
     const open=memberOpen(key);
@@ -221,7 +221,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   return <section className="team-dynamics" aria-label="团队动态" ref={sectionRef}>
     <div className="team-toolbar">
       <div className="team-toolbar-title"><strong>团队 · {members.length} 人</strong><small>{serviceLive !== undefined?"团队服务实时同步":"看板实时 · 每分钟刷新"}</small></div>
-      {leadMember&&(()=>{const {server}=connection(leadMember);const display=memberDisplay(leadMember);const status=teamLeadStatus(leadMember,serviceLive,live);return <Button size="sm" variant="ghost" className="team-lead-entry" data-member-key={memberKey(leadMember)} aria-label={`打开 Lead · ${display.title}`} disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(leadMember,server))}><span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>{display.title}</Button>;})()}
+      {leadMember&&(()=>{const {server}=connection(leadMember);const display=memberDisplay(leadMember,undefined,undefined,true);const status=teamLeadStatus(leadMember,serviceLive,live);return <Button size="sm" variant="ghost" className="team-lead-entry" data-member-key={memberKey(leadMember)} aria-label={`打开 Lead · ${display.title}`} disabled={!server||busy} onClick={()=>server&&void perform(()=>navigation.onOpen(leadMember,server))}><span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>{display.title}</Button>;})()}
       <TeamLiveSummary serviceMode={hasServiceStatus} board={board} live={live} summary={summarizeTeam(ranked,snapshot??(hasServiceStatus?{sessions:[],now:Date.now()/1000,ttlSeconds:180,alertAfterSeconds:600,collectedAt:0}:undefined))} filter={activeFilter} onFilter={toggleFilter}/>
       {activeFilter&&<Button size="sm" variant="ghost" onClick={()=>setFilter(undefined)}>清除筛选</Button>}
       <div className="team-toolbar-actions">
