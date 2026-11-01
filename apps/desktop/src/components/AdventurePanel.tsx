@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { X, ArrowUpRight, Crown } from "lucide-react";
+import { useState, type CSSProperties } from "react";
+import { X, ArrowUpRight, Crown, Server } from "lucide-react";
 import { Button } from "./ui/button";
-import TeamMemberAvatar from "./TeamMemberAvatar";
+import TeamMemberAvatar, { teamAvatarShirt } from "./TeamMemberAvatar";
 import { isLeadMember } from "../lib/agentSessions";
 import { memberConnection, memberKey, type TeamMember } from "../lib/teamMembers";
 import { memberDisplay, type MachinesMap } from "../lib/memberDisplay";
@@ -76,18 +76,20 @@ export default function AdventurePanel({ service, servers, sessions, onOpen, onC
             </div>}
             {leads.length ? leads.map(({ member, key, display, server, status, avatar }) => <div key={key} className="adventure-lead-row">
               <div className="adventure-lead">
-                <span className="adventure-avatar">
+                <span className="adventure-avatar" style={{"--avatar-tint": teamAvatarShirt(project)} as CSSProperties}>
                   <TeamMemberAvatar memberId={project} status={avatar} scale={solo ? 2 : 1}/>
                   <Crown className="adventure-crown" size={solo ? 14 : 10} aria-hidden="true"/>
                 </span>
                 <span className="adventure-identity">
                   {solo ? <h3>{projectTitle}</h3> : <strong>{display.title}</strong>}
-                  <small>{[...display.subtitle.split(" · "), display.machine ?? "机器未知"].filter(Boolean)
-                    .flatMap((part, index) => [index ? "\u00a0· " : "", <span key={index}>{part}</span>])}</small>
+                  <small className="adventure-meta">
+                    <span className="adventure-meta-agent">{[solo ? display.title : "", display.subtitle].filter(Boolean).join(" · ")}</span>
+                    <span className="adventure-meta-machine"><Server size={10} aria-hidden="true"/>{display.machine ?? "机器未知"}</span>
+                  </small>
                 </span>
                 <span className={`adventure-status is-${status.tone}`}>{pending[key] ? "正在打开…" : status.label}</span>
                 <button className="adventure-open" disabled={!server || pending[key]} aria-label={`打开 Lead · ${project} · ${display.title}`}
-                  title={[display.title, member.email].filter(Boolean).join("\n")} onClick={() => server && void open(key, member, server)}>
+                  title={[display.title, display.subtitle, member.email].filter(Boolean).join("\n")} onClick={() => server && void open(key, member, server)}>
                   <ArrowUpRight size={14} aria-hidden="true"/>
                 </button>
               </div>

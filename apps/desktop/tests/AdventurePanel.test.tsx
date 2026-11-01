@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { expect, it, vi } from "vitest";
 import AdventurePanel from "../src/components/AdventurePanel";
 import ToolRail from "../src/components/ToolRail";
+import { teamAvatarShirt } from "../src/components/TeamMemberAvatar";
 import type { TeamServiceState, TeamServiceProject } from "../src/lib/teamService";
 import { memberKey, type TeamMember } from "../src/lib/teamMembers";
 import type { ServerEntry } from "../src/types";
@@ -24,7 +25,7 @@ it("lists subscribed Leads only, prioritizes stuck, and opens the exact member a
   expect(screen.getAllByRole("heading",{level:3}).map(x=>x.textContent)).toEqual(["beta","alpha"]);
   expect(screen.queryByText(/-worker/)).toBeNull();
   expect(within(screen.getByRole("region",{name:"beta"})).getByText("West")).toBeTruthy();
-  expect(screen.getByRole("region",{name:"beta"}).querySelector(".adventure-identity small")?.textContent).toBe("codex\u00a0· West");
+  expect(screen.getByRole("region",{name:"beta"}).querySelector(".adventure-meta-agent")?.textContent).toBe("beta-lead · codex");
   fireEvent.click(screen.getByRole("button",{name:"打开 Lead · beta · beta-lead"}));
   await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(service.snapshots.beta.members[1],servers[1]));
 });
@@ -71,7 +72,8 @@ it("lists Leads without Lead role when tmux ends with -lead and shows tmux name 
     [memberKey(lead)]: { key: memberKey(lead), state: "idle", match: "exact", detail: "", machine: "East" },
   };
   render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
-  expect(within(screen.getByRole("region", { name: "alpha" })).getByRole("button", { name: /打开 Lead/ }).getAttribute("title")).toBe("smart-table-lead");
+  expect(within(screen.getByRole("region", { name: "alpha" })).getByRole("button", { name: /打开 Lead/ }).getAttribute("title")).toBe("smart-table-lead\nclaude · Opus");
+  expect(screen.getByRole("region", { name: "alpha" }).querySelector(".adventure-meta-agent")?.textContent).toBe("smart-table-lead · claude · Opus");
   expect(screen.queryByText(/member-31ef/)).toBeNull();
 });
 it("prefers team snapshot project title over slug in section headings", () => {
@@ -105,8 +107,10 @@ it("shows Leads without the -cwN machine segment and still opens the same member
   service.snapshots.beta.members = [member("beta", "worker"), noTmux];
   service.snapshots.alpha.live = {}; service.snapshots.beta.live = {};
   const { container } = render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={onOpen} onClose={()=>{}}/>);
-  expect(within(screen.getByRole("region", { name: "alpha" })).getByRole("button", { name: /打开 Lead/ }).getAttribute("title")).toBe("nst-vision-lead\nnst-vision-cw2-lead@example.invalid");
-  expect(within(screen.getByRole("region", { name: "beta" })).getByRole("button", { name: /打开 Lead/ }).getAttribute("title")).toBe("dcollab-lead\ndcollab-cw1-lead@example.invalid");
+  expect(within(screen.getByRole("region", { name: "alpha" })).getByRole("button", { name: /打开 Lead/ }).getAttribute("title")).toBe("nst-vision-lead\nclaude\nnst-vision-cw2-lead@example.invalid");
+  expect(screen.getByRole("region", { name: "alpha" }).querySelector(".adventure-meta-agent")?.textContent).toBe("nst-vision-lead · claude");
+  expect(within(screen.getByRole("region", { name: "beta" })).getByRole("button", { name: /打开 Lead/ }).getAttribute("title")).toBe("dcollab-lead\ncodex\ndcollab-cw1-lead@example.invalid");
+  expect(screen.getByRole("region", { name: "beta" }).querySelector(".adventure-meta-agent")?.textContent).toBe("dcollab-lead · codex");
   expect(container.textContent).not.toMatch(/-cw\d/);
   fireEvent.click(screen.getByRole("button", { name: "打开 Lead · alpha · nst-vision-lead" }));
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(withTmux, servers[0]));
@@ -127,8 +131,10 @@ it("renders a single Lead as one project card with avatar, text status and hover
   expect(stuck.textContent).toBe("卡住");
   expect(stuck.className).toContain("is-bad");
   const open = within(alpha).getByRole("button", { name: "打开 Lead · alpha · alpha-lead" });
-  expect(open.getAttribute("title")).toBe("alpha-lead\nalpha-lead-codex@example.invalid");
-  expect(container.textContent).not.toMatch(/@example\.invalid|alpha-lead|beta-lead/);
+  expect(open.getAttribute("title")).toBe("alpha-lead\ncodex\nalpha-lead-codex@example.invalid");
+  // T87 rework: the Lead name leads the secondary line; the mailbox stays hover-only.
+  expect(alpha.querySelector(".adventure-identity h3+.adventure-meta .adventure-meta-agent")?.textContent).toBe("alpha-lead · codex");
+  expect(container.textContent).not.toMatch(/@example\.invalid|lead-codex/);
 });
 it("lists several Leads in one card with small avatars and names, and greys out replaced or offline ones", () => {
   const service = fixture();
@@ -158,4 +164,23 @@ it("shows an empty seat and the next step when a project has no Lead", () => {
   expect(alpha.querySelector(".team-member-avatar")).toBeNull();
   expect(within(alpha).getByText("未登记 Lead")).toBeTruthy();
   expect(within(alpha).queryByRole("button")).toBeNull();
+});
+it("keeps tool · model and machine as two unbreakable chunks", () => {
+  render(<AdventurePanel service={fixture()} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
+  const meta = screen.getByRole("region", { name: "alpha" }).querySelector(".adventure-meta")!;
+  expect([...meta.children].map(child => child.className)).toEqual(["adventure-meta-agent", "adventure-meta-machine"]);
+  expect(meta.children[0].children).toHaveLength(0);
+  expect(meta.children[1].textContent).toBe("East");
+});
+it("gives the current projects pairwise different avatar colours, stable per slug", () => {
+  const slugs = ["smart-table", "datrix", "dnotes", "dcollab", "nst-vision"];
+  expect(new Set(slugs.map(teamAvatarShirt)).size).toBe(slugs.length);
+  expect(slugs.map(teamAvatarShirt)).toEqual(slugs.map(teamAvatarShirt));
+  const service = fixture();
+  service.projects = slugs;
+  service.snapshots = Object.fromEntries(slugs.map(slug => [slug, {...service.snapshots.alpha, project: slug, members: [member(slug, "Lead · codex")], live: {}}]));
+  const { container } = render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
+  const shirts = [...container.querySelectorAll<HTMLElement>(".team-member-avatar")].map(avatar => avatar.style.getPropertyValue("--avatar-shirt"));
+  expect(shirts).toHaveLength(5);
+  expect(new Set(shirts).size).toBe(5);
 });

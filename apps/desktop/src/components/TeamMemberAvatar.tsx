@@ -10,6 +10,15 @@ export function readTeamAvatarMailAnchor(station:Element) {
   return rect.width && rect.height ? {x:rect.left+rect.width/2,y:rect.top} : null;
 }
 
+/** Six hues 60° apart, mid lightness so they read on dark and light themes. */
+const shirts = ["#d0605a", "#cf9a3a", "#5aa457", "#38a3ad", "#5580d4", "#9b6bd0"];
+/** Stable shirt colour for an avatar key. */
+export function teamAvatarShirt(memberId: string) {
+  let hash = 0;
+  for (const character of memberId) hash = (hash * 31 + character.codePointAt(0)!) >>> 0;
+  return shirts[hash % shirts.length];
+}
+
 /** Original integer-grid artwork. Palette is a visual hint, not an identity. */
 export default function TeamMemberAvatar({ memberId, status, motionEnabled = true, paused = false, scale = 1 }: {
   memberId: string;
@@ -18,10 +27,8 @@ export default function TeamMemberAvatar({ memberId, status, motionEnabled = tru
   paused?: boolean;
   scale?: 1 | 2 | 3;
 }) {
-  let hash = 0;
-  for (const character of memberId) hash = (hash * 31 + character.codePointAt(0)!) >>> 0;
   const state = status.state;
-  const shirt = ["#5198b7", "#9b82bf", "#c68c48", "#5b9e83"][hash % 4];
+  const shirt = teamAvatarShirt(memberId);
   return <span className="team-member-avatar" data-state={state} data-motion={motionEnabled ? "on" : "off"}
     data-paused={String(paused)} style={{"--avatar-shirt": shirt, width:28 * scale, height:32 * scale, flexBasis:28 * scale} as CSSProperties}>
     <svg width={28 * scale} height={32 * scale} viewBox="0 0 28 32" shapeRendering="crispEdges" role="img" aria-label={status.label}>
