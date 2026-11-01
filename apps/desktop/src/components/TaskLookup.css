@@ -49,7 +49,8 @@
 .task-hover-card .task-hover-head{display:flex;align-items:center;gap:6px}
 .task-hover-card .task-hover-title{line-height:1.45;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .task-hover-card small{color:var(--ui-muted);font-size:11px}
-.task-overlay{position:absolute;z-index:6;top:12px;right:12px;width:min(440px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--ui-border);border-radius:10px;background:var(--ui-panelAlt,var(--ui-panel));color:var(--ui-fg);box-shadow:0 10px 32px rgba(0,0,0,.4);font-size:12px}
+/* Task detail overlay: anchored to the top-left of the terminal area (.panes / .pane are its containing blocks), so it never covers the connections sidebar or a docked side panel. */
+.task-overlay{position:absolute;z-index:6;top:12px;left:12px;width:min(440px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--ui-border);border-radius:10px;background:var(--ui-panelAlt,var(--ui-panel));color:var(--ui-fg);box-shadow:0 10px 32px rgba(0,0,0,.4);font-size:12px}
 .task-overlay>header{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .task-overlay p{margin:0}
 
