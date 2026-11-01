@@ -22,8 +22,8 @@ async function open(project='parent'){
 it('merges descendants recursively, distinguishes same codes and combines project filters',async()=>{
  const onOpen=await open();
  expect(document.querySelectorAll('.task-list-row')).toHaveLength(3);
- expect(screen.getByText('parent/T1')).toBeTruthy();expect(screen.getByText('leaf/T1')).toBeTruthy();
- fireEvent.click(screen.getByText('child/T1'));expect(onOpen).toHaveBeenCalledWith('T1','child');
+ expect(screen.getByTitle('parent/T1')).toBeTruthy();expect(screen.getByTitle('leaf/T1')).toBeTruthy();
+ fireEvent.click(screen.getByTitle('child/T1'));expect(onOpen).toHaveBeenCalledWith('T1','child');
  fireEvent.change(screen.getByLabelText('按状态筛选'),{target:{value:'doing'}});
  expect(document.querySelectorAll('.task-list-row')).toHaveLength(2);
  fireEvent.change(screen.getByLabelText('按负责人筛选'),{target:{value:'worker'}});
@@ -35,7 +35,7 @@ it('merges descendants recursively, distinguishes same codes and combines projec
  fireEvent.change(screen.getByLabelText('按负责人筛选'),{target:{value:'worker'}});
  fireEvent.change(screen.getByLabelText('搜索标题'),{target:{value:'leaf'}});
  expect(document.querySelectorAll('.task-list-row')).toHaveLength(1);
- expect(screen.getByText('leaf/T1')).toBeTruthy();
+ expect(screen.getByTitle('leaf/T1')).toBeTruthy();
  fireEvent.change(screen.getByLabelText('搜索标题'),{target:{value:'missing'}});
  expect(document.querySelectorAll('.task-list-row')).toHaveLength(0);
 });
@@ -59,6 +59,6 @@ it('opens a child card through the integrated lookup with its owning project',as
  const onOpen=vi.fn();render(<TaskLookup source={source} inferred={{project:'parent',reason:'team'}} onOpenTaskDetail={onOpen}/>);
  const details=screen.getByText(/浏览 parent/).closest('details')!;
  await act(async()=>{details.open=true;fireEvent(details,new Event('toggle'));});
- fireEvent.click(await screen.findByText('child/T1'));
+ fireEvent.click(await screen.findByTitle('child/T1'));
  expect(onOpen).toHaveBeenCalledWith('child','T1');
 });

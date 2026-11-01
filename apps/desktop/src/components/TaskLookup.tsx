@@ -195,7 +195,7 @@ export function TaskBrowser({ source, project, slugs, onOpen }: { source: BoardS
       <p className="task-lookup-hint">{filtered.length} 条{filtered.length > LIST_LIMIT ? `，显示前 ${LIST_LIMIT} 条` : ""}；列表每 5 分钟更新</p>
       <div className="task-list">{filtered.slice(0, LIST_LIMIT).map(t => <button type="button" key={`${t.project}/${t.code}`} className="task-list-row" title={t.title} onClick={() => onOpen(t.code, t.project)}>
         <span className="task-list-status"><StatusBadge name={byKey.get(`${t.project}/${t.status_key}`)?.name ?? t.status_key} color={byKey.get(`${t.project}/${t.status_key}`)?.color}/></span>
-        <span className={`tb-card-code task-list-code${index.projects.length > 1 ? " task-list-project-code" : ""}`} title={`${t.project}/${t.code}`}>{index.projects.length > 1 ? `${t.project}/${t.code}` : t.code}</span>
+        <span className={`tb-card-code task-list-code${index.projects.length > 1 ? " task-list-project-code" : ""}`} title={`${t.project}/${t.code}`}>{index.projects.length > 1 ? <>{t.project}/<wbr/><span className="task-list-code-number">{t.code}</span></> : t.code}</span>
         <span className="task-list-title" title={t.title}>{t.title}</span>
         <span className="task-list-who" title={t.assignee || "未指派"}>{names.get(t.assignee) || "未指派"}</span>
       </button>)}</div>

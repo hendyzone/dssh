@@ -85,3 +85,5 @@
 
 /* Keep both parts of a project-qualified task ID visible in narrow panels. */
 .task-list-code.task-list-project-code{white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
+
+.task-list-project-code .task-list-code-number{white-space:nowrap;overflow-wrap:normal}
