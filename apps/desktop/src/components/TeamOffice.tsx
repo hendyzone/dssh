@@ -94,7 +94,7 @@ function serviceNote(service: OfficeService | undefined) {
   if (!service) return "数据来自团队服务的订阅项目。";
   if (service.state === "online") return "数据来自团队服务的订阅项目 · 服务在线";
   if (service.state === "connecting") return "数据来自团队服务的订阅项目 · 正在连接团队服务…";
-  if (service.state === "unauthorized") return "团队服务令牌已失效：请在「设置 → 团队服务」重新配置令牌";
+  if (service.state === "unauthorized") return "团队服务令牌已失效：请在「设置 → 团队 → 团队服务」重新配置令牌";
   if (service.state === "error") return "团队服务暂不可用：请检查团队服务配置";
   const at = service.at ? new Date(service.at) : undefined;
   return `团队服务离线 · 数据截至 ${at ? clockText(at) : "未知时间"}`;
