@@ -629,7 +629,10 @@ Request ([`agent-report.json`](schemas/agent-report.json)), response
   "tmux": {"server_pid": 1234, "ok": true},
   "panes": [
     {"sid": "$3", "created": 1712345678, "name": "worker-example-project-host-a-codex", "pane": "%7",
-     "path": "/srv/example-project", "cmd": "node", "child": "codex", "activity": 1712349999,
+     "path": "/srv/example-project", "cmd": "node", "child": "codex",
+     "activity": {"state": "working", "since": "2026-11-01T09:12:03Z", "last_event_ts": "2026-11-01T09:14:51.612Z",
+                  "last_event": "tool_start", "open_tool": "Bash", "open_tool_since": "2026-11-01T09:14:51.612Z",
+                  "cpu_active": true, "net_active": true, "source": "events"},
      "state": "running", "detail": "", "ctx_pct": 41, "model": "example-model",
      "last_line": "Running go test ./internal/store", "box": "worker-a@example.invalid", "project": "example-project"}
   ],
@@ -637,6 +640,23 @@ Request ([`agent-report.json`](schemas/agent-report.json)), response
   "content": [
     {"sid": "$3", "created": 1712345678, "digest": "sha256:9f2c1b7e4a3d5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8",
      "text": "$ go test ./internal/store\nok  example/internal/store 0.41s"}
+  ]
+}
+```
+
+`activity` is optional. An older agent omits it entirely or still sends integer Unix seconds; the
+service accepts both and falls back to `state`, treating the activity as `unknown`. One pane carries
+one shape.
+
+<!-- schema: agent-report.json -->
+```json
+{
+  "agent": {"version": "0.0.9", "boot": "3f6c2a9e-8d41-4b7a-9c55-0e2f1a6b7c8d", "seq": 41},
+  "full": false,
+  "tmux": {"server_pid": 1234, "ok": true},
+  "panes": [
+    {"sid": "$3", "created": 1712345678, "name": "worker-example-project-host-a-codex", "pane": "%7",
+     "activity": 1712349999, "state": "running"}
   ]
 }
 ```
@@ -651,6 +671,27 @@ Request ([`agent-report.json`](schemas/agent-report.json)), response
 - `box`/`project` are read from the session's working directory mailbox config, empty if none.
 - `tmux.ok: false` means the tmux server is not reachable; `panes` is then empty and the service
   treats every session on the machine as absent.
+
+`activity` is the agent's own activity assessment (new agents) or, from older agents, integer Unix
+seconds of the last observed activity (see the second example above):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `state` | enum | `working`, `stalled`, `waiting_human`, `idle`; the service may also derive `offline` (no report for 30 s) and `unattached` (session gone) |
+| `reason` | string ≤ 200 | free text shown next to the state, empty/absent if none |
+| `since` | RFC 3339 UTC | when the state was entered |
+| `last_event_ts` | RFC 3339 UTC or `null` | timestamp of the latest activity event (§7.6), `null` if none |
+| `last_event` | enum or `null` | event name of that record |
+| `open_tool` | string ≤ 64 or `null` | tool call in flight, `null` if none |
+| `open_tool_since` | RFC 3339 UTC or `null` | when that tool call started |
+| `cpu_active` | boolean | process-level evidence: the child had CPU time in the last window |
+| `net_active` | boolean | process-level evidence: the child had non-zero network counter deltas |
+| `source` | enum | which evidence won: `events`, `process`, `pane` (pane content) |
+
+The agent only sends `state`/`since`/`source` as required; `source` tells clients how much to
+trust the rest. The service does not recompute `activity` — it forwards it (plus `offline` and
+`unattached` when it can tell that itself), so a client MUST treat unknown fields as absent and
+MUST tolerate an absent or integer `activity` from an older agent.
 
 ### 7.2 Full, incremental, heartbeat
 
@@ -706,6 +747,70 @@ and sends a full report first after reconnecting (backoff 1 s → 15 s).
 
 - Other statuses: `401` bad token, `403 forbidden` non-agent token, `413` body too large,
   `422` schema violation, `429 rate_limited` above 10 reports/s per machine.
+
+### 7.6 Worker activity files (v1)
+
+The agent's view of *why* a session is in its current state comes from event files that each worker
+tool writes on its own machine. They are local files, not part of the wire protocol, but both the
+agent and operators read them, so their format is fixed here.
+
+- Event log: `${XDG_STATE_HOME:-~/.local/state}/amail/activity/<box>.jsonl` — one JSON object per
+  line ([`activity-event.json`](schemas/activity-event.json)), append-only, UTF-8, `\n`-terminated.
+- State snapshot: `${XDG_STATE_HOME:-~/.local/state}/amail/activity/<box>.state.json` — the latest
+  record, same shape ([`activity-state.json`](schemas/activity-state.json)), replaced atomically
+  (write a temp file in the same directory, then `rename`) so a reader never sees a torn record.
+
+Rules:
+
+- One line is at most 1 KiB. Hooks only append (`O_APPEND`, one `write`); when the log exceeds
+  1 MiB the agent truncates the oldest half — a hook never rewrites or truncates the log. A record
+  that would exceed 1 KiB is dropped and logged locally, never written partially.
+- The state file is overwritten in place on every event through a temp file plus `rename`, so the
+  agent reads the latest state without scanning the log.
+- `ts` is RFC 3339 UTC with optional fractional seconds (`.123`, `.123456`, `.123456789`), always
+  `Z`. `v` is `1`; a newer `v` is a different format and readers MUST ignore it.
+- `box` is the box name from the identity file (`BOX=` in `.agent-mail/env`), e.g.
+  `dcollab-cw1-codex`. `pane` is the tmux pane id from `$TMUX_PANE` at write time (`%7`); `pid` the
+  tool's process id, if known.
+- `detail` is at most 80 characters and MUST NOT carry prompts, code, credentials, file contents or
+  paths outside the session's working tree — same privacy rule as `last_line` in §7.4. For
+  `turn_error` it names the category (`rate limit`, `quota`, `stream closed`).
+- Readers MUST tolerate unknown fields (forward compatibility); writers MUST NOT rely on the
+  consumer reading anything beyond the fields below.
+
+| Field | Required | Type | Meaning |
+|---|---|---|---|
+| `v` | yes | const `1` | format version |
+| `ts` | yes | RFC 3339 UTC | when the event happened |
+| `box` | yes | string 1–254 | box that wrote the record (`BOX=`, e.g. `dcollab-cw1-codex`) |
+| `tool` | yes | enum | `claude`, `codex`, `cursor`, `pi`, `dsh`, `agy` |
+| `ev` | yes | enum | event name (list below) |
+| `pane` | yes | tmux pane id | `%` + digits |
+| `sid` | no | string or `null` | the tool's session id |
+| `turn` | no | string or `null` | turn id, if the tool exposes one |
+| `name` | no | string or `null` | tool name for `tool_start`/`tool_end` |
+| `pid` | no | integer or `null` | process id of the tool |
+| `ok` | no | boolean or `null` | outcome, meaningful for `tool_end`/`turn_end`, else `null` |
+| `detail` | no | string ≤ 80 | short hint, no content |
+
+Event names, in the order a turn normally produces them:
+
+`session_start`, `turn_start`, `model_start`, `model_end`, `tool_start`, `tool_end`,
+`wait_human`, `idle_notice`, `turn_end`, `turn_error`, `compact`, `session_end`.
+
+`model_start` / `model_end` bracket one model call (`agy`, `dsh`, `pi` only); `tool_start` /
+`tool_end` one tool call and pair by `(sid, name, turn)` when `turn` is available. A `turn_error`
+ends the turn like `turn_end` and carries the failure category in `detail`.
+
+<!-- schema: activity-event.json -->
+```json
+{"v": 1, "ts": "2026-11-01T09:14:51.612Z", "box": "dcollab-cw1-dsh", "tool": "dsh", "ev": "tool_start", "pane": "%7", "sid": "s_9f2c1b", "turn": "t_41", "name": "Bash", "pid": 4242, "ok": null, "detail": "go test"}
+```
+
+<!-- schema: activity-state.json -->
+```json
+{"v": 1, "ts": "2026-11-01T09:14:58.004Z", "box": "dcollab-cw1-dsh", "tool": "dsh", "ev": "idle_notice", "pane": "%7", "sid": "s_9f2c1b", "turn": "t_41", "name": null, "pid": 4242, "ok": null, "detail": ""}
+```
 
 ---
 
@@ -780,6 +885,8 @@ Clients only display AI data (§6.5). This section is informative so clients kno
 | [`ws-server-message.json`](schemas/ws-server-message.json) | `snapshot` / `delta` / `live` / `machine` / `pong` / `error` |
 | [`agent-report.json`](schemas/agent-report.json) | `POST /agent/report` request |
 | [`agent-report-response.json`](schemas/agent-report-response.json) | its `200` response |
+| [`activity-event.json`](schemas/activity-event.json) | one line of a worker activity log (§7.6) |
+| [`activity-state.json`](schemas/activity-state.json) | the latest activity record (§7.6) |
 | [`error.json`](schemas/error.json) | every error body |
 
 All schemas are JSON Schema draft 2020-12 and **self-contained**: each file carries the

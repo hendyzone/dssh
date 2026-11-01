@@ -147,7 +147,6 @@
         "sid",
         "created",
         "name",
-        "activity",
         "state"
       ],
       "properties": {
@@ -178,8 +177,15 @@
           "maxLength": 32
         },
         "activity": {
-          "type": "integer",
-          "minimum": 0
+          "description": "Optional. New agents send the activity object; agents before 0.1.0 send integer Unix seconds or omit the field entirely (legacy), and the service falls back to state and treats the activity as unknown.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/unixSeconds"
+            },
+            {
+              "$ref": "#/$defs/activity"
+            }
+          ]
         },
         "state": {
           "$ref": "#/$defs/liveState"
@@ -244,6 +250,111 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 9007199254740991
+    },
+    "activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "since",
+        "source"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/activityState"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "since": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "last_event_ts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_event": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/activityEventName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "open_tool": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "open_tool_since": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cpu_active": {
+          "type": "boolean"
+        },
+        "net_active": {
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "events",
+            "process",
+            "pane"
+          ]
+        }
+      }
+    },
+    "activityState": {
+      "enum": [
+        "working",
+        "stalled",
+        "waiting_human",
+        "idle",
+        "offline",
+        "unattached"
+      ]
+    },
+    "activityEventName": {
+      "enum": [
+        "session_start",
+        "turn_start",
+        "model_start",
+        "model_end",
+        "tool_start",
+        "tool_end",
+        "wait_human",
+        "idle_notice",
+        "turn_end",
+        "turn_error",
+        "compact",
+        "session_end"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
     }
   }
 }
