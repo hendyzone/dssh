@@ -103,7 +103,7 @@ function mailNote(mail: OfficeSnapshot["mail"], availability: string) {
   if (availability === "loading" || mail?.availability === "loading") return "正在连接邮件动态…";
   if (availability === "error" || mail?.availability === "error") return "邮件动态暂时失败，稍后自动重试";
   if (mail?.availability === "ready") return "显示已绑定邮箱收到的信";
-  return "邮件动态未配置：在「设置 → Agent 协作」为本会话开启邮箱后显示";
+  return "邮件动态未配置：在「设置 → 团队 → 高级：按会话的 Agent 协作（邮件）」为本会话开启邮箱后显示";
 }
 
 /** Original pixel furniture, shared by occupied stations and the unassigned desks. */

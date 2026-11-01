@@ -90,9 +90,9 @@ See [Workspace tools](docs/workspace-tools.md) and [Program status and tmux](doc
 
 ## 👥 Agent teams, tasks and quota
 
-Optional **Agent collaboration** (「Agent 协作」) is configured per tmux session + worktree under Settings → Agent collaboration (「设置 → Agent 协作」). It shows shared tasks and handoffs from a taskboard server you configure, and lets you search, preview, send and reply to messages through amail. It is off by default and credentials stay on the server. See [Agent collaboration](docs/agent-collaboration.md) (Chinese).
+Optional **Agent collaboration** (「Agent 协作」) is configured per tmux session + worktree under Settings → Team → Advanced: per-session Agent collaboration (mail) (「设置 → 团队 → 高级：按会话的 Agent 协作（邮件）」). It shows shared tasks and handoffs from a taskboard server you configure, and lets you search, preview, send and reply to messages through amail. It is off by default and credentials stay on the server. See [Agent collaboration](docs/agent-collaboration.md) (Chinese).
 
-**Team panel** (「团队」): configure a team service URL and project subscriptions in Settings → Agent collaboration. Members and their live state arrive through WebSocket independently of the current terminal's tmux session. Open a registered member's tmux session across servers in one click ([details](docs/agent-collaboration.md#从-lead-跳转到成员终端)).
+**Team panel** (「团队」): configure a team service URL and project subscriptions in Settings → Team (「设置 → 团队」). Members and their live state arrive through WebSocket independently of the current terminal's tmux session. Open a registered member's tmux session across servers in one click ([details](docs/agent-collaboration.md#从-lead-跳转到成员终端)).
 The "Activity" (「动态」) and "Members" (「成员」) pages use service status. Only members explicitly reported as `no_agent` fall back to the configured taskboard's read-only session collector (`GET /api/v1/agent-sessions`); taskboard data also provides current cards and recent commits.
 
 See [更新日志 / Changelog](CHANGELOG.md) for version history.
@@ -111,7 +111,7 @@ See [Task code lookup](docs/agent-collaboration.md#任务编号查询) (Chinese)
 The server only needs `python3` (3.8+); nothing is installed there. Optional settings such as a proxy for non-interactive SSH or a new-api relay address go in `~/.config/model-quota/config` on the server (see the [script README](tools/model-quota/README.md)). **Copy prompt** (「复制提示词」) copies a message for the terminal AI on that server describing what is failing there (no python3, no proxy, expired login, unconfigured relay…) and how to fix it, then asks it to run the script and report; it contains no credentials or accounts. Local terminals are not supported.
 
 For the worktree, onboarding, claiming and handoff workflow for Claude Code, Codex CLI and pi, see the [Agent playbook](docs/agent-playbook.md) (Chinese).
-Settings → Agent collaboration lets you read it offline, copy it to an agent in one click, or save the full Markdown playbook.
+Settings → Team → Advanced: per-session Agent collaboration (mail) → 「发给 Agent 的操作手册」 lets you read it offline, copy it to an agent in one click, or save the full Markdown playbook.
 
 ## 🌐 Forwarding, monitoring and sync
 

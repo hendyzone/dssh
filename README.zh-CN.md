@@ -88,10 +88,10 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 
 ## 👥 Agent 团队、任务与额度
 
-可选的 **Agent 协作** 可在「设置 → Agent 协作」按 tmux 会话 + worktree 配置并开启，查看 taskboard 的共享任务与交接，
+可选的 **Agent 协作** 可在「设置 → 团队 → 高级：按会话的 Agent 协作（邮件）」按 tmux 会话 + worktree 配置并开启，查看 taskboard 的共享任务与交接，
 通过 amail 查询、预览发送或回复消息。默认关闭，凭据留在远端。详见 [Agent 协作接入](docs/agent-collaboration.md)。
 
-**团队面板**：在「设置 → Agent 协作」配置团队服务地址和订阅项目，通过 WebSocket 实时读取成员与状态，不依赖当前终端绑定 tmux 会话；仍可跨服务器一键打开已登记成员的 tmux 会话（[从 Lead 跳转到成员终端](docs/agent-collaboration.md#从-lead-跳转到成员终端)）。
+**团队面板**：在「设置 → 团队」配置团队服务地址和订阅项目，通过 WebSocket 实时读取成员与状态，不依赖当前终端绑定 tmux 会话；仍可跨服务器一键打开已登记成员的 tmux 会话（[从 Lead 跳转到成员终端](docs/agent-collaboration.md#从-lead-跳转到成员终端)）。
 「动态」和「成员」两页使用服务状态；只有服务明确标记 `no_agent` 的成员才回退到已配置 taskboard 的只读会话采集（`GET /api/v1/agent-sessions`），看板同时提供当前卡片与最近提交等信息。
 
 **v1.2.27:** 应用内更新：启动时（及「设置 → 检查更新」）从 GitHub Releases 发现新版本，显示版本与更新说明，确认后下载、校验签名并重启；deb/rpm 安装只给下载链接。像素办公室把临时 worker 放进单独的临时工位并标出所属卡，卡完成后标「待回收」。
@@ -122,7 +122,7 @@ dssh 面向日常远程开发与服务器管理：连接服务器、在 tmux 中
 服务器只需要 `python3`（3.8+），不往服务器装任何东西。非交互 SSH 用的代理、new-api 中转站地址等可选配置写在服务器的 `~/.config/model-quota/config`（见[脚本说明](tools/model-quota/README.md)）。「复制提示词」会生成一段给那台服务器上终端 AI 的话：写明这台机的具体问题（缺 python3、未设代理、登录过期、中转站未配置等）和修法，最后让它跑一遍脚本自检并回报；提示词里不含凭据和账号。本地终端不支持。
 
 给 Claude Code、Codex CLI、pi 的创建 worktree、开箱、认领及交接流程见 [Agent 操作手册](docs/agent-playbook.md)。
-程序内「设置 → Agent 协作」支持离线查看、一键复制给 Agent，以及保存完整 Markdown 手册。
+程序内「设置 → 团队 → 高级：按会话的 Agent 协作（邮件）」的「发给 Agent 的操作手册」支持离线查看、一键复制给 Agent，以及保存完整 Markdown 手册。
 
 ## 🌐 转发、监控与同步
 

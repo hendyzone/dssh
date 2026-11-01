@@ -301,7 +301,7 @@ amail 原客户端在找不到指定身份时会向上级目录查找邮箱。�
 
 ## 5. 配置 dssh 面板
 
-在“设置 → Agent 协作”选择刚创建的 tmux 会话，点击“读取当前 worktree 配置”：
+在“设置 → 团队 → 高级：按会话的 Agent 协作（邮件）”选择刚创建的 tmux 会话，点击“读取当前 worktree 配置”：
 
 - 项目编号填 `TASKBOARD_PROJECT`；worktree 根目录应等于 `WT_ROOT`。
 - taskboard URL 与程序路径使用第 3 节的值。面板只查询看板，令牌文件可以留空。
