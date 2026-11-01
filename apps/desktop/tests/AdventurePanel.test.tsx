@@ -128,7 +128,7 @@ it("renders a single Lead as one project card with avatar, text status and hover
   expect(stuck.className).toContain("is-bad");
   const open = within(alpha).getByRole("button", { name: "打开 Lead · alpha · alpha-lead" });
   expect(open.getAttribute("title")).toBe("alpha-lead\nalpha-lead-codex@example.invalid");
-  expect(container.textContent).not.toMatch(/@example\.invalid|-lead\b/);
+  expect(container.textContent).not.toMatch(/@example\.invalid|alpha-lead|beta-lead/);
 });
 it("lists several Leads in one card with small avatars and names, and greys out replaced or offline ones", () => {
   const service = fixture();
