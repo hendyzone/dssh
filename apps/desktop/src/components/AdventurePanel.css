@@ -1,14 +1,41 @@
-.adventure-panel { height:100%; min-width:0; display:flex; flex-direction:column; background:var(--ui-panel); color:var(--ui-fg); font-size:13px; }
+.adventure-panel { height:100%; min-width:0; display:flex; flex-direction:column; background:var(--ui-panel); color:var(--ui-fg); font-size:13px; container-type:inline-size; }
 .adventure-panel>header { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--ui-border); }
-.adventure-projects { overflow:auto; min-height:0; padding:4px 12px; }
-.adventure-project { padding:10px 0; border-bottom:1px solid var(--ui-border); }
-.adventure-project h3 { margin:0 0 6px; color:var(--ui-muted); font-size:12px; font-weight:600; overflow-wrap:anywhere; }
-.adventure-lead { width:100%; display:grid; grid-template-columns:7px minmax(0,1fr) auto 14px; gap:8px; align-items:center; padding:7px 4px; border:0; border-radius:5px; background:transparent; color:inherit; text-align:left; cursor:pointer; }
-.adventure-lead:hover:not(:disabled), .adventure-lead:focus-visible { background:var(--ui-panelAlt); outline:1px solid var(--ui-border); }
-.adventure-lead:disabled { cursor:default; opacity:0.7; }
-.adventure-identity { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.adventure-projects { overflow:auto; min-height:0; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+.adventure-card { padding:8px; border:1px solid var(--ui-border); border-radius:var(--radius-m,10px); background:var(--ui-panelAlt); }
+.adventure-card h3 { margin:0; font-size:13px; font-weight:600; color:var(--ui-fg); overflow-wrap:anywhere; }
+.adventure-card-head { display:flex; align-items:center; gap:10px; padding:0 4px 4px; }
+.adventure-card-head h3 { color:var(--ui-muted); font-size:12px; }
+.adventure-card:not(.is-solo):has(.adventure-lead-row) .adventure-card-head { border-bottom:1px solid var(--ui-border); margin-bottom:4px; padding-bottom:6px; }
+.adventure-lead-row+.adventure-lead-row { border-top:1px dashed var(--ui-border); }
+/* The open button stretches over the whole row, so the card stays one click target. */
+.adventure-lead { position:relative; display:grid; grid-template-columns:auto minmax(0,1fr) auto 24px; grid-template-areas:"avatar id status open"; gap:4px 10px; align-items:center; padding:6px 4px; border-radius:var(--radius-s,6px); }
+.adventure-lead:has(.adventure-open:hover:not(:disabled)), .adventure-lead:has(.adventure-open:focus-visible) { background:color-mix(in srgb,var(--ui-fg) 6%,transparent); outline:1px solid var(--ui-border); }
+.adventure-lead:has(.adventure-open:disabled) { opacity:0.75; }
+.adventure-avatar { grid-area:avatar; position:relative; display:inline-flex; align-items:flex-end; justify-content:center; }
+.adventure-crown { position:absolute; top:0; left:-2px; color:#d9a441; fill:#e9c46a; }
+.adventure-lead:has(.team-member-avatar[data-state="unknown"]) .adventure-crown { filter:grayscale(1); opacity:.7; }
+.adventure-avatar.is-vacant { opacity:.55; }
+.adventure-vacant-chair { fill:none; stroke:var(--ui-muted); stroke-width:1; stroke-dasharray:2 1; }
+.adventure-vacant-ground { fill:var(--ui-muted); opacity:.45; }
+.adventure-identity { grid-area:id; min-width:0; display:flex; flex-direction:column; gap:3px; }
 .adventure-identity strong { font-size:13px; overflow-wrap:anywhere; }
 .adventure-identity small { color:var(--ui-muted); font-size:11px; overflow-wrap:anywhere; }
-.adventure-status { font-size:11px; color:var(--ui-muted); max-width:90px; overflow-wrap:anywhere; }
-.adventure-empty { margin:6px 0; color:var(--ui-muted); font-size:12px; }
-.adventure-error { margin:4px 0; color:var(--ui-danger); font-size:12px; overflow-wrap:anywhere; }
+.adventure-identity small>span { white-space:nowrap; }
+.adventure-status { grid-area:status; justify-self:end; max-width:96px; padding:2px 7px; border-radius:999px; font-size:11px; line-height:16px; overflow-wrap:anywhere;
+  --tone:var(--ui-muted); color:color-mix(in srgb,var(--tone) 75%,var(--ui-fg)); background:color-mix(in srgb,var(--tone) 16%,transparent); border:1px solid color-mix(in srgb,var(--tone) 40%,transparent); }
+.adventure-status.is-run, .adventure-status.is-review { --tone:var(--ui-accent); }
+.adventure-status.is-warn, .adventure-status.is-wait, .adventure-status.is-lead { --tone:#d19a66; }
+.adventure-status.is-bad { --tone:var(--ui-danger,#e06c75); }
+.adventure-open { grid-area:open; position:static; display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; padding:0; border:1px solid var(--ui-border); border-radius:var(--radius-s,6px); background:var(--ui-panel); color:inherit; cursor:pointer; }
+.adventure-open::after { content:""; position:absolute; inset:0; border-radius:inherit; }
+.adventure-open:focus-visible { outline:none; }
+.adventure-open:disabled { cursor:default; }
+.adventure-empty { margin:2px 4px; color:var(--ui-muted); font-size:12px; }
+.adventure-error { margin:4px; color:var(--ui-danger); font-size:12px; overflow-wrap:anywhere; }
+/* Narrow panels: the status label moves under the name instead of squeezing it. */
+@container (max-width:260px) {
+  .adventure-lead { grid-template-columns:auto minmax(0,1fr) 24px; grid-template-areas:"avatar id open" "avatar status open"; }
+  .adventure-status { justify-self:start; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .is-solo .adventure-avatar .team-member-avatar { zoom:.5; }
+  .is-solo .adventure-crown { width:10px; height:10px; left:-4px; top:-2px; }
+}

@@ -23,7 +23,8 @@ it("lists subscribed Leads only, prioritizes stuck, and opens the exact member a
   render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={onOpen} onClose={()=>{}}/>);
   expect(screen.getAllByRole("heading",{level:3}).map(x=>x.textContent)).toEqual(["beta","alpha"]);
   expect(screen.queryByText(/-worker/)).toBeNull();
-  expect(screen.getByText("codex · West")).toBeTruthy();
+  expect(within(screen.getByRole("region",{name:"beta"})).getByText("West")).toBeTruthy();
+  expect(screen.getByRole("region",{name:"beta"}).querySelector(".adventure-identity small")?.textContent).toBe("codex\u00a0· West");
   fireEvent.click(screen.getByRole("button",{name:"打开 Lead · beta · beta-lead"}));
   await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(service.snapshots.beta.members[1],servers[1]));
 });
@@ -34,7 +35,7 @@ it("keeps missing rosters, no Lead, unavailable connections and click errors loc
   service.snapshots.unmapped = {...service.snapshots.alpha,project:"unmapped",members:[member("unmapped","Lead","missing.example.invalid")]};
   const onOpen = vi.fn().mockRejectedValueOnce(new Error("连接失败")).mockResolvedValue(undefined);
   render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={onOpen} onClose={()=>{}}/>);
-  expect(within(screen.getByRole("region",{name:"empty"})).getByText("未设置 Lead")).toBeTruthy();
+  expect(within(screen.getByRole("region",{name:"empty"})).getByText("未登记 Lead")).toBeTruthy();
   expect(within(screen.getByRole("region",{name:"broken"})).getByText("名单不可用")).toBeTruthy();
   expect((screen.getByRole("button",{name:/打开 Lead · unmapped/}) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button",{name:/打开 Lead · beta/}));
@@ -70,7 +71,7 @@ it("lists Leads without Lead role when tmux ends with -lead and shows tmux name 
     [memberKey(lead)]: { key: memberKey(lead), state: "idle", match: "exact", detail: "", machine: "East" },
   };
   render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
-  expect(within(screen.getByRole("region", { name: "alpha" })).getByText("smart-table-lead")).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: "alpha" })).getByRole("button", { name: /打开 Lead/ }).getAttribute("title")).toBe("smart-table-lead");
   expect(screen.queryByText(/member-31ef/)).toBeNull();
 });
 it("prefers team snapshot project title over slug in section headings", () => {
@@ -104,10 +105,57 @@ it("shows Leads without the -cwN machine segment and still opens the same member
   service.snapshots.beta.members = [member("beta", "worker"), noTmux];
   service.snapshots.alpha.live = {}; service.snapshots.beta.live = {};
   const { container } = render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={onOpen} onClose={()=>{}}/>);
-  expect(within(screen.getByRole("region", { name: "alpha" })).getByText("nst-vision-lead")).toBeTruthy();
-  expect(within(screen.getByRole("region", { name: "beta" })).getByText("dcollab-lead")).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: "alpha" })).getByRole("button", { name: /打开 Lead/ }).getAttribute("title")).toBe("nst-vision-lead\nnst-vision-cw2-lead@example.invalid");
+  expect(within(screen.getByRole("region", { name: "beta" })).getByRole("button", { name: /打开 Lead/ }).getAttribute("title")).toBe("dcollab-lead\ndcollab-cw1-lead@example.invalid");
   expect(container.textContent).not.toMatch(/-cw\d/);
   fireEvent.click(screen.getByRole("button", { name: "打开 Lead · alpha · nst-vision-lead" }));
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(withTmux, servers[0]));
   expect(withTmux.email).toBe("nst-vision-cw2-lead@example.invalid");
+});
+
+// dssh/T87: one card per project, a pixel avatar per Lead, the box/email only on hover.
+it("renders a single Lead as one project card with avatar, text status and hover-only identity", () => {
+  const service = fixture();
+  const { container } = render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
+  const alpha = screen.getByRole("region", { name: "alpha" });
+  expect(alpha.classList.contains("is-solo")).toBe(true);
+  expect(within(alpha).getByRole("heading", { level: 3 }).textContent).toBe("alpha");
+  expect(alpha.querySelector(".team-member-avatar")?.getAttribute("data-state")).toBe("idle");
+  expect(alpha.querySelector(".adventure-crown")).toBeTruthy();
+  expect(within(alpha).getByText("空闲").classList.contains("adventure-status")).toBe(true);
+  const stuck = screen.getByRole("region", { name: "beta" }).querySelector(".adventure-status")!;
+  expect(stuck.textContent).toBe("卡住");
+  expect(stuck.className).toContain("is-bad");
+  const open = within(alpha).getByRole("button", { name: "打开 Lead · alpha · alpha-lead" });
+  expect(open.getAttribute("title")).toBe("alpha-lead\nalpha-lead-codex@example.invalid");
+  expect(container.textContent).not.toMatch(/@example\.invalid|-lead\b/);
+});
+it("lists several Leads in one card with small avatars and names, and greys out replaced or offline ones", () => {
+  const service = fixture();
+  const second = {...member("alpha", "Lead · claude"), email: "alpha-two@example.invalid", tmux: { id: "$9", created: 9, name: "alpha-two-lead" }};
+  service.snapshots.alpha.members.push(second);
+  service.snapshots.alpha.live[memberKey(second)] = { key: memberKey(second), state: "running", match: "replaced", detail: "", machine: "East" };
+  render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
+  const alpha = screen.getByRole("region", { name: "alpha" });
+  expect(alpha.classList.contains("is-solo")).toBe(false);
+  expect(within(alpha).getByRole("heading", { level: 3 }).textContent).toBe("alpha");
+  expect(within(alpha).getByText("alpha-lead")).toBeTruthy();
+  expect(within(alpha).getByText("alpha-two-lead")).toBeTruthy();
+  const avatars = [...alpha.querySelectorAll(".team-member-avatar")];
+  expect(avatars.map(avatar => avatar.getAttribute("data-state"))).toEqual(["idle", "unknown"]);
+  expect(avatars.every(avatar => (avatar as HTMLElement).style.width === "28px")).toBe(true);
+  expect(within(alpha).getByText("会话已替换")).toBeTruthy();
+  expect(within(alpha).getByText("空闲")).toBeTruthy();
+  expect(alpha.textContent).not.toMatch(/@example\.invalid/);
+});
+it("shows an empty seat and the next step when a project has no Lead", () => {
+  const service = fixture();
+  service.snapshots.alpha.members = [member("alpha", "worker")];
+  render(<AdventurePanel service={service} servers={servers} sessions={[]} onOpen={vi.fn()} onClose={()=>{}}/>);
+  const alpha = screen.getByRole("region", { name: "alpha" });
+  expect(within(alpha).getByRole("heading", { level: 3 }).textContent).toBe("alpha");
+  expect(alpha.querySelector(".adventure-avatar.is-vacant")).toBeTruthy();
+  expect(alpha.querySelector(".team-member-avatar")).toBeNull();
+  expect(within(alpha).getByText("未登记 Lead")).toBeTruthy();
+  expect(within(alpha).queryByRole("button")).toBeNull();
 });
