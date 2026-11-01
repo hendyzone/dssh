@@ -351,7 +351,9 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                   const quiet = priority(member) >= 3;
                   const grey = priority(member) === 4;
                   const urgent = priority(member) <= 1;
-                  const oldAi = member.ai && Number.isFinite(Date.parse(member.ai.updatedAt)) && (now.getTime() - Date.parse(member.ai.updatedAt)) > 30 * 60_000;
+                  // 摘要所述状态的成立时刻；旧服务端没有 since 时退回 updatedAt。
+                  const aiSince = member.ai?.since ?? member.ai?.updatedAt;
+                  const oldAi = member.ai && Number.isFinite(Date.parse(aiSince ?? "")) && (now.getTime() - Date.parse(aiSince!)) > 30 * 60_000;
                   const bubbleText = member.ai?.summary || member.status.label;
                   const bubbleLimit = scale < 1.75 ? 16 : 20;
                   const detailId = `office-detail-${member.id}`;
@@ -369,9 +371,9 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                     tabIndex={0} onClick={open} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}>
                     <span className="office-sr-only">{member.status.label}</span>
                     <div className="office-ai-slot">
-                      {((member.ai && !(quiet && oldAi)) || urgent) && <div className={`office-ai-bubble${oldAi && !urgent?" is-old":""}`} title={`AI 摘要（${relative(member.ai?.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}）`}>
+                      {((member.ai && !(quiet && oldAi)) || urgent) && <div className={`office-ai-bubble${oldAi && !urgent?" is-old":""}`} title={`AI 摘要（${relative(aiSince ? Date.parse(aiSince)/1000 : undefined, seconds)}）`}>
                         <span className="office-ai-text">{bubbleText.length > bubbleLimit ? `${bubbleText.slice(0, bubbleLimit)}…` : bubbleText}</span>
-                        <small>{relative(member.ai?.updatedAt ? Date.parse(member.ai.updatedAt)/1000 : undefined, seconds)}</small>
+                        <small>{relative(aiSince ? Date.parse(aiSince)/1000 : undefined, seconds)}</small>
                       </div>}
                     </div>
                     <div className="office-pixels" style={{width:96*scale*factor,height:72*scale*factor}}>

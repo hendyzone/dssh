@@ -90,6 +90,12 @@ it('carries only AI presentation fields into the room and offers no refresh comm
  expect(screen.queryByRole('button',{name:'重新总结'})).toBeNull();
 });
 
+it('keeps a valid since field and drops an invalid one for old-service fallback',()=>{
+ expect(serviceAi({...ai,since:'2026-10-24T00:00:00Z'})?.since).toBe('2026-10-24T00:00:00Z');
+ expect(serviceAi({...ai,since:'not-a-date'})?.since).toBeUndefined();
+ expect(serviceAi(ai)?.since).toBeUndefined();
+});
+
 it('rejects malformed AI dates and unknown states instead of rendering invalid relative time',()=>{
  expect(serviceAi({...ai,updatedAt:'invalid'})).toBeUndefined();expect(serviceAi({...ai,status:'invented'})).toBeUndefined();
  render(<TeamServiceAi ai={serviceAi({...ai,updatedAt:'invalid'})}/>);expect(screen.getByText('暂无 AI 摘要')).toBeTruthy();expect(document.body.textContent).not.toContain('NaN');
