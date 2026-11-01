@@ -82,3 +82,8 @@
 .tb-card-acceptance-text.is-collapsed{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .tb-card-acceptance-text.is-expanded{display:block}
 .tb-card-expand{display:block;margin-top:4px;padding:2px 6px;border:1px solid var(--ui-border);border-radius:4px;background:var(--ui-panel);color:var(--ui-fg);font:inherit;cursor:pointer}
+
+/* Keep both parts of a project-qualified task ID visible in narrow panels. */
+.task-list-code.task-list-project-code{white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
+
+.task-list-project-code .task-list-code-number{white-space:nowrap;overflow-wrap:normal}

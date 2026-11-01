@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Lock, LockOpen, Search } from "lucide-react";
 import {
-  BoardError, listProjects, listStatuses, loadCard, lookupTask, NO_SOURCE, projectReasonLabel, saveLookupSettings, shortName, taskIndex,
-  useLookupSettings, saveTeamLock, loadLookupSettings, type TeamLookupScope, type BoardProject, type BoardSource, type BoardStatus, type LookupResult, type ProjectReason, type TaskIndex,
+  BoardError, listProjects, loadCard, lookupTask, NO_SOURCE, projectReasonLabel, saveLookupSettings, shortName, browseProjectTasks,
+  useLookupSettings, saveTeamLock, loadLookupSettings, type TeamLookupScope, type BoardProject, type BoardSource, type BoardStatus, type LookupResult, type ProjectReason, type BrowsedTasks,
 } from "../lib/taskLookup";
 import { StatusBadge } from "./TaskCard";
 import { Button } from "./ui/button";
@@ -138,31 +138,38 @@ function ScopedTaskLookup({ source, inferred, teamScope, onOpenTaskDetail }: Tas
     {settingsError && <p role="alert" className="collaboration-error">{settingsError}</p>}
     <LookupOutcome state={state} source={source} onOpenTaskDetail={onOpenTaskDetail}/>
     {source && project && <TaskBrowser key={`${source.key}|${project}`} source={source} project={project} slugs={projects.map(p => p.slug)}
-      onOpen={code => onOpenTaskDetail(project, code)}/>}
+      onOpen={(code, taskProject) => onOpenTaskDetail(taskProject ?? project, code)}/>}
   </section>;
 }
 
 const LIST_LIMIT = 200;
 /** Filterable list of one project's tasks; loaded only when expanded. */
-export function TaskBrowser({ source, project, slugs, onOpen }: { source: BoardSource; project: string; slugs: string[]; onOpen: (code: string) => void }) {
+export function TaskBrowser({ source, project, slugs, onOpen }: { source: BoardSource; project: string; slugs: string[]; onOpen: (code: string, project?: string) => void }) {
   const [open, setOpen] = useState(false);
-  const [index, setIndex] = useState<TaskIndex>();
+  const [index, setIndex] = useState<BrowsedTasks>();
   const [statuses, setStatuses] = useState<BoardStatus[]>([]);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [assignee, setAssignee] = useState("");
   const [query, setQuery] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
+  const request = useRef(0);
+  useEffect(() => () => { request.current++; }, [source.key, project]);
   const load = (force = false) => {
     setError("");
-    Promise.all([taskIndex(source, project, force), listStatuses(source, project).catch(() => [])])
-      .then(([i, s]) => { setIndex(i); setStatuses(s); }).catch(e => setError(errorText(e)));
+    const id = ++request.current;
+    browseProjectTasks(source, project, force).then(i => {
+      if (id !== request.current) return;
+      setIndex(i);
+      setStatuses([...new Map(i.results.flatMap(r => r.statuses).map(s => [s.key, s])).values()]);
+    }).catch(e => { if (id === request.current) setError(errorText(e)); });
   };
   useEffect(() => { if (open && !index) load(); }, [open]);
   const names = useMemo(() => new Map((index?.tasks ?? []).map(t => [t.assignee, shortName(t.assignee, [project, ...slugs])])), [index, slugs]);
-  const byKey = new Map(statuses.map(s => [s.key, s]));
+  const byKey = new Map(index?.results.flatMap(r => r.statuses.map(s => [`${r.project}/${s.key}`, s] as const)));
   const order = new Map(statuses.map((s, i) => [s.key, i]));
   const needle = query.trim().toLowerCase();
-  const filtered = (index?.tasks ?? []).filter(t => (!status || t.status_key === status) && (!assignee || (assignee === "-" ? !t.assignee.trim() : names.get(t.assignee) === assignee))
+  const filtered = (index?.tasks ?? []).filter(t => (!projectFilter || t.project === projectFilter) && (!status || t.status_key === status) && (!assignee || (assignee === "-" ? !t.assignee.trim() : names.get(t.assignee) === assignee))
     && (!needle || t.title.toLowerCase().includes(needle) || t.code.toLowerCase().includes(needle)))
     .sort((a, b) => (order.get(a.status_key) ?? 99) - (order.get(b.status_key) ?? 99) || b.updated_at.localeCompare(a.updated_at));
   const people = [...new Set(names.values())].filter(Boolean).sort();
@@ -171,7 +178,11 @@ export function TaskBrowser({ source, project, slugs, onOpen }: { source: BoardS
     {error && <p role="alert" className="collaboration-error">{error}</p>}
     {open && !index && !error && <p role="status">正在读取任务列表…</p>}
     {index && <>
+      {index.results.filter(r => r.error).map(r => <p key={r.project} role="alert" className="collaboration-error">{r.project}：读不到任务（{r.error}）</p>)}
       <div className="task-browser-filters">
+        {index.projects.length > 1 && <select aria-label="按项目筛选" value={projectFilter} onChange={e => setProjectFilter(e.target.value)}>
+          <option value="">全部项目</option>{index.projects.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>}
         <select aria-label="按状态筛选" value={status} onChange={e => setStatus(e.target.value)}>
           <option value="">全部状态</option>{statuses.map(s => <option key={s.key} value={s.key}>{s.name}</option>)}
         </select>
@@ -182,9 +193,9 @@ export function TaskBrowser({ source, project, slugs, onOpen }: { source: BoardS
         <Button size="sm" variant="ghost" onClick={() => load(true)}>刷新</Button>
       </div>
       <p className="task-lookup-hint">{filtered.length} 条{filtered.length > LIST_LIMIT ? `，显示前 ${LIST_LIMIT} 条` : ""}；列表每 5 分钟更新</p>
-      <div className="task-list">{filtered.slice(0, LIST_LIMIT).map(t => <button type="button" key={t.code} className="task-list-row" title={t.title} onClick={() => onOpen(t.code)}>
-        <span className="task-list-status"><StatusBadge name={byKey.get(t.status_key)?.name ?? t.status_key} color={byKey.get(t.status_key)?.color}/></span>
-        <span className="tb-card-code task-list-code" title={t.code}>{t.code}</span>
+      <div className="task-list">{filtered.slice(0, LIST_LIMIT).map(t => <button type="button" key={`${t.project}/${t.code}`} className="task-list-row" title={t.title} onClick={() => onOpen(t.code, t.project)}>
+        <span className="task-list-status"><StatusBadge name={byKey.get(`${t.project}/${t.status_key}`)?.name ?? t.status_key} color={byKey.get(`${t.project}/${t.status_key}`)?.color}/></span>
+        <span className={`tb-card-code task-list-code${index.projects.length > 1 ? " task-list-project-code" : ""}`} title={`${t.project}/${t.code}`}>{index.projects.length > 1 ? <>{t.project}/<wbr/><span className="task-list-code-number">{t.code}</span></> : t.code}</span>
         <span className="task-list-title" title={t.title}>{t.title}</span>
         <span className="task-list-who" title={t.assignee || "未指派"}>{names.get(t.assignee) || "未指派"}</span>
       </button>)}</div>
