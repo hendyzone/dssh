@@ -677,7 +677,7 @@ seconds of the last observed activity (see the second example above):
 
 | Field | Type | Meaning |
 |---|---|---|
-| `state` | enum | `working`, `stalled`, `waiting_human`, `idle`; the service may also derive `offline` (no report for 30 s) and `unattached` (session gone) |
+| `state` | enum | `working`, `stalled`, `waiting_human`, `idle`, or `unattached` (the box has never written an activity file — §7.6 — so the state comes from the pane classifier and process evidence only). The agent never sends `offline`; the service derives it (no report for 30 s, or the session is gone) |
 | `reason` | string ≤ 200 | free text shown next to the state, empty/absent if none |
 | `since` | RFC 3339 UTC | when the state was entered |
 | `last_event_ts` | RFC 3339 UTC or `null` | timestamp of the latest activity event (§7.6), `null` if none |
@@ -689,8 +689,8 @@ seconds of the last observed activity (see the second example above):
 | `source` | enum | which evidence won: `events`, `process`, `pane` (pane content) |
 
 The agent only sends `state`/`since`/`source` as required; `source` tells clients how much to
-trust the rest. The service does not recompute `activity` — it forwards it (plus `offline` and
-`unattached` when it can tell that itself), so a client MUST treat unknown fields as absent and
+trust the rest. The service does not recompute `activity` — it forwards it (plus `offline` when it
+can tell that itself), so a client MUST treat unknown fields as absent and
 MUST tolerate an absent or integer `activity` from an older agent.
 
 ### 7.2 Full, incremental, heartbeat

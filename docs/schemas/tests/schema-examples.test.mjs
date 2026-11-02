@@ -118,6 +118,26 @@ test('a full activity object validates and its required subfields are enforced',
   assert.notDeepEqual(validateRef(badSource, 'agent-report.json'), []);
 });
 
+test('agent-side activity.state excludes offline; unattached is the agent\'s no-event-file state', () => {
+  const report = {
+    agent: { version: '0.1.0', boot: '3f6c2a9e-8d41-4b7a-9c55-0e2f1a6b7c8d', seq: 10 },
+    full: false,
+    tmux: { server_pid: 1234, ok: true },
+    panes: [{
+      sid: '$3', created: 1712345678, name: 'worker-example-host-a-codex', pane: '%7', state: 'idle',
+      activity: { state: 'unattached', since: '2026-11-01T09:12:03Z', source: 'pane' },
+    }],
+  };
+  for (const state of ['working', 'stalled', 'waiting_human', 'idle', 'unattached']) {
+    const ok = structuredClone(report);
+    ok.panes[0].activity.state = state;
+    assert.deepEqual(validateRef(ok, 'agent-report.json'), [], `${state} must validate`);
+  }
+  const offline = structuredClone(report);
+  offline.panes[0].activity.state = 'offline'; // derived by the service, never sent by an agent
+  assert.notDeepEqual(validateRef(offline, 'agent-report.json'), []);
+});
+
 test('activity event v1 validates and rejects a wrong version or cross-file field', () => {
   const event = {
     v: 1, ts: '2026-11-01T09:14:51.612Z', box: 'dcollab-cw1-dsh', tool: 'dsh', ev: 'tool_start',

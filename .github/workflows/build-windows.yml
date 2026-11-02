@@ -23,6 +23,10 @@ jobs:
         with:
           node-version: 22
 
+      - name: Protocol schema tests
+        if: runner.os == 'Linux'
+        run: node --test docs/schemas/tests/schema-examples.test.mjs
+
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux system dependencies

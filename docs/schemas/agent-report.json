@@ -332,7 +332,6 @@
         "stalled",
         "waiting_human",
         "idle",
-        "offline",
         "unattached"
       ]
     },
