@@ -3,7 +3,7 @@ import {taskInMemberScope} from "./taskLookup";
 import {memberKey, type TeamMember} from "./teamMembers";
 import type {TeamLive} from "./teamService";
 import {serviceMemberStatus} from "./teamServicePresentation";
-import {activityStatus, type ServiceActivity} from "./memberActivity";
+import {activityStatus, CARD_IDLE_ALERT_SECONDS, type ServiceActivity} from "./memberActivity";
 import type {IndexTask} from "./taskLookup";
 
 function memberAssigneeKeys(member: TeamMember): Set<string> {
@@ -28,7 +28,7 @@ export function memberDoingTaskFromIndex(member: TeamMember, live: Pick<LiveSess
  * longer forces 「工作中」. With an activity from the team service the status is that activity; the
  * card only raises attention (card + idle, card + stalled). Without one the pane status stays.
  */
-export function teamPanelStatus(member:TeamMember, base:LiveStatus, collector:AgentSession|undefined, live:LiveSessions, lead=false, activity?:ServiceActivity):LiveStatus {
+export function teamPanelStatus(member:TeamMember, base:LiveStatus, collector:AgentSession|undefined, live:LiveSessions, lead=false, activity?:ServiceActivity, stateSince=0):LiveStatus {
   const now=live.snapshot?.now??Date.now()/1000;
   const fromActivity=activity && activityStatus(activity, !lead && memberDoingTasks(member, live).length>0, now, lead);
   if(fromActivity)return fromActivity;
@@ -36,7 +36,9 @@ export function teamPanelStatus(member:TeamMember, base:LiveStatus, collector:Ag
   const assigned=memberDoingTasks(member, live).length>0;
   const offline=live.snapshot?.collectorOffline===true || collector?.leaseStatus==="unknown";
   if(offline)return {rank:8,tone:"offline",group:"other",label:"采集离线",needsHuman:false,duration:""};
-  if(assigned && base.group==="available")
+  // Same 10-minute grace as with an activity; without a known start time the card is flagged at once.
+  const idleLongEnough=!(stateSince>0) || now-stateSince>=CARD_IDLE_ALERT_SECONDS;
+  if(assigned && base.group==="available" && idleLongEnough)
     return {...base,rank:3,tone:"warn",group:"attention",label:base.label.replace(/·可派活$/,"")+" · 有卡未动",needsHuman:true,
       title:"有进行中的卡，但会话空闲：交付后忘了移卡，或卡住了没表现出来"};
   const parentBy = live.parentBy ?? {};
@@ -56,7 +58,7 @@ export function presentTeamRow<R extends TeamRow>(row:R, serviceLive:Record<stri
   const presented:R=serviceLive===undefined || report?.match==="no_agent" ? row : {
     ...row,...serviceMemberStatus(row.member,report,row.session,liveSnapshot(live)?.now??Date.now()/1000,lead),
   };
-  return {...presented,status:teamPanelStatus(row.member,presented.status,original,live,lead,report?.activity)};
+  return {...presented,status:teamPanelStatus(row.member,presented.status,original,live,lead,report?.activity,presented.session?.stateSince)};
 }
 /** The Lead entry of the team toolbar. */
 export function teamLeadStatus(member:TeamMember, serviceLive:Record<string,TeamLive>|undefined, live:LiveSessions):LiveStatus {

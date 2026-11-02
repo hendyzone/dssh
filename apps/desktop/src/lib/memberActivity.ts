@@ -47,6 +47,10 @@ export function shownActivity(activity: ServiceActivity | undefined): ShownActiv
 
 const SOURCE_HINT = { events: "", process: "据进程推断", pane: "据面板推断" } as const;
 
+/** A card counts as 「有卡未动」 only after the session has been idle this long (user, dssh/T93): a box that just
+ * delivered has a few minutes to move its card before it is flagged. */
+export const CARD_IDLE_ALERT_SECONDS = 10 * 60;
+
 /**
  * The member's activity as a panel status. The three combinations someone should look at first are
  * ranked to the top and marked as needing a human: waiting for a person, a card with a stalled
@@ -67,7 +71,7 @@ export function activityStatus(activity: ServiceActivity, hasCard: boolean, now:
     case "stalled":
       return { rank: hasCard ? 0 : 2, tone: view.tone, group: "attention", label, needsHuman: true, duration, title };
     case "idle":
-      return hasCard
+      return hasCard && since > 0 && now - since >= CARD_IDLE_ALERT_SECONDS
         ? { rank: 3, tone: "warn", group: "attention", label: `${label} · 有卡未动`, needsHuman: true, duration, title: [title, "有进行中的卡，但会话空闲：交付后忘了移卡，或卡住了没表现出来"].filter(Boolean).join(" · ") }
         : { rank: 7, tone: view.tone, group: "available", label, needsHuman: false, duration, title };
     case "working":

@@ -6,7 +6,7 @@ vi.mock("../src/components/TeamOffice",()=>({default:()=><div>office</div>}));
 import TeamDynamics from "../src/components/TeamDynamics";
 import TeamServiceAi from "../src/components/TeamServiceAi";
 import AdventurePanel from "../src/components/AdventurePanel";
-import {ACTIVITY_VIEW,activityStatus,aiIsOld,parseActivity,shownActivity,type ActivityState} from "../src/lib/memberActivity";
+import {ACTIVITY_VIEW,CARD_IDLE_ALERT_SECONDS,activityStatus,aiIsOld,parseActivity,shownActivity,type ActivityState} from "../src/lib/memberActivity";
 import {teamPanelStatus} from "../src/lib/teamPanelStatus";
 import {buildOfficeSnapshot} from "../src/lib/teamOffice";
 import {emptyProfile} from "../src/lib/collaboration";
@@ -52,7 +52,7 @@ describe("seven activity states",()=>{
 describe("three combinations that need a look",()=>{
   const card=live([task("T1","w")]);
   it("card + idle, card + stalled and waiting for a person rank first and need a human",()=>{
-    const cardIdle=teamPanelStatus(member("w"),base,undefined,card,false,act("idle"));
+    const cardIdle=teamPanelStatus(member("w"),base,undefined,card,false,act("idle","r",10));
     const cardStalled=teamPanelStatus(member("w"),base,undefined,card,false,act("stalled"));
     const waiting=teamPanelStatus(member("w"),base,undefined,live(),false,act("waiting_human"));
     const plainIdle=teamPanelStatus(member("w"),base,undefined,live(),false,act("idle"));
@@ -65,9 +65,20 @@ describe("three combinations that need a look",()=>{
     const order=[plainIdle,working,cardIdle,waiting,cardStalled].sort((a,b)=>a.rank-b.rank).map(s=>s.label);
     expect(order.slice(0,3)).toEqual([cardStalled.label,waiting.label,cardIdle.label]);
   });
-  it("an old service (no activity) still flags card + idle from the pane status",()=>{
+  it("card + idle lights up only after 10 minutes idle (user, T93)",()=>{
+    expect(CARD_IDLE_ALERT_SECONDS).toBe(600);
+    expect(teamPanelStatus(member("w"),base,undefined,card,false,act("idle","r",9))).toMatchObject({group:"available",needsHuman:false,label:"⏸ 空闲"});
+    expect(teamPanelStatus(member("w"),base,undefined,card,false,act("idle","r",10))).toMatchObject({group:"attention",needsHuman:true,label:"⏸ 空闲 · 有卡未动"});
+    // 没有成立时刻时维持原状（直接亮）。
+    expect(teamPanelStatus(member("w"),base,undefined,card,false,{state:"idle"})).toMatchObject({group:"available"});
+  });
+  it("an old service (no activity) still flags card + idle from the pane status, with the same grace",()=>{
     const idle:LiveStatus={rank:7,tone:"idle",group:"available",label:"空闲·可派活",needsHuman:false,duration:""};
     expect(teamPanelStatus(member("w"),idle,undefined,card)).toMatchObject({group:"attention",label:"空闲 · 有卡未动",needsHuman:true});
+    const early=teamPanelStatus(member("w"),idle,undefined,card,false,undefined,NOW-9*60);
+    expect(early.needsHuman).toBe(false);
+    expect(early.group).not.toBe("attention"); // 原有面板逻辑接手（这里名单没写「空闲」→ 待确认）
+    expect(teamPanelStatus(member("w"),idle,undefined,card,false,undefined,NOW-10*60)).toMatchObject({group:"attention",needsHuman:true});
     expect(teamPanelStatus(member("w"),base,undefined,card)).toEqual(base);
   });
 });
@@ -110,7 +121,7 @@ it("office: activity line, doing card with count, Lead without card",()=>{
   const w=member("w"),lead=member("demo-lead","Lead");
   const snapshot=buildOfficeSnapshot([{id:"svc",project:"demo",label:"demo",profile:{...emptyProfile(),project:"demo"},service:true} as never],
     {svc:{availability:"ready",notice:"",members:[w,lead],aiEnabled:true,live:{
-      [memberKey(w)]:{key:memberKey(w),match:"exact",state:"idle",detail:"",activity:act("idle")},
+      [memberKey(w)]:{key:memberKey(w),match:"exact",state:"idle",detail:"",activity:{...act("idle"),since:new Date(Date.now()-11*60_000).toISOString()}},
       [memberKey(lead)]:{key:memberKey(lead),match:"exact",state:"running",detail:"",activity:act("working")}}}},
     {servers:[server],sessions:[],boards:{svc:{briefs:{},offline:false,tasks:[task("T5","w"),task("T6","w"),task("T7","demo-lead")],parentBy:{}}},themeId:"tokyo-night",animationEnabled:false});
   const [leadSeat,worker]=snapshot.projects[0].sources[0].members;
