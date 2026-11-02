@@ -42,7 +42,13 @@ it("does not fail when follow preference storage is unavailable",()=>{
 });
 it("passes the native snapshot's project string through the real sync hook without credentials",async()=>{
  render(<OfficeWindow/>);await screen.findByRole("region",{name:"项目 beta"});
- expect(collapsed("beta")).toBe(false);expect(collapsed("alpha")).toBe(true);
+ // The region mounts as soon as the snapshot arrives, but TeamOffice's own
+ // follow-the-active-project effect (initial collapse state comes from
+ // localStorage, not from snapshot.activeProject) commits in a later pass.
+ // findByRole only guarantees the region exists, not that this second,
+ // effect-driven commit has flushed yet, so assert through waitFor instead
+ // of immediately after the await.
+ await waitFor(()=>{expect(collapsed("beta")).toBe(false);expect(collapsed("alpha")).toBe(true);});
  act(()=>listeners["office:snapshot"]({payload:envelope(2,"alpha")}));expect(collapsed("alpha")).toBe(false);
  expect(bridge.invoke.mock.calls.map(([command])=>command)).toEqual(["office_request_snapshot"]);
  expect(JSON.stringify(bridge.invoke.mock.calls)).not.toMatch(/token|password|host-a/);

@@ -11,10 +11,6 @@ export default defineConfig({
     },
   },
   test: {
-    // Radix focus cleanup is expensive in jsdom; allow IPC to flush between tests.
-    testTimeout: 60000,
-    hookTimeout: 60000,
-    maxWorkers: 2,
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
