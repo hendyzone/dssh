@@ -138,6 +138,24 @@ test('agent-side activity.state excludes offline; unattached is the agent\'s no-
   assert.notDeepEqual(validateRef(offline, 'agent-report.json'), []);
 });
 
+test('live items carry an optional activity: pass-through object or service-derived state', () => {
+  const item = {
+    key: 'worker-a@example.invalid', machine: 'host-a', session: '$4:1712400000', match: 'exact',
+    state: 'running', detail: '', since: '2026-10-25T05:41:02.000Z', ctx_pct: 44, model: 'm',
+    last_line: 'ok', at: '2026-10-25T05:41:03.000Z', stale: false,
+  };
+  const live = items => ({ type: 'live', project: 'example-project', lseq: 1, full: false, items });
+  assert.deepEqual(validateRef(live([item]), 'ws-server-message.json'), [], 'activity stays optional (older service)');
+  const passthrough = { state: 'working', reason: 'Bash 7m', since: '2026-11-01T09:12:03Z', last_event_ts: null,
+    last_event: null, open_tool: 'Bash', open_tool_since: '2026-11-01T09:12:03Z', cpu_active: true, net_active: false, source: 'events' };
+  for (const activity of [passthrough, { state: 'unknown' }, { state: 'offline' }, { ...passthrough, state: 'offline' }]) {
+    assert.deepEqual(validateRef(live([{ ...item, activity }]), 'ws-server-message.json'), [], JSON.stringify(activity));
+  }
+  for (const activity of [{ state: 'busy' }, { reason: 'x' }, { state: 'idle', prompt: 'secret' }, 1712349999]) {
+    assert.notDeepEqual(validateRef(live([{ ...item, activity }]), 'ws-server-message.json'), [], JSON.stringify(activity));
+  }
+});
+
 test('activity event v1 validates and rejects a wrong version or cross-file field', () => {
   const event = {
     v: 1, ts: '2026-11-01T09:14:51.612Z', box: 'dcollab-cw1-dsh', tool: 'dsh', ev: 'tool_start',

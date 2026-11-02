@@ -508,7 +508,8 @@ server message types and unknown fields.
 <!-- schema: ws-server-message.json -->
 ```json
 {"type": "live", "project": "example-project", "lseq": 1804, "full": false, "items": [
-  {"key": "worker-a@example.invalid", "machine": "host-a", "session": "$4:1712400000", "match": "exact", "state": "waiting_input", "detail": "", "since": "2026-10-25T05:41:02.000Z", "ctx_pct": 44, "model": "example-model", "last_line": "Do you want to proceed? (y/n)", "at": "2026-10-25T05:41:03.000Z", "stale": false}
+  {"key": "worker-a@example.invalid", "machine": "host-a", "session": "$4:1712400000", "match": "exact", "state": "waiting_input", "detail": "", "since": "2026-10-25T05:41:02.000Z", "ctx_pct": 44, "model": "example-model", "last_line": "Do you want to proceed? (y/n)", "at": "2026-10-25T05:41:03.000Z", "stale": false,
+   "activity": {"state": "waiting_human", "reason": "confirm Bash", "since": "2026-10-25T05:41:02.000Z", "source": "events"}}
 ]}
 ```
 
@@ -571,6 +572,7 @@ Live item fields ([`team-snapshot.json#/$defs/liveItem`](schemas/team-snapshot.j
 | `tool` | Optional agent-observed process tool: `claude`, `codex`, `pi`, `dsh`, `cursor`, or `agy`. Omitted when unknown; never inferred from member roles or mailbox names. |
 | `at` | time of the agent observation this item reflects |
 | `stale` | `true` when the machine's agent has not reported for 30 s; values are the last known ones |
+| `activity` | Activity state ([`liveActivity`](schemas/team-snapshot.json)). From an agent that sends the §7.1 object it is that object unchanged (`working`, `stalled`, `waiting_human`, `idle`, `unattached`). The service derives `{"state": "unknown"}` when the agent sent no object (older agent, or no session matched yet / `no_agent`) and `offline` when `match` is `gone` or the item is `stale` (a stale item keeps the last assessment's other fields). Only `state` is guaranteed; an older service omits the field, which clients treat as `unknown` |
 
 ### 6.5 AI push
 
@@ -820,9 +822,13 @@ Clients only display AI data (§6.5). This section is informative so clients kno
 
 ### 8.1 Triggers and caps
 
-- A member is re-summarized when its content digest changed **and** one of: the session left
-  `running` (to idle/waiting/stuck) and stayed ≥ 5 s; content has been still for ≥ 20 s; or it has
-  been `running` for > 5 min since the last summary. At most once per member per 120 s.
+- Summaries are event-driven. A member is re-summarized when its content digest changed **and**
+  one of: it was first seen not idle and its content has been still for ≥ 20 s; it left `working`
+  (turn end) or entered `waiting_human` / `stalled`, and stayed ≥ 5 s; its branch changed (a new
+  card); or it has been `working` for ≥ 30 min since the last summary. An idle member is never
+  re-summarized, however often its screen changes. The state is the item's `activity.state` when
+  it is one of the four, otherwise the classifier `state` (`running` → working, `waiting_input` /
+  `input_pending` → waiting_human, `stuck` → stalled). At most once per member per 120 s.
 - Concurrency 2, request timeout 30 s; ≤ 30 calls per project per hour, ≤ 1500 per day globally;
   a daily spend cap stops summarization until the next day once reached; 5 consecutive failures
   open a 10-minute circuit breaker.
