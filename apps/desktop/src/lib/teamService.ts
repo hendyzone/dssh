@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { parseMember, memberKey, type TeamMember } from './teamMembers';
+import { parseActivity, type ServiceActivity } from './memberActivity';
 
 export type TeamConnectionState = 'connecting' | 'online' | 'offline' | 'unauthorized' | 'error';
 export interface TeamServiceStatus {
@@ -25,6 +26,8 @@ export interface ServiceLive {
   last_line?: string;
   branch?: string;
   stale?: boolean;
+  /** Activity state (protocol §6.4); absent from services before dssh/T92. */
+  activity?: ServiceActivity;
 }
 export type TeamLive = ServiceLive;
 export interface TeamServiceProject {
@@ -120,7 +123,13 @@ function liveMap(value: unknown): Record<string, ServiceLive> {
   if (!object(value)) return {};
   return Object.fromEntries(Object.entries(value).filter(([, item]) => object(item) &&
     typeof item.key === 'string' && ['exact', 'replaced', 'gone', 'no_agent'].includes(String(item.match)) &&
-    ['running', 'waiting_input', 'input_pending', 'stuck', 'idle', 'unknown'].includes(String(item.state)))) as Record<string, ServiceLive>;
+    ['running', 'waiting_input', 'input_pending', 'stuck', 'idle', 'unknown'].includes(String(item.state)))
+    .map(([key, item]) => {
+      // A malformed activity is dropped, never trusted: the item falls back to its pane state.
+      const { activity, ...rest } = item as Record<string, unknown>;
+      const parsed = parseActivity(activity);
+      return [key, parsed ? { ...rest, activity: parsed } : rest];
+    })) as unknown as Record<string, ServiceLive>;
 }
 function snapshotOf(value: unknown, url: string, status: TeamServiceStatus, historical = false): TeamServiceProject | undefined {
   if (!object(value) || typeof value.project !== 'string' || !projectPattern.test(value.project) ||

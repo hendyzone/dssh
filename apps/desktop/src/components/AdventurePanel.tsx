@@ -12,6 +12,7 @@ import type { CollaborationSession } from "../lib/collaboration";
 import type { ServerEntry } from "../types";
 import "./Collaboration.css";
 import "./AdventurePanel.css";
+import { activityStatus } from "../lib/memberActivity";
 
 interface Props {
   service: TeamServiceState;
@@ -35,7 +36,9 @@ export default function AdventurePanel({ service, servers, sessions, onOpen, onC
       const display = memberDisplay(member, live, snapshot?.machines as MachinesMap);
       const machine = display.machine ? snapshot?.machines[display.machine] as { online?: boolean } | undefined : undefined;
       const { server } = memberConnection(member, servers, sessions);
-      const status = serviceMemberStatus(member, live, undefined, Date.now() / 1000, true).status;
+      // Leads show only the activity, never a card badge (plan §3.4); pane status when the service has none.
+      const status = (live?.activity && activityStatus(live.activity, false, Date.now() / 1000, true))
+        || serviceMemberStatus(member, live, undefined, Date.now() / 1000, true).status;
       const issue = unavailable ? "团队服务离线" : machine?.online === false ? "机器离线"
         : live?.match === "replaced" ? "会话已替换" : !server ? "未找到对应连接" : undefined;
       // Offline, replaced or unreachable Leads keep their pose but lose colour.

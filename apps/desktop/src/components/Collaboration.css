@@ -83,6 +83,16 @@
 .team-dynamics .team-live-subtitle{font-size:11px;font-weight:400;color:var(--ui-muted);margin-left:4px}
 .team-dynamics .team-live-status{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
 .team-dynamics .team-live-status small{font-variant-numeric:tabular-nums;white-space:nowrap}
+.team-dynamics .team-member-chips{flex-wrap:wrap;min-width:0;row-gap:2px}
+/* 卡片徽标（在干哪张卡）是实心底块，状态（有没有在干）是描边徽标：形状不同，灰度下也分得开。 */
+.team-dynamics .team-card-badge{display:inline-flex;align-items:baseline;gap:4px;max-width:180px;min-width:0;font-size:11px;
+ line-height:16px;padding:0 5px;border:0;border-radius:3px;background:color-mix(in srgb,var(--ui-accent) 16%,transparent);
+ color:inherit;cursor:pointer;font:inherit;font-size:11px}
+.team-dynamics .team-card-badge:disabled{cursor:default}
+.team-dynamics .team-card-badge b{font-weight:600;white-space:nowrap}
+.team-dynamics .team-card-badge-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--ui-muted)}
+.team-dynamics .team-card-badge-more{font-style:normal;font-weight:600;color:#d19a66;white-space:nowrap}
+.team-dynamics .team-card-badge.is-none{background:transparent;border:1px dashed var(--ui-muted);color:var(--ui-muted);cursor:default}
 .team-dynamics .team-live-badge{font-size:11px;border:1px solid currentColor;border-radius:3px;
  padding:0 4px;line-height:16px;white-space:nowrap}
 .team-dynamics .team-live-badge.is-bad{color:var(--ui-danger,#e06c75);font-weight:600}
@@ -190,3 +200,5 @@
 /* A member’s current task sits below its name, before the AI summary. */
 .team-dynamics .team-task-link{grid-column:1/-1;grid-row:2;justify-content:flex-start;text-align:left;color:var(--ui-accent);padding:2px 0;border:0;background:transparent;cursor:pointer}
 .team-dynamics .team-task-link:disabled{color:var(--ui-muted);cursor:default}
+.team-service-ai.is-old .team-service-ai-summary{opacity:.6}
+.team-service-ai-old{margin-left:4px;font-size:10px;font-weight:600;border:1px solid currentColor;border-radius:3px;padding:0 3px}

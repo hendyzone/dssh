@@ -1,4 +1,4 @@
-import {presentTeamRow,teamLeadStatus} from "../lib/teamPanelStatus";
+import {presentTeamRow,teamLeadStatus,memberDoingTasks} from "../lib/teamPanelStatus";
 import TeamServiceAi from "./TeamServiceAi";
 import {serviceAi} from "../lib/serviceAi";
 import type { TeamLive } from "../lib/teamService";
@@ -165,12 +165,22 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     const actions=<span className="team-ai-row-actions">
       <Button size="icon-sm" variant="ghost" disabled={!server||busy} aria-label={`打开 · ${display.title}`} title={server?"打开终端":"未找到对应连接"} onClick={e=>{e.preventDefault();e.stopPropagation();if(server)void perform(()=>navigation.onOpen(m,server));}}><ExternalLink size={14}/></Button>
     </span>;
-    // 只有确实有上一张卡时才占一格；没有就不放空信息（同「无当前卡」不渲染的理由）。
-    const taskLine=target?<button type="button" className="team-card-line2 team-task-link" disabled={!board}
-      title={[target.code,brief?.title||brief?.brief].filter(Boolean).join(" · ")}
-      onClick={event=>{event.preventDefault();event.stopPropagation();onOpenTaskDetail?.(target.project,target.code);}}>
-      <b>{target.code}</b>{(brief?.title||brief?.brief)&&<span className="team-card-brief"> · {brief.title||brief.brief}</span>}
-    </button>:null;
+    // 「在干哪张卡」只看看板 doing 卡；与下面「有没有在干」的活动态并排，各说各的。
+    const doing=memberDoingTasks(m,live);
+    const cardBadge=doing.length
+      ?<button type="button" className="team-card-badge" disabled={!onOpenTaskDetail}
+        title={doing.map(t=>`${t.code} ${t.title}`).join("\n")+(doing.length>1?"\n同一个箱有多张进行中的卡，分配可能有问题":"")}
+        onClick={event=>{event.preventDefault();event.stopPropagation();onOpenTaskDetail?.(doing[0].project,doing[0].code);}}>
+        <b>{doing[0].code}</b><span className="team-card-badge-title">{doing[0].title}</span>
+        {doing.length>1&&<em className="team-card-badge-more">⚠ +{doing.length-1}</em>}
+      </button>
+      :target?<button type="button" className="team-card-badge team-task-link" disabled={!board}
+        title={[target.code,brief?.title||brief?.brief].filter(Boolean).join(" · ")}
+        onClick={event=>{event.preventDefault();event.stopPropagation();onOpenTaskDetail?.(target.project,target.code);}}>
+        <b>{target.code}</b>{(brief?.title||brief?.brief)&&<span className="team-card-badge-title"> · {brief.title||brief.brief}</span>}
+      </button>
+      :<span className="team-card-badge is-none" title="看板上没有这个箱名下进行中的卡">无卡</span>;
+    const stateChip=<span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>;
     const rosterNote=!session&&m.currentTask?.trim()?m.currentTask.trim().split(/\r?\n/)[0]:"";
     const lastCard=session?.taskCode
       ?<span className="team-compact-card" title={`上一张卡 ${session.taskCode}${brief?.brief||brief?.title?` · ${brief.brief||brief.title}`:""}`}>{session.taskCode} ✓</span>
@@ -186,8 +196,7 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
         <summary className="team-compact-head">
           <span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>
           {identity}
-          <span className="team-compact-state"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}</span>
-          {serviceLive === undefined ? lastCard : taskLine}
+          <span className="team-compact-state team-member-chips">{serviceLive===undefined?lastCard:cardBadge}{stateChip}{status.duration&&<small>{status.duration}</small>}</span>
           <TeamServiceAi ai={ai} enabled={aiEnabled} target={aiTarget} compact/>
           {actions}
         </summary>
@@ -198,9 +207,10 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       <summary className="team-card-head">
         <span className={`team-live-dot is-${status.tone}`} aria-hidden="true"/>
         {identity}
-        <span className="team-live-status"><span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>{status.duration&&<small>{status.duration}</small>}</span>
+        {serviceLive===undefined&&<span className="team-live-status">{stateChip}{status.duration&&<small>{status.duration}</small>}</span>}
         {actions}
-        {serviceLive !== undefined ? taskLine : session?.taskCode
+        {serviceLive!==undefined&&<div className="team-card-line2 team-live-status team-member-chips">{cardBadge}{stateChip}{status.duration&&<small>{status.duration}</small>}</div>}
+        {serviceLive !== undefined ? null : session?.taskCode
           ?<div className="team-card-line2"><b>{session.taskCode}</b>{session.taskStatus&&<em>{live.statusNames[briefKey(session.project,session.taskStatus)]??session.taskStatus}</em>}{(brief?.brief||brief?.title)&&<span className="team-card-brief">{brief.brief||brief.title}</span>}</div>
           :!session&&m.currentTask?.trim()
             ?<div className="team-card-line2 is-roster" title={m.currentTask}><b>Lead 备注</b><span className="team-card-brief">{m.currentTask.trim().split(/\r?\n/)[0]}</span></div>

@@ -362,7 +362,8 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                   const stateClass = `office-state-${member.liveState ?? member.status.state}`;
                   // One placement for both prompts: inside the desk box, below the bubble slot.
                   const badge = ["waiting_input", "input_pending"].includes(member.liveState ?? "") || member.status.state === "blocked"
-                    ? "warn" : member.liveState === "stuck" || member.status.state === "error" ? "alert" : "";
+                    ? "warn" : member.liveState === "stuck" || member.status.state === "error" ? "alert"
+                    : member.activity?.attention ? "warn" : "";
                   return <article className={`office-station${member.isLead?" is-lead":""}${temporary?" is-temporary":""}${reclaim?" is-reclaim":""}${ended?" is-ended":""}${grey?" is-grey":""}${quiet?" is-quiet":""}${member.liveState==="stuck"||member.status.state==="error"?" is-stuck":""} ${stateClass}`}
                     key={member.id} data-member-id={member.id} data-office-station={officeStationAnchor(source.id,member.id)}
                     data-tenure={temporary ? "temporary" : "resident"} data-for-task={member.forTask ?? ""} data-for-task-done={member.forTaskDone === true ? "true" : ""}
@@ -373,7 +374,7 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                     <div className="office-ai-slot">
                       {((member.ai && !(quiet && oldAi)) || urgent) && <div className={`office-ai-bubble${oldAi && !urgent?" is-old":""}`} title={`AI 摘要（${relative(aiSince ? Date.parse(aiSince)/1000 : undefined, seconds)}）`}>
                         <span className="office-ai-text">{bubbleText.length > bubbleLimit ? `${bubbleText.slice(0, bubbleLimit)}…` : bubbleText}</span>
-                        <small>{relative(aiSince ? Date.parse(aiSince)/1000 : undefined, seconds)}</small>
+                        <small>{relative(aiSince ? Date.parse(aiSince)/1000 : undefined, seconds)}{oldAi && <b className="office-ai-old" title="超过 30 分钟没有更新，可能已过时"> 旧</b>}</small>
                       </div>}
                     </div>
                     <div className="office-pixels" style={{width:96*scale*factor,height:72*scale*factor}}>
@@ -391,9 +392,11 @@ export default function TeamOffice({snapshot, visible = true, onPopOut, onOpenMe
                           {member.tool && <span className="office-tool" title={`工具 ${member.tool}`}>{TOOL_LABELS[member.tool] ?? member.tool}</span>}
                           <strong title={member.name}>{member.name}</strong>
                         </div>
-                        <div className="office-status-line"><span className="office-member-status" title={member.status.label}>{shortStatus[member.status.state] ?? STATE_LABELS[member.status.state] ?? member.status.label}</span></div>
+                        <div className="office-status-line">{member.activity
+                          ? <span className={`office-member-status office-activity is-${member.activity.tone}${member.activity.attention?" is-attention":""}`} title={member.activity.title ?? member.activity.label}>{member.activity.label}{member.activity.duration && <small> · {member.activity.duration}</small>}</span>
+                          : <span className="office-member-status" title={member.status.label}>{shortStatus[member.status.state] ?? STATE_LABELS[member.status.state] ?? member.status.label}</span>}</div>
                     {reclaim && <div className="office-station-flags"><span className="office-reclaim-badge" title={`${member.forTask ?? ""} · 已完成`}>待回收</span></div>}
-                    {!quiet && <p className="office-member-task office-station-paper" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskFull || member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.taskText}</p>}
+                    {!quiet && <p className="office-member-task office-station-paper" title={`${member.taskSource==="manual"?"成员手写 · ":""}${member.taskFull || member.taskText}`} data-source={member.taskSource}>{member.taskSource==="manual" && <span className="office-sr-only">成员手写 · </span>}{member.doing && member.doing.more > 0 && <b className="office-doing-more" title="同一个箱有多张进行中的卡，分配可能有问题">⚠+{member.doing.more} </b>}{member.taskText}</p>}
                     {temporary && member.forTask && <p className="office-temp-task"><code>{member.forTask}</code></p>}
                     </div>
                     <DetailCard member={member} now={seconds} id={detailId}/>

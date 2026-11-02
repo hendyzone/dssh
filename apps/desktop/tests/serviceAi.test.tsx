@@ -15,7 +15,7 @@ afterEach(()=>{cleanup();vi.useRealTimers();});
 async function request(){await act(async()=>fireEvent.click(screen.getByRole('button',{name:'重新总结'})));}
 it('renders service fields and literal hostile evidence without active DOM',()=>{
  const {container}=render(<TeamServiceAi ai={ai} target={target}/>);
- expect(screen.getByText('Testing storage')).toBeTruthy();expect(screen.getByText('工作中 · AI 摘要 · 2 分钟前')).toBeTruthy();
+ expect(screen.getByText('Testing storage')).toBeTruthy();expect(screen.getByText('AI 摘要 · 2 分钟前')).toBeTruthy();
  const small=container.querySelector('.team-service-ai small')!;
  expect(small.textContent).not.toContain('example-model');
  expect(small.getAttribute('title')).toBe('摘要由 example-model 生成');

@@ -2,6 +2,7 @@ import { liveStatus, normalizeHost, type AgentSession, type LiveStatus } from ".
 import type { TeamAvatarStatus } from "./teamAvatar";
 import type { TeamLive } from "./teamService";
 import type { TeamMember } from "./teamMembers";
+import { ACTIVITY_VIEW, shownActivity } from "./memberActivity";
 
 /** Only no_agent delegates status to the existing collector. Missing service data stays unknown. */
 export function serviceMemberState(member: TeamMember, report: TeamLive | undefined, fallback?: AgentSession): AgentSession | undefined {
@@ -25,10 +26,15 @@ export function serviceMemberStatus(member: TeamMember, report: TeamLive | undef
 export function serviceMemberAvatar(member: TeamMember, report: TeamLive | undefined, fallback?: AgentSession): TeamAvatarStatus {
   const session = serviceMemberState(member, report, fallback);
   const state = !session || session.stale || !session.hostOk ? "unknown" : session.state;
-  const avatar: TeamAvatarStatus["state"] = state === "running" ? "working" : state === "idle" ? "idle"
-    : state === "stuck" ? "error" : state === "waiting_input" || state === "input_pending" ? "blocked" : "unknown";
+  // The activity (plan §3.4) drives the person when the service has one; otherwise the pane state.
+  const fromActivity: Record<string, TeamAvatarStatus["state"]> = {working:"working",idle:"idle",stalled:"error",waiting_human:"blocked",offline:"unknown"};
+  const activity = !session?.stale ? fromActivity[report?.activity?.state ?? ""] : undefined;
+  const avatar: TeamAvatarStatus["state"] = activity ?? (state === "running" ? "working" : state === "idle" ? "idle"
+    : state === "stuck" ? "error" : state === "waiting_input" || state === "input_pending" ? "blocked" : "unknown");
   const labels = {working:"工作中",idle:"空闲",error:"卡住",blocked:"等待处理",unknown:"待确认",done:"已完成"};
-  return {state:avatar,source:"program",label:`${labels[avatar]}（${report?.match === "no_agent" ? "看板状态" : "团队服务"}）`};
+  const shown = activity && report?.activity ? shownActivity(report.activity) : undefined;
+  const label = shown ? ACTIVITY_VIEW[shown].label : labels[avatar];
+  return {state:avatar,source:"program",label:`${label}（${report?.match === "no_agent" ? "看板状态" : "团队服务"}）`};
 }
 
 /** Roster assignments and idle intent override already bound collector cards. */

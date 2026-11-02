@@ -376,20 +376,20 @@ it("the merged list shows worker status and counts, with a separate Lead shortcu
   await screen.findAllByText(/长标题/);
   const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
   const expected = {
-    "demo-stuck": ["attention", "卡住：429"], "demo-wait": ["running", "工作中"],
+    "demo-stuck": ["attention", "卡住：429"], "demo-wait": ["waitLead", "等 Lead"], // T93: a doing card no longer forces 工作中
     "demo-review": ["review", "已交付·待验收"], "demo-run": ["running", "运行中"], "demo-free": ["available", "空闲·可派活"],
   };
   expect(dynamics).toEqual(expected);
   // 紧急度排序不变，Lead 组挪到最后（紧凑行）
   expect([...document.querySelectorAll(".team-live-group")].map(g => g.getAttribute("aria-label")))
-    .toEqual(["需要处理成员", "已交付·待验收成员", "运行中成员", "空闲·可派活成员"]);
+    .toEqual(["需要处理成员", "等 Lead成员", "已交付·待验收成员", "运行中成员", "空闲·可派活成员"]);
   // 概览是三个可点的计数块（Lead 不计入）
   const chips = [...document.querySelectorAll(".team-live-counts button")].map(b => [b.querySelector("span")?.textContent, b.querySelector("b")?.textContent]);
-  expect(chips).toEqual([["需要处理", "1"], ["等 Lead", "0"], ["可派活", "1"]]);
+  expect(chips).toEqual([["需要处理", "1"], ["等 Lead", "1"], ["可派活", "1"]]);
   // 待验收仍有分组，计数在组标题
   expect(document.querySelector(".team-live-group-review .team-activity-heading")?.textContent).toContain("已交付·待验收");
   // 等 Lead 仍带黄色左边框标记
-  expect(document.querySelectorAll(".team-live-wait-lead")).toHaveLength(0);
+  expect(document.querySelectorAll(".team-live-wait-lead")).toHaveLength(1);
   // Lead 是紧凑行（管理入口在它的展开详情里），但不计入三个计数
   expect(document.querySelector(".team-live-group-lead")).toBeNull();
   expect(screen.getByRole("button",{name:"打开 Lead · demo-lead"})).toBeTruthy();
@@ -417,7 +417,7 @@ it("the merged list falls back to the hand-written state and says 「看板离�
   expect(screen.queryByRole("alert")).toBeNull();
   const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
   expect(dynamics).toEqual({
-    "demo-run": ["rosterUnknown", "待确认（手写）"], "demo-wait": ["running", "工作中"],
+    "demo-run": ["rosterUnknown", "待确认（手写）"], "demo-wait": ["rosterWorking", "工作中（手写）"],
     "demo-review": ["rosterUnknown", "待确认（手写）"], "demo-free": ["rosterIdle", "空闲（手写）"], "demo-stuck": ["rosterUnknown", "待确认（手写）"],
   });
   // 看板离线时不显示实时计数块

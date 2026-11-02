@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { emptyProfile, type CollaborationProfile, type CollaborationSession } from "./collaboration";
 import { briefKey, fetchAgentSessions, matchSession, taskBrief, taskLifecycle } from "./agentSessions";
-import { boardSource, isIdentifier, type TaskLookupSettings } from "./taskLookup";
+import { boardSource, buildProjectParentMap, isIdentifier, listProjects, taskIndex, taskIndexProjects, type TaskLookupSettings } from "./taskLookup";
 import {memberTaskTarget,memberTaskSession} from "./teamServicePresentation";
 import { useTeamService } from "./teamService";
 import { buildOfficeMailDirectory, type OfficeMailDirectory, buildOfficeSnapshot, officeTeamSources, officeKey, parseForTask, type OfficeTeamSource, type OfficeBoard, type OfficeRoster, type OfficeSnapshot } from "./teamOffice";
@@ -62,6 +62,13 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
           let board:OfficeBoard;
           try {
             const snapshot=await fetchAgentSessions(source).catch(()=>undefined);
+            // Doing cards come from the board index, like the team panel (plan §3.4 card badge).
+            const rosterProjects=[...new Set(teams.flatMap(team=>(rosters[team.id]?.members??[]).map(member=>member.project)))];
+            let parentBy:Record<string,string>={};let indexProjects=rosterProjects;
+            try{const catalog=await listProjects(source);parentBy=buildProjectParentMap(catalog);indexProjects=taskIndexProjects(rosterProjects,catalog);}catch{/* roster projects only */}
+            const tasks:NonNullable<OfficeBoard["tasks"]>=[];
+            (await Promise.allSettled(indexProjects.map(project=>taskIndex(source,project,true)))).forEach((result,i)=>{
+              if(result.status==="fulfilled")tasks.push(...result.value.tasks.map(task=>({...task,project:indexProjects[i]})));});
             const briefs:OfficeBoard["briefs"]={};
             const forTasks:NonNullable<OfficeBoard["forTasks"]>={};
             const targets=new Map<string,{project:string;code:string}>();
@@ -84,7 +91,7 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
               if(disposed)return;
               try{const state=await taskLifecycle({...source,key:JSON.stringify([source.key,service.url])},target.project,target.code);if(state)forTasks[key]=state;}catch{/* 查不到状态就不显示待回收，不猜。 */}
             }));
-            board={snapshot,briefs,forTasks,offline:false};
+            board={snapshot,briefs,forTasks,tasks,parentBy,offline:false};
           }catch{board={briefs:{},offline:true};}
           if(!disposed){setBoards(previous=>({...previous,...Object.fromEntries(teams.map(team=>[team.id,board]))}));setBoardsScope(boardKey);}
         }));

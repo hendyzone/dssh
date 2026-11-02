@@ -3,34 +3,43 @@ import {taskInMemberScope} from "./taskLookup";
 import {memberKey, type TeamMember} from "./teamMembers";
 import type {TeamLive} from "./teamService";
 import {serviceMemberStatus} from "./teamServicePresentation";
+import {activityStatus, type ServiceActivity} from "./memberActivity";
+import type {IndexTask} from "./taskLookup";
 
 function memberAssigneeKeys(member: TeamMember): Set<string> {
   return new Set([member.email.trim().toLowerCase(), member.email.split("@")[0].trim().toLowerCase(), member.tmux.name.replace(/^worker-/,"").toLowerCase()].filter(Boolean));
 }
 
-/** Doing card from the board index (including child projects of the roster project). */
-export function memberDoingTaskFromIndex(member: TeamMember, live: Pick<LiveSessions, "tasks" | "parentBy">): {project:string;code:string}|undefined {
+/** Every doing card of the member on the board index (including child projects of the roster project). */
+export function memberDoingTasks(member: TeamMember, live: Pick<LiveSessions, "tasks" | "parentBy">): (IndexTask & {project:string})[] {
   const identities = memberAssigneeKeys(member);
   const parentBy = live.parentBy ?? {};
-  const task = live.tasks?.find(entry => entry.status_key === "doing" && identities.has(entry.assignee.trim().toLowerCase())
+  return (live.tasks ?? []).filter(entry => entry.status_key === "doing" && identities.has(entry.assignee.trim().toLowerCase())
     && taskInMemberScope(entry.project, member.project, parentBy));
+}
+/** First doing card from the board index. */
+export function memberDoingTaskFromIndex(member: TeamMember, live: Pick<LiveSessions, "tasks" | "parentBy">): {project:string;code:string}|undefined {
+  const task = memberDoingTasks(member, live)[0];
   return task ? { project: task.project, code: task.code } : undefined;
 }
 
-/** Assignment is business state; terminal idleness and lease expiry cannot clear it. */
-export function teamPanelStatus(member:TeamMember, base:LiveStatus, collector:AgentSession|undefined, live:LiveSessions, lead=false):LiveStatus {
+/**
+ * Which card and whether it is being worked on are two separate facts (plan §3.4): a doing card no
+ * longer forces 「工作中」. With an activity from the team service the status is that activity; the
+ * card only raises attention (card + idle, card + stalled). Without one the pane status stays.
+ */
+export function teamPanelStatus(member:TeamMember, base:LiveStatus, collector:AgentSession|undefined, live:LiveSessions, lead=false, activity?:ServiceActivity):LiveStatus {
+  const now=live.snapshot?.now??Date.now()/1000;
+  const fromActivity=activity && activityStatus(activity, !lead && memberDoingTasks(member, live).length>0, now, lead);
+  if(fromActivity)return fromActivity;
   if(lead)return {...base,group:"lead",label:base.group==="available"?"空闲":base.label};
-  const identities = memberAssigneeKeys(member);
-  const parentBy = live.parentBy ?? {};
-  const assigned=live.tasks?.some(task=>task.status_key==="doing" && identities.has(task.assignee.trim().toLowerCase())
-    && taskInMemberScope(task.project, member.project, parentBy));
-  const working=!!assigned || /^工作中\s*·/.test(member.currentTask?.trim()??"");
+  const assigned=memberDoingTasks(member, live).length>0;
   const offline=live.snapshot?.collectorOffline===true || collector?.leaseStatus==="unknown";
-  if(working){
-    if(base.needsHuman && !offline)return {...base,label:base.label+" · 工作中"};
-    return {...base,rank:6,tone:"run",group:"running",label:offline?"工作中 · 采集离线":"工作中",needsHuman:false,duration:""};
-  }
   if(offline)return {rank:8,tone:"offline",group:"other",label:"采集离线",needsHuman:false,duration:""};
+  if(assigned && base.group==="available")
+    return {...base,rank:3,tone:"warn",group:"attention",label:base.label.replace(/·可派活$/,"")+" · 有卡未动",needsHuman:true,
+      title:"有进行中的卡，但会话空闲：交付后忘了移卡，或卡住了没表现出来"};
+  const parentBy = live.parentBy ?? {};
   const projects = live.taskProjects ?? [];
   const indexReady = projects.length > 0 && (projects.includes(member.project)
     || Object.keys(parentBy).some(child => parentBy[child] === member.project && projects.includes(child)));
@@ -47,7 +56,7 @@ export function presentTeamRow<R extends TeamRow>(row:R, serviceLive:Record<stri
   const presented:R=serviceLive===undefined || report?.match==="no_agent" ? row : {
     ...row,...serviceMemberStatus(row.member,report,row.session,liveSnapshot(live)?.now??Date.now()/1000,lead),
   };
-  return {...presented,status:teamPanelStatus(row.member,presented.status,original,live,lead)};
+  return {...presented,status:teamPanelStatus(row.member,presented.status,original,live,lead,report?.activity)};
 }
 /** The Lead entry of the team toolbar. */
 export function teamLeadStatus(member:TeamMember, serviceLive:Record<string,TeamLive>|undefined, live:LiveSessions):LiveStatus {

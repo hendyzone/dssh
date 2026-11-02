@@ -1,8 +1,8 @@
 import {useEffect, useRef, useState} from "react";
 import {refreshServiceAi} from "../lib/teamService";
 import type {ServiceAi} from "../lib/serviceAi";
+import {aiIsOld} from "../lib/memberActivity";
 
-const labels = {working: "工作中", waiting: "等待中", idle: "空闲", unknown: "未知"};
 function relativeTime(value: string, now: number): string {
   const minutes = Math.max(0, Math.floor((now - Date.parse(value)) / 60000));
   return minutes < 1 ? "刚刚" : minutes < 60 ? `${minutes} 分钟前` : minutes < 1440 ? `${Math.floor(minutes / 60)} 小时前` : `${Math.floor(minutes / 1440)} 天前`;
@@ -52,10 +52,12 @@ export default function TeamServiceAi({ai, enabled, target, compact = false}: {
     } catch { if (epoch === generation.current) setNotice("重新总结失败，请稍后重试"); }
     finally { if (epoch === generation.current) { busy.current = false; setPending(false); } }
   };
-  return <span className="team-service-ai" data-ai-view={compact ? "row" : "detail"}>
+  // The summary only says what the member is doing; whether it is doing it is the activity chip.
+  const old = aiIsOld(ai, now);
+  return <span className={`team-service-ai${old ? " is-old" : ""}`} data-ai-view={compact ? "row" : "detail"}>
     {(enabled === false || disabledByService) && <span>AI 摘要未启用</span>}
     {ai ? <><span className="team-service-ai-summary">{ai.summary || "暂无 AI 摘要"}</span>
-      <small title={ai.model ? `摘要由 ${ai.model} 生成` : undefined}>{labels[ai.status]} · AI 摘要 · {relativeTime(ai.updatedAt, now)}</small>
+      <small title={ai.model ? `摘要由 ${ai.model} 生成` : undefined}>AI 摘要 · {relativeTime(ai.since ?? ai.updatedAt, now)}{old && <b className="team-service-ai-old" title="超过 30 分钟没有更新，可能已过时">旧</b>}</small>
       {!compact && ai.evidence && <details><summary>AI 摘要依据</summary><pre>{ai.evidence}</pre></details>}
     </> : enabled !== false && !disabledByService && <span>暂无 AI 摘要</span>}
     {target && <button type="button" disabled={pending || remaining > 0 || enabled === false || disabledByService} onClick={event => {event.preventDefault(); event.stopPropagation(); void refresh();}}>

@@ -18,22 +18,25 @@ const makeLive=(offline=false):LiveSessions=>({snapshot:parseAgentSessions({sess
 const base={rank:7,tone:"idle" as const,group:"available" as const,label:"空闲·可派活",needsHuman:false,duration:""};
 const props=(members:TeamMember[],live=makeLive())=>({sessionId:"ssh",profile:{...emptyProfile(),project:"demo"},navigation:{server,servers:[server],onOpen:vi.fn()},members,live,serviceLive:Object.fromEntries(members.map(m=>[m.email,{match:"matched",state:"idle",stale:false}])),onUpdated:vi.fn()});
 
-it("T13 doing owner stays working with expired lease and idle terminal",()=>{
+it("T93 a doing card no longer forces 工作中: card + idle session is flagged, not hidden",()=>{
  render(<TeamDynamics {...props([worker])}/>);
- expect(screen.getByText("工作中")).toBeTruthy();
+ expect(screen.queryByText("工作中")).toBeNull();
+ expect(screen.getByText("空闲 · 有卡未动")).toBeTruthy();
+ expect(screen.getByRole("button",{name:"1 需要处理"})).toBeTruthy();
  expect(screen.getByRole("button",{name:"0 可派活"})).toBeTruthy();
  expect(screen.queryByText("空闲·可派活")).toBeNull();
 });
 it("T13 offline stays explicit, including without a matched session",()=>{
  const live=makeLive(true);live.snapshot!.sessions=[];
  render(<TeamDynamics {...props([worker,member("free")],live)}/>);
- expect(screen.getByText("工作中 · 采集离线")).toBeTruthy();
- expect(screen.getByText("采集离线")).toBeTruthy();
+ expect(screen.queryByText("工作中 · 采集离线")).toBeNull();
+ expect(screen.getAllByText("采集离线")).toHaveLength(2);
  expect(screen.getByRole("button",{name:"0 可派活"})).toBeTruthy();
 });
-it("T13 manual working overrides stale/done data; availability needs idle roster and known task index",()=>{
+it("T93 manual 工作中 no longer overrides; availability needs idle roster and known task index",()=>{
  const live=makeLive();live.tasks=[];
- expect(teamPanelStatus({...worker,currentTask:"工作中·demo/T13"},base,undefined,live).label).toBe("工作中");
+ expect(teamPanelStatus({...worker,currentTask:"工作中·demo/T13"},base,undefined,live).label).not.toBe("工作中");
+ expect(teamPanelStatus({...worker,currentTask:"工作中·demo/T13"},base,undefined,live).group).toBe("other");
  expect(teamPanelStatus(worker,base,undefined,live).group).toBe("available");
  expect(teamPanelStatus({...worker,currentTask:"待确认"},base,undefined,live).group).toBe("other");
  expect(teamPanelStatus(worker,base,undefined,{...live,taskProjects:[]}).group).toBe("other");
@@ -49,7 +52,7 @@ it("T14 excludes all Leads from rows and counts, with at most one minimal workin
  const entry=screen.getByRole("button",{name:/打开 Lead/});
  expect(entry.textContent).not.toMatch(/T99|空闲|卡住|摘要/);
  expect(entry.querySelectorAll(".team-live-dot")).toHaveLength(1);
- expect(within(screen.getByRole("group",{name:"团队汇总"})).getAllByRole("button").map(e=>e.getAttribute("aria-label"))).toEqual(["0 需要处理","0 等 Lead","0 可派活"]);
+ expect(within(screen.getByRole("group",{name:"团队汇总"})).getAllByRole("button").map(e=>e.getAttribute("aria-label"))).toEqual(["1 需要处理","0 等 Lead","0 可派活"]);
  fireEvent.click(entry);await waitFor(()=>expect(p.navigation.onOpen).toHaveBeenCalledWith(lead,server));
 });
 it("T14 keeps the original office snapshot, including Lead seats",()=>{
@@ -65,18 +68,19 @@ it("T13 fetches actual doing ownership even when the collector has no bound card
  transport.invoke.mockImplementation(async(_cmd:string,args:{path:string})=>({status:200,body:JSON.stringify(args.path==="/api/v1/projects"?{projects:[{slug:"demo",name:"Demo",parent:""}]}:args.path==="/api/v1/agent-sessions"?{sessions:[],collector_offline:true,last_collected_at:100}:args.path.endsWith("/tasks")?{tasks:makeLive().tasks}:{} )}));
  const p=props([worker]);
  render(<TeamDynamics {...p} live={undefined} board={source}/>);
- await screen.findByText("工作中 · 采集离线");
+ await screen.findByText("采集离线");
  expect(transport.invoke).toHaveBeenCalledWith("taskboard_get",expect.objectContaining({path:"/api/v1/projects/demo/tasks"}));
  expect(screen.getByRole("button",{name:"0 可派活"})).toBeTruthy();
  const parsed=parseAgentSessions({sessions:[{session:"x",lease_status:"unknown",collector_last_report_at:123}],collector_offline:true,last_collected_at:123});
  expect(parsed).toMatchObject({collectorOffline:true,collectedAt:123,sessions:[{leaseStatus:"unknown",collectorLastReportAt:123}]});
 });
-it("T15 treats doing cards in child board projects as working for parent roster members",()=>{
+it("T15 shows doing cards in child board projects as the parent roster member's card badge",()=>{
  const parentWorker={...worker,project:"dcollab",email:"dcollab-cw1-codex@example.test",tmux:{...worker.tmux,name:"worker-dcollab-cw1-codex"}};
  const live={...makeLive(),tasks:[{project:"dssh",code:"T15",title:"子项目卡",status_key:"doing",assignee:"dcollab-cw1-codex",updated_at:""}],taskProjects:["dcollab","dssh"],parentBy:{dssh:"dcollab"},
    briefs:{[briefKey("dssh","T15")]:{code:"T15",title:"子项目卡",brief:""}}};
  const baseProps=props([parentWorker],live);
- render(<TeamDynamics {...baseProps} serviceLive={undefined}/>);
- expect(screen.getByText("工作中")).toBeTruthy();
+ render(<TeamDynamics {...baseProps}/>);
+ expect(screen.queryByText("工作中")).toBeNull();
+ expect(screen.getByRole("button",{name:/T15/})).toBeTruthy();
  expect(memberDoingTaskFromIndex(parentWorker, live)).toEqual({ project: "dssh", code: "T15" });
 });

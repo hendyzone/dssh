@@ -145,3 +145,10 @@
 .office-station.is-temporary .office-desk-top{fill:#c9b48f}
 .office-station.is-temporary .office-desk-front{fill:#b3a084}
 .office-station.is-reclaim{outline:1px dashed #b25a2a;outline-offset:2px;border-radius:4px}
+/* 活动态（dssh/T93）：图标+文字，需要人看的组合加粗描边，灰度下也分得开。 */
+.team-office .office-activity.is-attention{font-weight:700;border:1px solid currentColor;border-radius:3px;padding:0 3px}
+.team-office .office-activity.is-bad{color:#b3261e}
+.team-office .office-activity.is-warn,.team-office .office-activity.is-wait{color:#8a5a00}
+.team-office .office-activity small{font-weight:400}
+.team-office .office-doing-more{color:#8a5a00;white-space:nowrap}
+.office-ai-old{font-weight:700}

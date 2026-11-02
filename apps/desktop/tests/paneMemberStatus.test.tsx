@@ -83,8 +83,8 @@ async function renderApp() {
 it("shows the active member pane's status dot, name and card in the middle of the status bar", async () => {
   await renderApp();
   const group = segment()!;
-  // Board says T8 is doing, the team service says stuck: the team panel reads 「卡住 · 工作中」.
-  await waitFor(() => expect(within(group).getByRole("img").getAttribute("aria-label")).toBe("卡住 · 工作中"));
+  // Board says T8 is doing, the team service says stuck: a doing card no longer appends 「工作中」 (T93).
+  await waitFor(() => expect(within(group).getByRole("img").getAttribute("aria-label")).toBe("卡住"));
   expect(within(group).getByRole("img").className).toContain("is-bad");
   expect(within(group).getByRole("button", { name: "alpha-cw1" })).toBeTruthy();
   expect(within(group).getByRole("button", { name: "alpha/T8" })).toBeTruthy();

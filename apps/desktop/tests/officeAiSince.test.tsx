@@ -26,7 +26,7 @@ it("shows the since time and treats an old since as old even when the summary wa
   };
   const view = render(<TeamOffice snapshot={snapshot(member)}/>);
   const node = station(view);
-  expect(node.querySelector(".office-ai-bubble small")?.textContent).toBe("5 小时前");
+  expect(node.querySelector(".office-ai-bubble small")?.textContent).toBe("5 小时前 旧");
   expect(node.querySelector(".office-ai-bubble")?.getAttribute("title")).toContain("5 小时前");
   expect(node.querySelector(".office-ai-bubble")?.classList.contains("is-old")).toBe(true);
 });
@@ -41,7 +41,7 @@ it("falls back to updatedAt when an old service sends no since", () => {
   expect(member.ai?.since).toBeUndefined();
   const view = render(<TeamOffice snapshot={snapshot(member)}/>);
   const node = station(view);
-  expect(node.querySelector(".office-ai-bubble small")?.textContent).toBe("2 小时前");
+  expect(node.querySelector(".office-ai-bubble small")?.textContent).toBe("2 小时前 旧");
   expect(node.querySelector(".office-ai-bubble")?.classList.contains("is-old")).toBe(true);
 });
 

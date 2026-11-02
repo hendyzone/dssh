@@ -7,6 +7,9 @@ import { briefKey, matchSession, type SessionsSnapshot, type TaskBrief } from ".
 import { resolveTeamAvatar, type TeamAvatarStatus } from "./teamAvatar";
 import { matchingServers, memberKey, type TeamMember } from "./teamMembers";
 import { isTeamLead } from "./teamLead";
+import { memberDoingTasks } from "./teamPanelStatus";
+import { activityStatus } from "./memberActivity";
+import type { IndexTask } from "./taskLookup";
 import { sameSshEndpoint } from "./tmuxTabs";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
 import type { ServerEntry } from "../types";
@@ -68,6 +71,10 @@ export interface OfficeMember {
   tool?: string; machine?: string; machineOnline?: boolean; machineVersion?: string;
   liveState?: string; match?: "exact" | "replaced" | "gone" | "no_agent";
   detail?: string; since?: number;
+  /** Activity chip (plan §3.4): icon + word, tone, hover reason; absent for old services / unattached boxes. */
+  activity?: { label: string; tone: string; title?: string; duration: string; attention: boolean };
+  /** Doing cards on the board index: the first one and how many more. */
+  doing?: { code: string; title: string; more: number };
   /** 常驻/临时（缺字段按常驻）。临时坐临时工位区。 */
   tenure?: "resident" | "temporary";
   /** 临时成员为哪张卡而开（已校验的 `<项目>/<编号>`）。 */
@@ -99,6 +106,8 @@ export interface OfficeRoster {
 }
 export interface OfficeBoard {
   snapshot?: SessionsSnapshot; briefs: Record<string, TaskBrief>; offline: boolean;
+  /** Board index of the roster projects (and their children): which card each box is doing. */
+  tasks?: (IndexTask & {project:string})[]; parentBy?: Record<string, string>;
   /** `briefKey(project, code)` → 所属卡状态；只查临时成员的 for_task。 */
   forTasks?: Record<string, "done" | "open">;
 }
@@ -175,7 +184,10 @@ export function officeTool(member: TeamMember, live?: TeamLive): string | undefi
 export function officeStatusCounts(members: OfficeMember[]) {
   const counts = { running: 0, waiting: 0, stuck: 0, idle: 0, offline: 0 };
   for (const member of members) {
-    const state = member.liveState ?? member.status.state;
+    // With an activity the person's state is that activity; a card left idle needs a look, so it counts as waiting.
+    const state = member.activity
+      ? member.activity.attention && member.status.state === "idle" ? "blocked" : member.status.state
+      : member.liveState ?? member.status.state;
     const offline = member.match === "gone" || member.match === "replaced" || member.match === "no_agent"
       || member.machineOnline === false || member.status.state === "unknown"
       || state === "unknown" || state === "offline";
@@ -211,10 +223,15 @@ export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record
       const forTaskDone = forTask && board?.forTasks?.[briefKey(forTask.project, forTask.code)] === "done" ? true : undefined;
       const machineName = display.machine;
       const machineRecord = machineName ? machines[machineName] : undefined;
+      const doingTasks = source.service && board && !board.offline && !isLead ? memberDoingTasks(member, { tasks: board.tasks, parentBy: board.parentBy }) : [];
+      const doing = doingTasks.length ? { code: doingTasks[0].code, title: doingTasks[0].title.slice(0, 120), more: doingTasks.length - 1 } : undefined;
+      const activity = live?.activity ? activityStatus(live.activity, !!doing, Date.now() / 1000, isLead) : undefined;
       return {
         id: officeKey(JSON.stringify([source.id, memberKey(member)])), name: display.title,
         isLead,
         status: source.service ? serviceMemberAvatar(member, live, context.boards?.[source.id]?.offline ? undefined : matchSession(member, context.boards?.[source.id]?.snapshot?.sessions??[])) : resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id], live, source.service),
+        ...(doing ? { doing, taskText: shortText(`${doing.code} · ${doing.title}`), taskFull: `${doing.code} · ${doing.title}`, taskSource: "board" as const } : {}),
+        ...(activity ? { activity: { label: activity.label, tone: activity.tone, title: activity.title, duration: activity.duration, attention: activity.needsHuman } } : {}),
         paletteKey: officeKey(memberKey(member)),
         ai: serviceAi(roster.ai?.[memberKey(member)]), aiEnabled: roster.aiEnabled,
         responsibilities: member.responsibilities?.slice(0, 500),
