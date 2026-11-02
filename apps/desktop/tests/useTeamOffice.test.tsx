@@ -7,17 +7,17 @@ vi.mock("../src/lib/teamService",()=>({useTeamService:()=>service.current}));
 import {useTeamOffice} from "../src/lib/useTeamOffice";
 import {collaborationRequest,emptyProfile} from "../src/lib/collaboration";
 import {fetchAgentSessions,parseAgentSessions,taskBrief} from "../src/lib/agentSessions";
-import {boardSource} from "../src/lib/taskLookup";
+import {boardSource,listProjects,taskIndex} from "../src/lib/taskLookup";
 vi.mock("../src/lib/collaboration",async original=>({...await original<any>(),collaborationRequest:vi.fn()}));
 vi.mock("../src/lib/agentSessions",async original=>({...await original<any>(),fetchAgentSessions:vi.fn(),taskBrief:vi.fn()}));
-vi.mock("../src/lib/taskLookup",async original=>({...await original<any>(),boardSource:vi.fn()}));
+vi.mock("../src/lib/taskLookup",async original=>({...await original<any>(),boardSource:vi.fn(),listProjects:vi.fn(),taskIndex:vi.fn()}));
 const member={project:"alpha",email:"worker@example.invalid",role:"Worker",host:"host.example.invalid",port:22,username:"dev",workdir:"/repo",tmux:{id:"$2",created:123,name:"worker"},currentTask:"manual"};
 const options=()=>({enabled:true,profiles:{},servers:[],sessions:[],programSnapshots:{},lookupSettings:{} as any,themeId:"one-light",animationEnabled:true});
 const report=(match="exact",state="running")=>({key:member.email,match,state,detail:"",since:"2026-01-01T00:00:00Z",stale:false});
 const currentSource=(view:any)=>view.result.current.projects[0].sources[0];
 beforeEach(()=>{
  service.current={url:"https://team.example.invalid",projects:["alpha"],status:{state:"online",token_configured:true},snapshots:{alpha:{project:"alpha",identity:"service-alpha",seq:1,members:[member],live:{[member.email]:report()},ai:{},machines:{},receivedAt:1767225600000,offline:false,status:"online"}}};
- vi.mocked(collaborationRequest).mockReset();vi.mocked(buildOfficeSnapshot).mockClear();vi.mocked(boardSource).mockReset().mockReturnValue(undefined);vi.mocked(fetchAgentSessions).mockReset();vi.mocked(taskBrief).mockReset();
+ vi.mocked(collaborationRequest).mockReset();vi.mocked(buildOfficeSnapshot).mockClear();vi.mocked(boardSource).mockReset().mockReturnValue(undefined);vi.mocked(listProjects).mockReset().mockRejectedValue(new Error("no catalog"));vi.mocked(taskIndex).mockReset().mockRejectedValue(new Error("no index"));vi.mocked(fetchAgentSessions).mockReset();vi.mocked(taskBrief).mockReset();
 });
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks()});
 it("renders service members without profiles, SSH connections or remote roster reads",()=>{
@@ -103,54 +103,70 @@ it.each([undefined,report("exact","unknown"),report("replaced","unknown"),report
  const view=renderHook(()=>useTeamOffice(options()));await waitFor(()=>expect(fetchAgentSessions).toHaveBeenCalled());
  expect(currentSource(view).members[0].status.state).toBe("unknown");
 });
-it("uses a bound collector task and its title in the service office nameplate",async()=>{
+// T94 (D8): with the team service a collector-bound card is not the member's card either; only the
+// board's doing index is, so the bound T8 is neither shown nor captioned.
+it("does not put a collector-bound card on the service office nameplate",async()=>{
  vi.mocked(boardSource).mockReturnValue({key:"board",route:{kind:"direct",url:"https://board.example.invalid"}} as any);
  vi.mocked(fetchAgentSessions).mockResolvedValue(parseAgentSessions({sessions:[{host:member.host,session:member.tmux.name,project:"beta",task_code:"T8",host_ok:true,state:"running"}]}));
  vi.mocked(taskBrief).mockResolvedValue({code:"T8",title:"Bound task title",brief:"Different brief"});
  const view=renderHook(()=>useTeamOffice(options()));
- await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe("T8 · Bound task title"));
- expect(taskBrief).toHaveBeenCalledWith(expect.anything(),"beta","T8");
+ await waitFor(()=>expect(fetchAgentSessions).toHaveBeenCalled());
+ await act(async()=>{await Promise.resolve();await Promise.resolve();});
+ expect(currentSource(view).members[0]).toMatchObject({taskFull:"",taskSource:"none"});
+ expect(taskBrief).not.toHaveBeenCalled();
 });
-it("queries the roster task title even if the collector is unavailable",async()=>{
+// T94 (D8): a hand-written 「当前在做」 is a note, never a card. With the collector down and no doing
+// card on the board, the service paper stays empty and no title is fetched for the note's code.
+it("never turns the hand-written note into a card, even when the collector is unavailable",async()=>{
  service.current.snapshots.alpha.members=[{...member,currentTask:"工作中·beta/T9"}];
  vi.mocked(boardSource).mockReturnValue({key:"board",route:{kind:"direct",url:"https://board.example.invalid"}} as any);
  vi.mocked(fetchAgentSessions).mockRejectedValue(new Error("offline"));
  vi.mocked(taskBrief).mockResolvedValue({code:"T9",title:"Roster task title",brief:""});
  const view=renderHook(()=>useTeamOffice(options()));
- await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe("T9 · Roster task title"));
+ await waitFor(()=>expect(vi.mocked(buildOfficeSnapshot).mock.calls.some(([,,context])=>!!context.boards?.[Object.keys(context.boards??{})[0]])).toBe(true));
+ expect(currentSource(view).members[0]).toMatchObject({taskFull:"",taskSource:"none"});
+ expect(taskBrief).not.toHaveBeenCalled();
 });
 
+// The service paper now takes its title from the doing index, which belongs to a board route too.
 it("drops old board titles immediately when switching the board route",async()=>{
  const a={key:"board-a",route:{kind:"direct",url:"https://board-a.example.invalid"}};
  const b={key:"board-b",route:{kind:"direct",url:"https://board-b.example.invalid"}};
  const sessions=parseAgentSessions({sessions:[{host:member.host,session:member.tmux.name,project:"alpha",task_code:"T1",state:"running"}]});
+ const index=(title:string)=>({project:"alpha",tasks:[{code:"T1",title,status_key:"doing",assignee:"worker",updated_at:""}],byCode:new Map(),fetchedAt:0}) as any;
+ vi.mocked(taskIndex).mockImplementation(async(source:any)=>index(source.key==="board-a"?"Board A title":"Board B title"));
  vi.mocked(boardSource).mockReturnValue(a as any);vi.mocked(fetchAgentSessions).mockResolvedValue(sessions);
- vi.mocked(taskBrief).mockResolvedValue({code:"T1",title:"Board A title",brief:""});
  let settings={boardUrl:"https://board-a.example.invalid"} as any;
  const view=renderHook(()=>useTeamOffice({...options(),lookupSettings:settings}));
  await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe("T1 · Board A title"));
  let resolve!:(value:any)=>void;vi.mocked(fetchAgentSessions).mockReturnValueOnce(new Promise(r=>{resolve=r;}));
- vi.mocked(boardSource).mockReturnValue(b as any);vi.mocked(taskBrief).mockResolvedValue({code:"T1",title:"Board B title",brief:""});
+ vi.mocked(boardSource).mockReturnValue(b as any);
  settings={boardUrl:"https://board-b.example.invalid"};view.rerender();
  expect(currentSource(view).members[0].taskFull).not.toContain("Board A title");
  await act(async()=>resolve(sessions));
  await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe("T1 · Board B title"));
 });
 
-it.each([
- ["工作中·dssh/T53","T53 · Assigned title","manual"],
- ["空闲","","none"],
- ["","DC-15 · Assigned title","board"],
- ["待确认·等用户","DC-15 · Assigned title","board"],
-])("uses the same roster-first task policy in office nameplates: %s",async(currentTask,expected,source)=>{
+// T94 (D8): the service-mode nameplate paper is the board's doing card only. Whatever the note says
+// and whatever card the collector binds (DC-15 here), without a doing card the paper is empty and no
+// caption is fetched; with one, it shows that card and its index title.
+it.each(["工作中·dssh/T53","空闲","","待确认·等用户"])("service nameplates ignore the note (%j) and the collector binding",async currentTask=>{
  service.current.snapshots.alpha.members=[{...member,currentTask}];
  vi.mocked(boardSource).mockReturnValue({key:"board",route:{kind:"direct",url:"https://board.example.invalid"}} as any);
  vi.mocked(fetchAgentSessions).mockResolvedValue(parseAgentSessions({sessions:[{host:member.host,session:member.tmux.name,project:"other",task_code:"DC-15",host_ok:true,state:"running"}]}));
  vi.mocked(taskBrief).mockImplementation(async(_source,_project,code)=>({code,title:"Assigned title",brief:""}));
  const view=renderHook(()=>useTeamOffice(options()));
+ await waitFor(()=>expect(fetchAgentSessions).toHaveBeenCalled());
  await act(async()=>{await Promise.resolve();await Promise.resolve();});
- await waitFor(()=>expect(currentSource(view).members[0].taskFull).toBe(expected));
- expect(currentSource(view).members[0].taskSource).toBe(source);
- if(currentTask.startsWith("空闲"))expect(taskBrief).not.toHaveBeenCalled();
- else expect(taskBrief).toHaveBeenCalledWith(expect.anything(),currentTask.startsWith("工作中")?"dssh":"other",currentTask.startsWith("工作中")?"T53":"DC-15");
+ expect(currentSource(view).members[0]).toMatchObject({taskFull:"",taskSource:"none"});
+ expect(taskBrief).not.toHaveBeenCalled();
+});
+it("service nameplates show the board's doing card with its index title",async()=>{
+ service.current.snapshots.alpha.members=[{...member,currentTask:"工作中·dssh/T53"}];
+ vi.mocked(boardSource).mockReturnValue({key:"board",route:{kind:"direct",url:"https://board.example.invalid"}} as any);
+ vi.mocked(fetchAgentSessions).mockResolvedValue(parseAgentSessions({sessions:[{host:member.host,session:member.tmux.name,project:"other",task_code:"DC-15",host_ok:true,state:"running"}]}));
+ vi.mocked(taskIndex).mockResolvedValue({project:"alpha",tasks:[{code:"T60",title:"Doing title",status_key:"doing",assignee:"worker",updated_at:""}],byCode:new Map(),fetchedAt:0} as any);
+ const view=renderHook(()=>useTeamOffice(options()));
+ await waitFor(()=>expect(currentSource(view).members[0]).toMatchObject({taskFull:"T60 · Doing title",taskSource:"board"}));
+ expect(taskBrief).not.toHaveBeenCalled();
 });

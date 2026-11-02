@@ -1,6 +1,6 @@
 import {serviceAi, type ServiceAi} from "./serviceAi";
 import type { TeamServiceState, TeamLive } from "./teamService";
-import { memberTaskTarget, memberTaskSession, serviceMemberAvatar } from "./teamServicePresentation";
+import { serviceMemberAvatar } from "./teamServicePresentation";
 import { memberDisplay } from "./memberDisplay";
 import { collaborationKey, type CollaborationProfile, type CollaborationSession } from "./collaboration";
 import { briefKey, matchSession, type SessionsSnapshot, type TaskBrief } from "./agentSessions";
@@ -149,13 +149,9 @@ export function officeTeamSources(profiles: Record<string, CollaborationProfile>
 }
 const shortText = (value: string) => value.trim().split(/\r?\n/)[0].slice(0, 100);
 function taskText(member: TeamMember, board?: OfficeBoard, live?: TeamLive, service = false): Pick<OfficeMember, "taskText" | "taskSource" | "taskFull"> {
-  if (service) {
-    const target = memberTaskTarget(board&&!board.offline?memberTaskSession(member,board.snapshot?.sessions??[]):undefined);
-    if (!target) return {taskText:"",taskFull:"",taskSource:"none"};
-    const brief = board?.briefs[briefKey(target.project, target.code)];
-    const full = [target.code, brief?.title || brief?.brief].filter(Boolean).join(" · ");
-    return {taskText:shortText(full),taskFull:full,taskSource:"board"};
-  }
+  // With the team service the paper is the board's doing card only (filled in by the caller, dssh/T94):
+  // neither the hand-written note nor the collector binding stands in for it.
+  if (service) return {taskText:"",taskFull:"",taskSource:"none"};
   const session = board && !board.offline && board.snapshot ? matchSession(member, board.snapshot.sessions) : undefined;
   if (session && !session.stale && session.hostOk) {
     if (!session.taskCode) return { taskText: "暂无当前任务", taskSource: "board", taskFull: "" };

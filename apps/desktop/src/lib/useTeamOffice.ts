@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "rea
 import { emptyProfile, type CollaborationProfile, type CollaborationSession } from "./collaboration";
 import { briefKey, fetchAgentSessions, matchSession, taskBrief, taskLifecycle } from "./agentSessions";
 import { boardSource, buildProjectParentMap, isIdentifier, listProjects, taskIndex, taskIndexProjects, type TaskLookupSettings } from "./taskLookup";
-import {memberTaskTarget,memberTaskSession} from "./teamServicePresentation";
 import { useTeamService } from "./teamService";
 import { buildOfficeMailDirectory, type OfficeMailDirectory, buildOfficeSnapshot, officeTeamSources, officeKey, parseForTask, type OfficeTeamSource, type OfficeBoard, type OfficeRoster, type OfficeSnapshot } from "./teamOffice";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
@@ -74,10 +73,9 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
             const targets=new Map<string,{project:string;code:string}>();
             const forTargets=new Map<string,{project:string;code:string}>();
             for(const team of teams)for(const member of rosters[team.id]?.members??[]){
-              const task=memberTaskTarget(memberTaskSession(member,snapshot?.sessions??[]));
-              if(task)targets.set(briefKey(task.project,task.code),task);
+              // Captions only for collector-mode papers; service papers are doing cards titled by the index.
               const session=matchSession(member,snapshot?.sessions??[]);
-              if(!team.service&&!task&&session?.taskCode&&isIdentifier(session.taskCode)&&isIdentifier(session.project)&&!session.stale&&session.hostOk)
+              if(!team.service&&session?.taskCode&&isIdentifier(session.taskCode)&&isIdentifier(session.project)&&!session.stale&&session.hostOk)
                 targets.set(briefKey(session.project,session.taskCode),{project:session.project,code:session.taskCode});
               // 临时 worker 的所属卡（dteam T62 的 for_task）：只查状态，不新接看板。
               const owner=parseForTask(member.for_task);
