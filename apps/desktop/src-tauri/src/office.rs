@@ -37,6 +37,7 @@ pub fn command_allowed(label: &str, command: &str) -> bool {
     match label {
         "main" => true,
         "office" => matches!(command, "office_request_snapshot" | "desktop_report_error"),
+        "team" => matches!(command, "team_request_snapshot" | "team_window_action" | "desktop_report_error"),
         label if label.starts_with("preview-") => {
             matches!(command, "take_pending_image" | "desktop_report_error")
         }

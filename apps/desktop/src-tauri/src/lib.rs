@@ -10,6 +10,7 @@ mod forward;
 mod monitor;
 mod preview;
 mod office;
+mod team_window;
 mod tab_windows;
 mod servers;
 mod sftp;
@@ -60,6 +61,7 @@ pub fn run() {
             app.manage(local_shell::LocalState::default());
             app.manage(preview::PreviewState::default());
             app.manage(office::OfficeState::default());
+            app.manage(team_window::TeamState::default());
             app.manage(tab_windows::TabWindows::default());
             if let Some(main)=app.get_webview_window("main") {tab_windows::observe_native_drag(&main);}
             app.manage(monitor::MonitorState::default());
@@ -85,6 +87,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             office::window_event(window, event);
+            team_window::window_event(window, event);
             tab_windows::window_event(window, event);
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 window.state::<local_shell::LocalState>().shutdown();
@@ -136,6 +139,11 @@ pub fn run() {
             office::office_request_snapshot,
             office::office_main_visibility,
             office::office_window_exists,
+            team_window::open_team_window,
+            team_window::team_publish_snapshot,
+            team_window::team_request_snapshot,
+            team_window::team_window_exists,
+            team_window::team_window_action,
             local_shell::local_connect,
             local_shell::local_start,
             local_shell::local_write,

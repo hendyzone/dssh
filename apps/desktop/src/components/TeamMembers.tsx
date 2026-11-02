@@ -2,10 +2,10 @@ import {teamProjectIssue} from "../lib/teamServiceProjects";
 import { invoke } from "@tauri-apps/api/core";
 import { refreshTeamService, useTeamService } from "../lib/teamService";
 import TeamServiceBanner from "./TeamServiceBanner";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Users } from "lucide-react";
 import { resolveWorktree, type CollaborationProfile, type CollaborationSession } from "../lib/collaboration";
-import { loadTeamMappings, matchingServers, memberKey, memberMappingKey, memberNoteFields, parseMember, TEAM_MAPPING_KEY, type MemberNoteField, type TeamMember } from "../lib/teamMembers";
+import { loadTeamMappings, matchingServers, memberConnection, memberKey, memberMappingKey, memberNoteFields, parseMember, TEAM_MAPPING_KEY, type MemberNoteField, type TeamMember } from "../lib/teamMembers";
 import { teamLeadPrompt } from "../lib/teamLeadPrompt";
 import type { ServerEntry } from "../types";
 import type { BoardSource } from "../lib/taskLookup";
@@ -16,6 +16,7 @@ import TeamDynamics from "./TeamDynamics";
 import { liveSnapshot, useAgentSessions } from "../lib/agentSessions";
 import { memberDisplay } from "../lib/memberDisplay";
 import type { OfficeSnapshot } from "../lib/teamOffice";
+import { openTeamWindow, useTeamWindowActions, useTeamWindowPresence, useTeamWindowPublisher, type TeamWindowSnapshot } from "../lib/teamWindowSync";
 
 export interface TeamNavigation {
   server: ServerEntry;
@@ -29,7 +30,7 @@ export interface TeamNavigation {
  * The list itself is the single merged view in TeamDynamics (no 「动态 / 成员」 tabs):
  * management operations live in each member's expandable details.
  */
-export default function TeamMembers({ sessionId, profile, navigation, board, officeSnapshot, officeVisible=true, onPopOut, onRoomOpenChange, focusMember, onFocused, onOpenTaskDetail }: {
+export default function TeamMembers({ sessionId, profile, navigation, board, officeSnapshot, officeVisible=true, onPopOut, onRoomOpenChange, focusMember, onFocused, onOpenTaskDetail, teamWindowHost }: {
   sessionId: string; profile: CollaborationProfile; navigation: TeamNavigation;
   /** Read-only taskboard (the same source as the task lookup above) for live member status. */
   board?: BoardSource;
@@ -39,6 +40,8 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
   /** Member to locate in the list (opened from the status bar). */
   focusMember?: {key: string; seq: number}; onFocused?: () => void;
   onOpenTaskDetail?: (project: string, code: string) => void;
+  /** Only the TeamPanel-mounted instance publishes to the team window; CollaborationPanel never sets this. */
+  teamWindowHost?: boolean;
 }) {
   const service = useTeamService();
   const projectIssue = teamProjectIssue(service, profile.project);
@@ -63,6 +66,13 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
   // One collector poll feeds the merged list, so status and details read the same snapshot.
   const live = useAgentSessions(board, members);
   const snapshot = liveSnapshot(live);
+  // Credential-free mirror of this same data, published to the team window when one is open.
+  const teamWindowSnapshot = useMemo<TeamWindowSnapshot>(() => ({
+    version: 1, themeId: officeSnapshot?.themeId ?? "", sessionId, profile, members,
+    live: {tasks: live.tasks, taskProjects: live.taskProjects, parentBy: live.parentBy, briefs: live.briefs, statusNames: live.statusNames, offline: live.offline, error: live.error, snapshot: live.snapshot},
+    serviceLive: team?.live ?? {}, serviceAi: team?.ai ?? {}, aiEnabled: service.status.ai_enabled, serviceIdentity,
+    servers: navigation.servers.map(s => ({id:s.id, name:s.name, host:s.host, port:s.port, username:s.username})),
+  }), [officeSnapshot?.themeId, sessionId, profile, members, live, team?.live, team?.ai, service.status.ai_enabled, serviceIdentity, navigation.servers]);
   const pending = useRef(false);
   const generation = useRef(0);
   const choices = (navigation.sessions ?? []).filter(s=>s.pane.tmux && s.backendId);
@@ -256,7 +266,33 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
       pinnedKeys={[noteMember, editing?memberKey(editing):undefined].filter((key):key is string=>!!key)}
       officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
       focusMember={focusMember} onFocused={onFocused} onOpenTaskDetail={onOpenTaskDetail}
+      onOpenWindow={teamWindowHost?()=>void openTeamWindow().catch(e=>setError(`无法打开团队窗口：${String(e)}`)):undefined}
       onRefresh={()=>void run(async()=>{await refreshTeamService(profile.project);})} onAddMember={()=>startAdd()} disabled={disabled} more={more} addForm={addForm} renderMemberAdmin={renderMemberAdmin}/>}
     {!projectIssue && !workers.length && !busy && !adding && <div className="team-empty"><Users size={30}/><h4>把成员终端放在一起</h4><p>订阅项目的成员将由团队服务同步。</p></div>}
+    {teamWindowHost && <TeamWindowBridge snapshot={teamWindowSnapshot} members={members} navigation={navigation} sessionId={sessionId}
+      onOpenTaskDetail={onOpenTaskDetail} onRefresh={()=>void run(async()=>{await refreshTeamService(profile.project);})}/>}
   </section>;
+}
+
+/** Bridges the team window's actions back into this panel's own navigation/refresh/task-lookup handlers. */
+function TeamWindowBridge({snapshot, members, navigation, sessionId, onOpenTaskDetail, onRefresh}: {
+  snapshot: TeamWindowSnapshot; members: TeamMember[]; navigation: TeamNavigation; sessionId: string;
+  onOpenTaskDetail?: (project: string, code: string) => void; onRefresh: () => void;
+}) {
+  const exists = useTeamWindowPresence();
+  useTeamWindowPublisher(snapshot, exists);
+  useTeamWindowActions(action => {
+    if (action.kind === "open_member") {
+      const member = members.find(m => memberKey(m) === action.key);
+      if (!member) return;
+      const sessions = [...(navigation.sessions ?? []), {pane:{server:navigation.server}, backendId:sessionId}];
+      const {server} = memberConnection(member, navigation.servers, sessions);
+      if (server) void navigation.onOpen(member, server).catch(error => console.error("Team window open member failed", error));
+    } else if (action.kind === "open_task") {
+      onOpenTaskDetail?.(action.project, action.code);
+    } else if (action.kind === "refresh") {
+      onRefresh();
+    }
+  });
+  return null;
 }

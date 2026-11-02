@@ -1311,7 +1311,7 @@ export default function App() {
                       onClose={() => togglePanel(t.id, null)}/>
                   </PanelDock>}
                   {panel === "team" && t.id === activeTabId && (serviceTeamsEnabled || t.panes[t.activePane]?.tmux) && <PanelDock kind="team" side={panelLayout.team.side} onSideChange={next => movePanelToSide("team", next)}>
-                    <TeamPanel onLookupScopeChange={onLookupScopeChange} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration}
+                    <TeamPanel onLookupScopeChange={onLookupScopeChange} officeSnapshot={officeSnapshot} officeVisible={officeMainVisible} onRoomOpenChange={setInlineRoomOpen} onPopOut={openOfficeWindow} teamWindowHost key={`${t.panes[t.activePane].id}:${activePaneBackend}`} sessionId={activePaneBackend ?? ""} pane={t.panes[t.activePane]} profile={collaboration}
                       focusMember={teamFocus?.paneId === t.panes[t.activePane].id ? teamFocus : undefined} onFocused={() => setTeamFocus(undefined)} taskLookup={paneTaskContext(t.panes[t.activePane])} onOpenTaskDetail={(project, code) => toggleTaskDetail(t.id, project, code)} onClose={()=>togglePanel(t.id,null)} navigation={{server:t.panes[t.activePane].server, servers, sessions:officeSessions, onOpen:(member, server)=>openTeamMember(member, server, t.groupId)}}/>
                   </PanelDock>}
                   {panel === "collaboration" && collaboration?.enabled && t.id === activeTabId && (

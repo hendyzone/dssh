@@ -5,7 +5,7 @@ import type { TeamLive } from "../lib/teamService";
 import { memberTaskTarget, memberTaskSession } from "../lib/teamServicePresentation";
 import { memberDoingTaskFromIndex } from "../lib/teamPanelStatus";
 import {useEffect,useRef,useState,type ReactNode} from "react";
-import {ExternalLink,Plus,RefreshCw} from "lucide-react";
+import {AppWindow,ExternalLink,Plus,RefreshCw} from "lucide-react";
 import {type CollaborationProfile} from "../lib/collaboration";
 import {memberConnection,memberKey,type TeamMember} from "../lib/teamMembers";
 import {memberDisplay} from "../lib/memberDisplay";
@@ -29,12 +29,14 @@ const GROUP_ORDER:readonly {key:StatusGroup;label:string;title?:string}[]=[
 
 /** `live`: the panel's shared collector data (so the merged view shows one snapshot); polled here when omitted. */
 export default function TeamDynamics({sessionId,profile,navigation,members:rosterMembers,board,live:shared,
-  serviceLive,serviceAi:aiMap={},aiEnabled,serviceIdentity="",onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange,focusMember,onFocused,onOpenTaskDetail}:{
+  serviceLive,serviceAi:aiMap={},aiEnabled,serviceIdentity="",onRefresh,onAddMember,disabled,more,addForm,renderMemberAdmin,pinnedKeys,officeSnapshot,officeVisible=true,onPopOut,onRoomOpenChange,focusMember,onFocused,onOpenTaskDetail,onOpenWindow}:{
   sessionId:string;profile:CollaborationProfile;navigation:TeamNavigation;members:TeamMember[];onUpdated:()=>Promise<void>;board?:BoardSource;live?:LiveSessions;
   serviceLive?:Record<string,TeamLive>;
   serviceAi?:Record<string,unknown>; aiEnabled?:boolean|null; serviceIdentity?:string;
   /** Shell actions owned by TeamMembers: the merged view keeps one toolbar row. */
   onRefresh?:()=>void;onAddMember?:()=>void;disabled?:boolean;more?:ReactNode;addForm?:ReactNode;
+  /** Opens (or focuses) this panel in its own window; hidden when absent, so the window's own copy never shows it. */
+  onOpenWindow?:()=>void;
   /** Management block (notes, connection, edit/update/remove) owned by TeamMembers, placed in each member's details. */
   renderMemberAdmin?:(member:TeamMember)=>ReactNode;
   /** Rows that must stay expanded while the shell is editing them (notes editor / terminal update). */
@@ -236,8 +238,9 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
       {activeFilter&&<Button size="sm" variant="ghost" onClick={()=>setFilter(undefined)}>清除筛选</Button>}
       <div className="team-toolbar-actions">
         {officeSnapshot&&<Button size="sm" variant={roomOpen?"secondary":"ghost"} aria-pressed={roomOpen} onClick={()=>setRoomOpen(open=>!open)}>房间</Button>}
+        {onOpenWindow&&<Button size="icon-sm" variant="ghost" aria-label="在新窗口打开团队面板" title="在新窗口打开团队面板（已打开则切到该窗口）" onClick={()=>onOpenWindow()}><AppWindow size={14}/></Button>}
         <Button size="icon-sm" variant="ghost" aria-label="刷新成员" title="刷新成员" disabled={!!disabled||busy} onClick={()=>onRefresh?.()}><RefreshCw size={15}/></Button>
-        <Button size="sm" disabled={!!disabled||busy} onClick={()=>onAddMember?.()}><Plus size={14}/> 添加成员</Button>
+        {onAddMember&&<Button size="sm" disabled={!!disabled||busy} onClick={()=>onAddMember()}><Plus size={14}/> 添加成员</Button>}
         <p>AI 摘要由团队服务生成</p>
         {more&&<details className="team-ai-options team-toolbar-details"><summary>更多</summary><div className="team-more-body">{more}</div></details>}
       </div>

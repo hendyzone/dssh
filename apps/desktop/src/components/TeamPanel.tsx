@@ -10,8 +10,9 @@ import TaskLookup from "./TaskLookup";
 import type { OfficeSnapshot } from "../lib/teamOffice";
 import { teamLookupScope, type BoardSource, type ProjectReason, type TeamLookupScope } from "../lib/taskLookup";
 import { paneTeamProject } from "../lib/tmuxGroups";
+import { restoreTeamWindowOnce } from "../lib/teamWindowSync";
 
-export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange, navigation, onClose, taskLookup, onOpenTaskDetail, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange, focusMember, onFocused}: {
+export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange, navigation, onClose, taskLookup, onOpenTaskDetail, officeSnapshot, officeVisible = true, onPopOut, onRoomOpenChange, focusMember, onFocused, teamWindowHost}: {
   onLookupScopeChange?: (paneId:string,scope?:TeamLookupScope)=>void;
   sessionId: string; pane: SessionInfo; profile?: CollaborationProfile; navigation: TeamNavigation; onClose: () => void;
   taskLookup?: { source?: BoardSource; inferred?: { project: string; reason: ProjectReason } };
@@ -20,7 +21,13 @@ export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange
   officeSnapshot?: OfficeSnapshot; officeVisible?: boolean; onPopOut?: () => Promise<void>;
   /** Member to locate (status bar): switches this pane's team to the member's project first. */
   focusMember?: {project: string; key: string; seq: number}; onFocused?: () => void;
+  /** Set only by the app shell: enables publishing to (and restoring) the standalone team window. */
+  teamWindowHost?: boolean;
 }) {
+  // At most once per app launch, and only for the real host instance: reopen a team window
+  // left open last session (工作现场恢复). A module-level guard survives this panel being
+  // toggled closed/open repeatedly without reopening a window the user explicitly closed.
+  useEffect(() => { if (teamWindowHost) restoreTeamWindowOnce(); }, [teamWindowHost]);
   const service = useTeamService();
   // Manual choice is per pane (tab): switching tabs must not lock another tab's project.
   const [selected, setSelected] = useState<Record<string, string>>({});
@@ -43,7 +50,7 @@ export default function TeamPanel({sessionId, pane, profile, onLookupScopeChange
         </select></label>
         <TeamMembers key={JSON.stringify([service.url,project])} sessionId={sessionId} profile={active} navigation={navigation} board={taskLookup?.source}
           officeSnapshot={officeSnapshot} officeVisible={officeVisible} onPopOut={onPopOut} onRoomOpenChange={onRoomOpenChange}
-          focusMember={focusMember?.project===project ? focusMember : undefined} onFocused={onFocused} onOpenTaskDetail={onOpenTaskDetail}/>
+          focusMember={focusMember?.project===project ? focusMember : undefined} onFocused={onFocused} onOpenTaskDetail={onOpenTaskDetail} teamWindowHost={teamWindowHost}/>
       </>}
     </div>
   </aside>;

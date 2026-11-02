@@ -202,3 +202,6 @@
 .team-dynamics .team-task-link:disabled{color:var(--ui-muted);cursor:default}
 .team-service-ai.is-old .team-service-ai-summary{opacity:.6}
 .team-service-ai-old{margin-left:4px;font-size:10px;font-weight:600;border:1px solid currentColor;border-radius:3px;padding:0 3px}
+
+/* Standalone team window: bound to the production host like .office-window. */
+.team-window{height:100dvh;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:8px}
