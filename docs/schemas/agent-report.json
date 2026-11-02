@@ -177,10 +177,11 @@
           "maxLength": 32
         },
         "activity": {
-          "description": "Optional. New agents send the activity object; agents before 0.1.0 send integer Unix seconds or omit the field entirely (legacy), and the service falls back to state and treats the activity as unknown.",
+          "description": "Optional. The activity object is the agent's assessment. The integer form (Unix seconds of the last tmux window activity) is deprecated: current agents still send it for sessions without a mailbox identity, so it stays accepted until agents omit the field there and every agent runs that version (§7.1). Older agents may omit the field entirely; the service then falls back to state and treats the activity as unknown.",
           "anyOf": [
             {
-              "$ref": "#/$defs/unixSeconds"
+              "$ref": "#/$defs/unixSeconds",
+              "deprecated": true
             },
             {
               "$ref": "#/$defs/activity"

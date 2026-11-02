@@ -17,11 +17,11 @@ const session = (s = server, backendId = "ssh") => ({pane:{id:s.id,server:s,tmux
 const pane = (overrides: Partial<TmuxProgramPane> = {}): TmuxProgramPane => ({sessionId:"$2",sessionCreated:123,sessionName:"worker",paneId:"%1",windowId:"@1",windowActive:true,paneActive:true,state:"idle",...overrides});
 const snapshot = (panes = [pane()], overrides: Partial<TmuxProgramSnapshot> = {}): TmuxProgramSnapshot => ({supported:true,error:"",panes,...overrides});
 const context = (panes = [pane()]) => ({servers:[server],sessions:[session()],programSnapshots:{[server.id]:snapshot(panes)},mapping:{}});
-const fallback = {state:"working",source:"activity"};
+const fallback = {state:"unknown",source:"activity"}; // T94: the hand-written note never decides the state
 beforeEach(() => {localStorage.clear();vi.mocked(invoke).mockReset().mockResolvedValue(JSON.stringify([member]));});
 afterEach(() => {vi.restoreAllMocks();});
 
-it.each([["working on tests","working"],["idle","idle"],["unknown","unknown"],["","unknown"]])("maps activity %s to %s without an attributed program",(currentTask,state)=>{
+it.each([["working on tests","unknown"],["idle","unknown"],["空闲","unknown"],["工作中·demo/T1","unknown"],["","unknown"]])("T94: hand-written note %s never decides the state (%s) without an attributed program",(currentTask,state)=>{
   expect(resolveTeamAvatar({...member,currentTask},{servers:[],sessions:[]})).toMatchObject({state,source:"activity"});
 });
 it.each(["idle","working","done","blocked","error"] as const)("program %s takes precedence over handwritten working",state=>{

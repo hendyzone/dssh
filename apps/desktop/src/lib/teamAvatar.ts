@@ -1,6 +1,6 @@
 import type { CollaborationSession } from "./collaboration";
 import type { ProgramStatusKind } from "./programStatus";
-import { matchingServers, memberActivity, memberActivityLabels, memberMappingKey, type TeamMember } from "./teamMembers";
+import { matchingServers, memberMappingKey, type TeamMember } from "./teamMembers";
 import type { TmuxProgramPane, TmuxProgramSnapshot } from "./tmuxProgramStatus";
 import type { ServerEntry } from "../types";
 import { sameSshEndpoint } from "./tmuxTabs";
@@ -28,8 +28,8 @@ const compareIds = (a: TmuxProgramPane, b: TmuxProgramPane) => a.paneId < b.pane
  * Unaddressed tmux-client output must never stand in for a member's pane status.
  */
 export function resolveTeamAvatar(member: TeamMember, context: TeamAvatarContext): TeamAvatarStatus {
-  const activity = memberActivity(member);
-  const fallback: TeamAvatarStatus = { state: activity, source: "activity", label: `${memberActivityLabels[activity]}（成员活动）` };
+  // No live data: a hand-written note never decides the state (dssh/T94).
+  const fallback: TeamAvatarStatus = { state: "unknown", source: "activity", label: "待确认（无实时数据）" };
   const mappedId = context.mapping?.[memberMappingKey(member)];
   const mapped = mappedId ? context.servers.find(server => server.id === mappedId)
     ?? context.sessions.find(session => session.pane.server.id === mappedId)?.pane.server : undefined;

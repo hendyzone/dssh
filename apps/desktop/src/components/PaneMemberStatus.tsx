@@ -4,9 +4,8 @@ import { memberDisplay } from "../lib/memberDisplay";
 import type { BoardSource } from "../lib/taskLookup";
 import { isTeamLead } from "../lib/teamLead";
 import { memberKey } from "../lib/teamMembers";
-import { teamMemberStatus } from "../lib/teamPanelStatus";
+import { memberDoingTaskFromIndex, teamMemberStatus } from "../lib/teamPanelStatus";
 import { useTeamService } from "../lib/teamService";
-import { memberTaskTarget } from "../lib/teamServicePresentation";
 import { sessionTeamMember } from "../lib/tmuxGroups";
 import type { SessionInfo } from "../types";
 import "./Collaboration.css";
@@ -35,7 +34,8 @@ export default function PaneMemberStatus({ pane, profile, board, onOpenTask, onO
     : undefined;
   const status = teamMemberStatus(member, { serviceLive: service.snapshots[project]?.live, live, lead: isTeamLead(member, self) });
   const name = memberDisplay(member).title;
-  const task = memberTaskTarget(member);
+  // The card is the board's doing card only; the hand-written 「当前在做」 is never parsed (dssh/T94).
+  const task = memberDoingTaskFromIndex(member, live);
   const card = task ? `${task.project}/${task.code}` : "";
   return <div className="pane-member" role="group" aria-label={`当前窗格 · ${name}`}>
     <span className={`team-live-dot is-${status.tone}`} role="img" aria-label={status.label} title={status.title ?? status.label}/>

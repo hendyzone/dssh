@@ -33,12 +33,11 @@ it("T13 offline stays explicit, including without a matched session",()=>{
  expect(screen.getAllByText("采集离线")).toHaveLength(2);
  expect(screen.getByRole("button",{name:"0 可派活"})).toBeTruthy();
 });
-it("T93 manual 工作中 no longer overrides; availability needs idle roster and known task index",()=>{
+it("T94 the hand-written note never decides availability; only an unknown board index does",()=>{
  const live=makeLive();live.tasks=[];
- expect(teamPanelStatus({...worker,currentTask:"工作中·demo/T13"},base,undefined,live).label).not.toBe("工作中");
- expect(teamPanelStatus({...worker,currentTask:"工作中·demo/T13"},base,undefined,live).group).toBe("other");
- expect(teamPanelStatus(worker,base,undefined,live).group).toBe("available");
- expect(teamPanelStatus({...worker,currentTask:"待确认"},base,undefined,live).group).toBe("other");
+ for(const currentTask of ["工作中·demo/T13","待确认","空闲",""]){
+   expect(teamPanelStatus({...worker,currentTask},base,undefined,live)).toEqual(base);
+ }
  expect(teamPanelStatus(worker,base,undefined,{...live,taskProjects:[]}).group).toBe("other");
  expect(teamPanelStatus(lead,base,undefined,live,true).label).not.toContain("可派活");
  expect(teamPanelStatus(worker,base,undefined,{...live,tasks:[{...makeLive().tasks![0],assignee:"another"}]}).group).toBe("available");

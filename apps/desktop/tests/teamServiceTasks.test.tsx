@@ -11,88 +11,59 @@ const server={id:"host",name:"Example",host:member.host,port:22,username:"dev",a
 const report={key:member.email,match:"exact" as const,state:"running" as const,detail:"",branch:"task/alpha-T7"};
 const board={key:"board",webUrl:"https://board.example.invalid",route:{kind:"direct" as const,url:"https://board.example.invalid"}};
 const bound=parseAgentSessions({sessions:[{host:member.host,session:member.tmux.name,project:"alpha",task_code:"T7",host_ok:true,state:"running",worktree:"/repo"}]}).sessions[0];
-const live={snapshot:{sessions:[bound],now:1,ttlSeconds:180,alertAfterSeconds:600,collectedAt:1},briefs:{},statusNames:{},offline:false,error:""};
+const doing=(code:string,assignee="worker")=>({project:"alpha",code,title:"标题 "+code,status_key:"doing",assignee,updated_at:""});
+const live={snapshot:{sessions:[bound],now:1,ttlSeconds:180,alertAfterSeconds:600,collectedAt:1},tasks:[] as ReturnType<typeof doing>[],taskProjects:["alpha"],briefs:{},statusNames:{},offline:false,error:""};
 const props=(extra:any={})=>({sessionId:"",profile:{...emptyProfile(),project:"alpha"},navigation:{server,servers:[server],onOpen:vi.fn()},members:[member],onUpdated:vi.fn(),board,live,serviceLive:{[member.email]:report},serviceIdentity:"https://team.example.invalid/alpha",...extra});
-beforeEach(()=>{vi.mocked(taskBrief).mockReset().mockImplementation(async(_source,project,code)=>({code,title:project+" task title",brief:"Focused task brief"}));});
-it("maps service branch and collector-bound project-qualified task, falling back only to a valid roster task",()=>{
- expect(serviceMemberState(member,report,bound)).toMatchObject({branch:"task/alpha-T7",project:"alpha",taskCode:"T7"});
- expect(serviceMemberState({...member,currentTask:"工作中·beta/T8"},{...report,branch:undefined})).toMatchObject({branch:"",project:"beta",taskCode:"T8"});
- expect(memberTaskTarget({...member,currentTask:"arbitrary private note"})).toBeUndefined();
-});
-it("shows a service task brief and opens the existing task card on click",async()=>{
- const openDetail=vi.fn();
- render(<TeamDynamics {...props({onOpenTaskDetail:openDetail})}/>);
- const button=await screen.findByRole("button",{name:"T7 · alpha task title"});
- expect(taskBrief).toHaveBeenCalledWith(expect.objectContaining({route:board.route}),"alpha","T7");
- fireEvent.click(button);
- await waitFor(()=>expect(openDetail).toHaveBeenCalledWith("alpha","T7"));
- expect(screen.queryByRole("article",{name:"任务 T7"})).toBeNull();
-});
-it("shows worker roster fallback with code alone when the brief is unavailable",async()=>{
- vi.mocked(taskBrief).mockResolvedValue(null);
- render(<TeamDynamics {...props({members:[{...member,role:"Worker",currentTask:"工作中·beta/T8"}],serviceLive:{[member.email]:{...report,branch:undefined}},live:{...live,snapshot:undefined}})}/>);
- const button=await screen.findByRole("button",{name:"T8"});expect(button).toBeTruthy();
- await waitFor(()=>expect(taskBrief).toHaveBeenCalledWith(expect.objectContaining({route:board.route}),"beta","T8"));
-});
-it("omits the task line when neither service nor roster identifies a task",()=>{
- render(<TeamDynamics {...props({members:[{...member,currentTask:""}],serviceLive:{[member.email]:report},live:{...live,snapshot:undefined}})}/>);
- expect(document.querySelector('.team-task-link')).toBeNull();
-});
-it("discards a previous service's late title response",async()=>{
- let resolve!:(value:any)=>void;vi.mocked(taskBrief).mockReturnValueOnce(new Promise(r=>{resolve=r;}));
- const view=render(<TeamDynamics {...props()}/>);
- view.rerender(<TeamDynamics {...props({serviceIdentity:"https://other.example.invalid/alpha",live:{...live,snapshot:{...live.snapshot,sessions:[{...bound,taskCode:"T9"}]}}})}/>);
- await screen.findByRole("button",{name:"T9 · alpha task title"});resolve({code:"T7",title:"Old private title",brief:""});
- await waitFor(()=>expect(document.body.textContent).not.toContain("Old private title"));
-});
+beforeEach(()=>{vi.mocked(taskBrief).mockReset().mockResolvedValue({code:"T7",title:"never shown",brief:""});});
 
+it("T94: the collector binding is the only session card; the hand-written note is never parsed",()=>{
+ expect(memberTaskTarget(bound)).toEqual({project:"alpha",code:"T7"});
+ expect(memberTaskTarget({...bound,stale:true})).toBeUndefined();
+ expect(memberTaskTarget({...bound,taskCode:""})).toBeUndefined();
+ expect(memberTaskTarget({...bound,state:"gone"})).toBeUndefined();
+ expect(memberTaskTarget()).toBeUndefined();
+ expect(serviceMemberState({...member,currentTask:"工作中·beta/T8"},{...report,branch:undefined})).toMatchObject({taskCode:"",branch:""});
+ expect(serviceMemberState({...member,currentTask:"空闲"},report,bound)).toMatchObject({project:"alpha",taskCode:"T7"});
+});
+it("T94: the card badge is the board's doing card and opens it; no brief fetch",async()=>{
+ const openDetail=vi.fn();
+ render(<TeamDynamics {...props({onOpenTaskDetail:openDetail,live:{...live,tasks:[doing("T12")]}})}/>);
+ const button=screen.getByRole("button",{name:/T12/});
+ expect(button.textContent).toContain("标题 T12");
+ fireEvent.click(button);
+ await waitFor(()=>expect(openDetail).toHaveBeenCalledWith("alpha","T12"));
+ expect(taskBrief).not.toHaveBeenCalled();
+});
+it.each(["工作中·beta/T8","beta/T8 进行中","空闲",""])("T94: without a doing card the badge says 无卡, whatever the note says (%j) or the collector binds",currentTask=>{
+ const {container}=render(<TeamDynamics {...props({members:[{...member,currentTask}]})}/>);
+ expect(container.querySelector(".team-card-badge.is-none")?.textContent).toBe("无卡");
+ expect(screen.queryByRole("button",{name:/T8|T7/})).toBeNull();
+ expect(taskBrief).not.toHaveBeenCalled();
+});
+it("T94: no_agent members get no card from the note either",()=>{
+ const {container}=render(<TeamDynamics {...props({members:[{...member,currentTask:"工作中·beta/T8"}],serviceLive:{[member.email]:{...report,match:"no_agent"}},live:{...live,snapshot:undefined}})}/>);
+ expect(screen.queryByRole("button",{name:/T8/})).toBeNull();
+ expect(container.querySelector(".team-card-badge.is-none")).toBeTruthy();
+});
 it("requires a unique host and tmux name for collector task binding",()=>{
  expect(memberTaskSession(member,[{...bound,host:"other.example.invalid"}])).toBeUndefined();
  expect(memberTaskSession(member,[{...bound,session:"other"}])).toBeUndefined();
  expect(memberTaskSession(member,[bound,{...bound,project:"beta"}])).toBeUndefined();
  expect(memberTaskSession(member,[bound])).toBe(bound);
 });
-it("uses roster tasks for no_agent without inventing live status",async()=>{
- render(<TeamDynamics {...props({members:[{...member,currentTask:"工作中·beta/T8"}],serviceLive:{[member.email]:{...report,match:"no_agent"}},live:{...live,snapshot:undefined}})}/>);
- expect(await screen.findByRole("button",{name:"T8 · beta task title"})).toBeTruthy();
-});
-
-it("never derives a card number from branch and rejects stale collector bindings",()=>{
- expect(memberTaskTarget({...member,currentTask:""},{...bound,taskCode:""})).toBeUndefined();
- expect(serviceMemberState({...member,currentTask:""},report)).toMatchObject({taskCode:"",branch:"task/alpha-T7"});
- expect(memberTaskTarget({...member,currentTask:"工作中·beta/T8"},{...bound,stale:true})).toEqual({project:"beta",code:"T8",manual:true});
-});
-it("does not show a previous board's late title after the route changes",async()=>{
- let resolve!:(value:any)=>void;vi.mocked(taskBrief).mockReturnValueOnce(new Promise(r=>{resolve=r;}));
- const view=render(<TeamDynamics {...props()}/>);
- view.rerender(<TeamDynamics {...props({board:{...board,key:"other-board",webUrl:"https://other-board.example.invalid"}})}/>);
- await screen.findByRole("button",{name:"T7 · alpha task title"});resolve({code:"T7",title:"Old board title",brief:""});
- await waitFor(()=>expect(document.body.textContent).not.toContain("Old board title"));
-});
-
-it("prefers an explicit roster assignment over a conflicting collector card",async()=>{
- const assigned={...member,currentTask:"工作中·dssh/T53"};
- const previous={...bound,project:"other",taskCode:"DC-15"};
- expect(memberTaskTarget(assigned,previous)).toEqual({project:"dssh",code:"T53",manual:true});
- render(<TeamDynamics {...props({members:[assigned],live:{...live,snapshot:{...live.snapshot,sessions:[previous]}}})}/>);
- expect(await screen.findByRole("button",{name:"T53 · dssh task title"})).toBeTruthy();
- expect(screen.queryByRole("button",{name:/DC-15/})).toBeNull();
-});
-it.each(["空闲","空闲·等待新任务"])("hides the task for roster idle intent %s despite a bound collector card",currentTask=>{
- expect(memberTaskTarget({...member,currentTask},bound)).toBeUndefined();
- render(<TeamDynamics {...props({members:[{...member,currentTask}]})}/>);
- expect(document.querySelector('.team-task-link')).toBeNull();expect(taskBrief).not.toHaveBeenCalled();
-});
-it.each(["","待确认·等用户","工作中·无法解析","unstructured note"])("falls back to the valid collector binding for %j",currentTask=>{
- expect(memberTaskTarget({...member,currentTask},bound)).toEqual({project:"alpha",code:"T7",manual:false});
- expect(memberTaskTarget({...member,currentTask})).toBeUndefined();
- expect(memberTaskTarget({...member,currentTask},{...bound,stale:true})).toBeUndefined();
-});
-
 it("does not display or fetch task information for the compact Lead entry",()=>{
- render(<TeamDynamics {...props({members:[{...member,role:"Lead",currentTask:"工作中·beta/T8"}]})}/>);
+ render(<TeamDynamics {...props({members:[{...member,role:"Lead",currentTask:"工作中·beta/T8"}],live:{...live,tasks:[doing("T9")]}})}/>);
  expect(screen.getByRole("button",{name:/打开 Lead/})).toBeTruthy();
- expect(screen.queryByRole("button",{name:"T8"})).toBeNull();
+ expect(screen.queryByRole("button",{name:/T8|T9/})).toBeNull();
  expect(document.querySelector(".team-live-row")).toBeNull();
  expect(taskBrief).not.toHaveBeenCalled();
+});
+it("T94: collector mode (no team service) never shows a hand-written 工作中",()=>{
+ const noted=[{...member,currentTask:"工作中·beta/T8"},{...member,email:"idle@example.invalid",tmux:{...member.tmux,id:"$2",name:"idle"},currentTask:"空闲"}];
+ // Board unreachable: no snapshot, no service. The note stays a note.
+ render(<TeamDynamics {...props({members:noted,serviceLive:undefined,live:{...live,snapshot:undefined,offline:true}})}/>);
+ expect(screen.queryByText(/^工作中/)).toBeNull();
+ expect(screen.queryByText(/（手写）/)).toBeNull();
+ expect(screen.getAllByText("状态未知")).toHaveLength(2);
+ expect(screen.queryByRole("button",{name:/T8/})).toBeNull();
 });

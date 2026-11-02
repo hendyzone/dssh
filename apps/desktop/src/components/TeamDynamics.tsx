@@ -2,8 +2,6 @@ import {presentTeamRow,teamLeadStatus,memberDoingTasks} from "../lib/teamPanelSt
 import TeamServiceAi from "./TeamServiceAi";
 import {serviceAi} from "../lib/serviceAi";
 import type { TeamLive } from "../lib/teamService";
-import { memberTaskTarget, memberTaskSession } from "../lib/teamServicePresentation";
-import { memberDoingTaskFromIndex } from "../lib/teamPanelStatus";
 import {useEffect,useRef,useState,type ReactNode} from "react";
 import {AppWindow,ExternalLink,Plus,RefreshCw} from "lucide-react";
 import {type CollaborationProfile} from "../lib/collaboration";
@@ -12,7 +10,7 @@ import {memberDisplay} from "../lib/memberDisplay";
 import type {TeamNavigation} from "./TeamMembers";
 import {Button} from "./ui/button";
 import type {BoardSource} from "../lib/taskLookup";
-import {STATUS_GROUPS,ago,briefKey,taskBrief,type TaskBrief,isLeadMember,liveSnapshot,rankMembers,summarizeTeam,useAgentSessions,type LiveSessions,type LiveStatus,type StatusGroup} from "../lib/agentSessions";
+import {STATUS_GROUPS,ago,briefKey,isLeadMember,liveSnapshot,rankMembers,summarizeTeam,useAgentSessions,type LiveSessions,type LiveStatus,type StatusGroup} from "../lib/agentSessions";
 import TeamLiveSummary from "./TeamLiveSummary";
 import TeamOffice from "./TeamOffice";
 import type { OfficeSnapshot } from "../lib/teamOffice";
@@ -20,7 +18,7 @@ import type { OfficeSnapshot } from "../lib/teamOffice";
 
 
 /** Groups rendered as one compact row per member; everything else gets a full card. */
-const COMPACT_GROUPS:ReadonlySet<StatusGroup>=new Set(["lead","available","other","rosterWorking","rosterIdle","rosterUnknown"]);
+const COMPACT_GROUPS:ReadonlySet<StatusGroup>=new Set(["lead","available","other","rosterUnknown"]);
 const FILTER_KEYS:readonly StatusGroup[]=["attention","waitLead","available"];
 /** The team list is worker-only; Lead navigation stays in the compact header. */
 const GROUP_ORDER:readonly {key:StatusGroup;label:string;title?:string}[]=[
@@ -58,22 +56,6 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
   const hasServiceStatus=serviceLive !== undefined && members.some(member=>serviceLive[memberKey(member)]?.match!=="no_agent");
   const ranked=rankMembers(members,snapshot,isLead).map(row=>presentTeamRow(row,serviceLive,live,isLead(row.member)))
     .sort((a,b)=>a.status.rank-b.status.rank||a.index-b.index);
-  const [serviceBriefs,setServiceBriefs] = useState<{scope:string;values:Record<string,TaskBrief>}>({scope:"",values:{}});
-  const targetOf = (member:TeamMember,session?:ReturnType<typeof rankMembers>[number]["session"]) => {
-    if (serviceLive !== undefined) return memberTaskTarget(member, memberTaskSession(member, snapshot?.sessions ?? []));
-    if (session?.taskCode) return { project: session.project, code: session.taskCode };
-    return memberDoingTaskFromIndex(member, live) ?? memberTaskTarget(member, session);
-  };
-  const taskTargets = [...new Map(ranked.flatMap(row=>{const target=targetOf(row.member,row.session);return target?[[briefKey(target.project,target.code),target] as const]:[];})).values()];
-  const taskScope = JSON.stringify([serviceIdentity,board?.key,taskTargets]);
-  useEffect(()=>{
-    if (!board || serviceLive === undefined) return;
-    let active=true;
-    void Promise.all(taskTargets.map(async target=>{
-      try{return [briefKey(target.project,target.code),await taskBrief({...board,key:JSON.stringify([board.key,serviceIdentity])},target.project,target.code)] as const;}catch{return undefined;}
-    })).then(items=>{if(active)setServiceBriefs({scope:taskScope,values:Object.fromEntries(items.filter((item): item is readonly [string,TaskBrief]=>!!item?.[1])) as Record<string,TaskBrief>});});
-    return()=>{active=false;};
-  },[taskScope]);
   const pinned=new Set(pinnedKeys??[]);
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState("");
@@ -160,8 +142,8 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
     const aiTarget=serviceIdentity ? {project:profile.project,key,identity:serviceIdentity} : undefined;
     const open=memberOpen(key);
     const {server}=connection(m);
-    const target=targetOf(m,session);
-    const brief=target ? serviceLive !== undefined ? (serviceBriefs.scope===taskScope?serviceBriefs.values[briefKey(target.project,target.code)]:undefined) : live.briefs[briefKey(target.project,target.code)] : undefined;
+    // Collector mode only: the bound card's caption. With the team service the card is the board's doing card.
+    const brief=session?.taskCode ? live.briefs[briefKey(session.project,session.taskCode)] : undefined;
     const now=snapshot?.now??Math.floor(Date.now()/1000);
     const identity=<strong className="team-ai-identity" title={`${display.title} · ${m.tmux.name}`}>{display.title}{display.subtitle&&<small className="team-live-subtitle">{display.subtitle}</small>}</strong>;
     const actions=<span className="team-ai-row-actions">
@@ -176,17 +158,11 @@ export default function TeamDynamics({sessionId,profile,navigation,members:roste
         <b>{doing[0].code}</b><span className="team-card-badge-title">{doing[0].title}</span>
         {doing.length>1&&<em className="team-card-badge-more">⚠ +{doing.length-1}</em>}
       </button>
-      :target?<button type="button" className="team-card-badge team-task-link" disabled={!board}
-        title={[target.code,brief?.title||brief?.brief].filter(Boolean).join(" · ")}
-        onClick={event=>{event.preventDefault();event.stopPropagation();onOpenTaskDetail?.(target.project,target.code);}}>
-        <b>{target.code}</b>{(brief?.title||brief?.brief)&&<span className="team-card-badge-title"> · {brief.title||brief.brief}</span>}
-      </button>
       :<span className="team-card-badge is-none" title="看板上没有这个箱名下进行中的卡">无卡</span>;
     const stateChip=<span className={`team-live-badge is-${status.tone}`} title={status.title}>{status.label}</span>;
-    const rosterNote=!session&&m.currentTask?.trim()?m.currentTask.trim().split(/\r?\n/)[0]:"";
     const lastCard=session?.taskCode
       ?<span className="team-compact-card" title={`上一张卡 ${session.taskCode}${brief?.brief||brief?.title?` · ${brief.brief||brief.title}`:""}`}>{session.taskCode} ✓</span>
-      :rosterNote?<span className="team-compact-card is-roster" title={m.currentTask}>{rosterNote}</span>:null;
+      :null;
     const details=<div className="team-card-expanded">
       {session&&<p className="team-live-detail">分支 {session.branch||"—"} · {session.commitHash||"—"}{session.lastLine&&<><br/>最后一行：{session.lastLine}</>}</p>}
       <TeamServiceAi ai={ai} enabled={aiEnabled}/>

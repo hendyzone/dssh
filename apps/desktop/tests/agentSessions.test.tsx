@@ -99,8 +99,9 @@ describe("rankMembers (state ordering)", () => {
       member("worker-demo-b"), member("worker-demo-a", { currentTask: "空闲·等待派工" }),
       member("worker-demo-c", { currentTask: "工作中·T1 等合入" }), member("worker-demo-d", { currentTask: "T2 进行中" }),
     ], undefined);
+    // T94: a hand-written note is not a state; without live data everyone is 「状态未知」, roster order kept.
     expect(ranked.map(r => [r.member.role, r.status.label, r.status.group])).toEqual([
-      ["c", "工作中（手写）", "rosterWorking"], ["d", "工作中（手写）", "rosterWorking"], ["a", "空闲（手写）", "rosterIdle"], ["b", "待确认（手写）", "rosterUnknown"],
+      ["b", "状态未知", "rosterUnknown"], ["a", "状态未知", "rosterUnknown"], ["c", "状态未知", "rosterUnknown"], ["d", "状态未知", "rosterUnknown"],
     ]);
     expect(ranked.every(r => !r.status.needsHuman && !r.session)).toBe(true);
   });
@@ -167,11 +168,9 @@ describe("Lead 备注 freshness and offline fallback", () => {
     expect(liveSnapshot({ offline: false })).toBeUndefined();
     expect(liveSnapshot(undefined)).toBeUndefined();
   });
-  it("roster fallback follows the hand-written 「当前在做」 and marks it as hand-written", () => {
-    expect(rosterStatus({ currentTask: "工作中·T0502等合入\n门禁已过" })).toMatchObject({ label: "工作中（手写）", group: "rosterWorking", needsHuman: false });
-    expect(rosterStatus({ currentTask: "空闲·等待派工" })).toMatchObject({ label: "空闲（手写）", group: "rosterIdle" });
-    expect(rosterStatus({})).toMatchObject({ label: "待确认（手写）", group: "rosterUnknown" });
-    expect(rosterStatus({ currentTask: "工作中" }, true)).toMatchObject({ group: "lead" });
+  it("T94: without live data the state is unknown, never read from the hand-written 「当前在做」", () => {
+    expect(rosterStatus()).toMatchObject({ label: "状态未知", group: "rosterUnknown", needsHuman: false, tone: "none" });
+    expect(rosterStatus(true)).toMatchObject({ group: "lead" });
   });
   it("recognises the Lead by role or by being the panel's own session", () => {
     const self = { tmuxId: "$9", tmuxCreated: 9, workdir: "/lead", username: "dev" };
@@ -248,7 +247,8 @@ function fakeBoard(command: string, args: { path: string }) {
   if (state.offline) return Promise.reject(new Error("看板不可达：无法连接看板服务"));
   const json = (body: unknown) => Promise.resolve({ status: 200, body: JSON.stringify(body) });
   if (args.path === "/api/v1/agent-sessions") return json(state.sessions);
-  if (args.path === "/api/v1/projects/demo/tasks") return json({tasks:[]});
+  // T94: the card badge comes only from the board's doing index, so the fixture board says what the collector says.
+  if (args.path === "/api/v1/projects/demo/tasks") return json({tasks:[{code:"T0504",title:"长标题",status_key:"doing",assignee:"demo-run",updated_at:""},{code:"T7",title:"等合入",status_key:"doing",assignee:"demo-wait",updated_at:""}]});
   if (args.path === "/api/v1/projects/demo/statuses") return json({ statuses: [{ key: "doing", name: "进行中" }, { key: "review", name: "待验收" }] });
   if (args.path === "/api/v1/projects/demo/tasks/T0504") return json({ code: "T0504", title: "长标题", brief: "告警带设备标识时主动去查" });
   if (args.path === "/api/v1/projects/demo/tasks/T0503") return json({ code: "T0503", title: "只有标题的卡", brief: "" });
@@ -307,8 +307,9 @@ it("shows 「看板离线」 instead of an error when the board is unreachable, 
   render(<TeamDynamics sessionId="ssh" profile={profile} navigation={navigation} members={roster} board={board} onUpdated={vi.fn()}/>);
   expect(await screen.findByText(/看板离线/)).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
-  // Falls back to the hand-written state instead of a blank 「unknown」.
-  expect(screen.getAllByText("待确认（手写）")).toHaveLength(2);
+  // T94: the hand-written note no longer decides the state; every row says 「状态未知」.
+  expect(screen.getAllByText("状态未知").length).toBeGreaterThan(0);
+  expect(screen.queryByText(/（手写）/)).toBeNull();
   // Roster still shows, unranked, and terminal navigation stays available.
   expect(rows().map(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent)).toEqual(["demo-host-a-codex", "demo-host-c-agy", "demo-host-a-pi"]);
   state.offline = false;
@@ -397,7 +398,7 @@ it("the merged list shows worker status and counts, with a separate Lead shortcu
     .find(r => r.querySelector(".team-ai-identity")?.firstChild?.textContent === name) as HTMLElement;
   const openRow = (row: HTMLElement) => { row.open = true; fireEvent(row, new Event("toggle")); };
   expect(within(rowOf("demo-run")).getByText("T0504")).toBeTruthy();
-  expect(within(rowOf("demo-run")).getByRole("button",{name:"T0504 · 长标题"})).toBeTruthy();
+  expect(within(rowOf("demo-run")).getByRole("button",{name:/T0504/}).textContent).toContain("长标题");
   expect(within(rowOf("demo-wait")).getByText("T7")).toBeTruthy();
   // 管理/备注区只在展开时渲染
   openRow(rowOf("demo-wait"));
@@ -417,8 +418,8 @@ it("the merged list falls back to the hand-written state and says 「看板离�
   expect(screen.queryByRole("alert")).toBeNull();
   const dynamics = statusByMember(document, ".team-dynamics .team-live-row", r => r.querySelector(".team-ai-identity")!.firstChild!.textContent!);
   expect(dynamics).toEqual({
-    "demo-run": ["rosterUnknown", "待确认（手写）"], "demo-wait": ["rosterWorking", "工作中（手写）"],
-    "demo-review": ["rosterUnknown", "待确认（手写）"], "demo-free": ["rosterIdle", "空闲（手写）"], "demo-stuck": ["rosterUnknown", "待确认（手写）"],
+    "demo-run": ["rosterUnknown", "状态未知"], "demo-wait": ["rosterUnknown", "状态未知"],
+    "demo-review": ["rosterUnknown", "状态未知"], "demo-free": ["rosterUnknown", "状态未知"], "demo-stuck": ["rosterUnknown", "状态未知"],
   });
   // 看板离线时不显示实时计数块
   expect(document.querySelectorAll(".team-live-counts")).toHaveLength(0);

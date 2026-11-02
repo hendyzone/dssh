@@ -74,7 +74,7 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
             const targets=new Map<string,{project:string;code:string}>();
             const forTargets=new Map<string,{project:string;code:string}>();
             for(const team of teams)for(const member of rosters[team.id]?.members??[]){
-              const task=memberTaskTarget(member,memberTaskSession(member,snapshot?.sessions??[]));
+              const task=memberTaskTarget(memberTaskSession(member,snapshot?.sessions??[]));
               if(task)targets.set(briefKey(task.project,task.code),task);
               const session=matchSession(member,snapshot?.sessions??[]);
               if(!team.service&&!task&&session?.taskCode&&isIdentifier(session.taskCode)&&isIdentifier(session.project)&&!session.stale&&session.hostOk)

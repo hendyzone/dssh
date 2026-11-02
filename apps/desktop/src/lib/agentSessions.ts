@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BoardError, cached, formatAge, get, isIdentifier, listProjects, listStatuses, taskIndex, taskIndexProjects, buildProjectParentMap, type IndexTask, type BoardSource } from "./taskLookup";
-import { memberActivity, memberActivityLabels, type TeamMember } from "./teamMembers";
+import type { TeamMember } from "./teamMembers";
 import { isTeamLead, type LeadPanelSelf } from "./teamLead";
 
 /**
@@ -86,7 +86,7 @@ export type LiveTone = "bad" | "warn" | "wait" | "lead" | "review" | "run" | "id
  * Display group, shared by the 「动态」 and 「成员」 pages. The `roster*` groups are the fallback
  * from the Lead's hand-written 「当前在做」 when there is no live data (board offline / not configured).
  */
-export type StatusGroup = "lead" | "attention" | "waitLead" | "review" | "running" | "available" | "other" | "rosterWorking" | "rosterIdle" | "rosterUnknown";
+export type StatusGroup = "lead" | "attention" | "waitLead" | "review" | "running" | "available" | "other" | "rosterUnknown";
 export const STATUS_GROUPS: readonly { key: StatusGroup; label: string; title?: string }[] = [
   { key: "lead", label: "Lead" },
   { key: "attention", label: "需要处理", title: "卡住、确认框、输入框残留、会话已离开但卡仍在进行中" },
@@ -95,9 +95,7 @@ export const STATUS_GROUPS: readonly { key: StatusGroup; label: string; title?: 
   { key: "running", label: "运行中" },
   { key: "available", label: "空闲·可派活", title: "worker 空闲，名下没有进行中 / 阻塞 / 待验收的卡" },
   { key: "other", label: "离开 / 未采集" },
-  { key: "rosterWorking", label: "工作中（Lead 手写）", title: "看板不可用，按 Lead 手写的「当前在做」分类，可能过期" },
-  { key: "rosterIdle", label: "空闲（Lead 手写）", title: "看板不可用，按 Lead 手写的「当前在做」分类，可能过期" },
-  { key: "rosterUnknown", label: "待确认（Lead 手写）", title: "看板不可用，按 Lead 手写的「当前在做」分类，可能过期" },
+  { key: "rosterUnknown", label: "状态未知（看板离线）", title: "看板不可用，无法判断有没有在干；Lead 备注只作参考，不参与判定" },
 ];
 export interface LiveStatus {
   /** Lower comes first. */
@@ -151,15 +149,10 @@ export function liveStatus(session: AgentSession | undefined, now: number, ttlSe
   }
 }
 
-/**
- * Fallback when there is no live data: classify by the Lead's hand-written 「当前在做」, same rule
- * the roster page always used, and say it is hand-written.
- */
-export function rosterStatus(member: Pick<TeamMember, "currentTask">, lead = false): LiveStatus {
-  const activity = memberActivity(member);
-  const group: StatusGroup = lead ? "lead" : activity === "working" ? "rosterWorking" : activity === "idle" ? "rosterIdle" : "rosterUnknown";
-  const rank = lead ? RANK.lead : { working: 20, idle: 21, unknown: 22 }[activity];
-  return { rank, group, tone: activity === "working" ? "run" : "none", label: memberActivityLabels[activity] + "（手写）", needsHuman: false, duration: "", title: "看板实时状态不可用，按 Lead 手写的「当前在做」显示，可能过期" };
+/** No live data: the hand-written 「当前在做」 is a note, not a state (dssh/T94), so the state is unknown. */
+export function rosterStatus(lead = false): LiveStatus {
+  return { rank: lead ? RANK.lead : 22, group: lead ? "lead" : "rosterUnknown", tone: "none", label: "状态未知", needsHuman: false, duration: "",
+    title: "看板实时状态不可用，无法判断有没有在干；Lead 备注只作参考" };
 }
 
 /** Lead 备注 age; older than a day is flagged as possibly stale. */
@@ -191,7 +184,7 @@ export function rankMembers<M extends Matchable>(members: M[], snapshot: Session
     .map((member, index) => {
       const lead = isLead(member);
       const session = snapshot ? matchSession(member, snapshot.sessions) : undefined;
-      const status: LiveStatus = snapshot ? liveStatus(session, snapshot.now, snapshot.ttlSeconds, lead) : rosterStatus(member, lead);
+      const status: LiveStatus = snapshot ? liveStatus(session, snapshot.now, snapshot.ttlSeconds, lead) : rosterStatus(lead);
       return { member, session, status, index };
     })
     .sort((a, b) => a.status.rank - b.status.rank

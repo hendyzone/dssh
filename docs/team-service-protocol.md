@@ -650,6 +650,13 @@ Request ([`agent-report.json`](schemas/agent-report.json)), response
 service accepts both and falls back to `state`, treating the activity as `unknown`. One pane carries
 one shape.
 
+**Deprecated: integer `activity`.** The integer form (Unix seconds of the last tmux window activity) is
+deprecated but still accepted. Current agents send the object only for sessions with a mailbox
+identity (`BOX=`) and still send the integer for every other session, so it cannot be removed yet.
+It will be removed when (1) the agent omits `activity` for sessions without a mailbox identity
+instead of sending the integer, and (2) every reporting agent runs that version (the service can
+check with `min_agent`). Until then servers MUST accept it and clients MUST treat it as `unknown`.
+
 <!-- schema: agent-report.json -->
 ```json
 {

@@ -150,11 +150,11 @@ export function officeTeamSources(profiles: Record<string, CollaborationProfile>
 const shortText = (value: string) => value.trim().split(/\r?\n/)[0].slice(0, 100);
 function taskText(member: TeamMember, board?: OfficeBoard, live?: TeamLive, service = false): Pick<OfficeMember, "taskText" | "taskSource" | "taskFull"> {
   if (service) {
-    const target = memberTaskTarget(member,board&&!board.offline?memberTaskSession(member,board.snapshot?.sessions??[]):undefined);
+    const target = memberTaskTarget(board&&!board.offline?memberTaskSession(member,board.snapshot?.sessions??[]):undefined);
     if (!target) return {taskText:"",taskFull:"",taskSource:"none"};
     const brief = board?.briefs[briefKey(target.project, target.code)];
     const full = [target.code, brief?.title || brief?.brief].filter(Boolean).join(" · ");
-    return {taskText:shortText(full),taskFull:full,taskSource:target.manual?"manual":"board"};
+    return {taskText:shortText(full),taskFull:full,taskSource:"board"};
   }
   const session = board && !board.offline && board.snapshot ? matchSession(member, board.snapshot.sessions) : undefined;
   if (session && !session.stale && session.hostOk) {

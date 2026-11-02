@@ -45,7 +45,8 @@ export function teamPanelStatus(member:TeamMember, base:LiveStatus, collector:Ag
   const projects = live.taskProjects ?? [];
   const indexReady = projects.length > 0 && (projects.includes(member.project)
     || Object.keys(parentBy).some(child => parentBy[child] === member.project && projects.includes(child)));
-  if(base.group==="available" && (!/^空闲/.test(member.currentTask?.trim()??"") || !indexReady))
+  // Only an unknown board index makes availability uncertain; a hand-written note never does (dssh/T94).
+  if(base.group==="available" && !indexReady)
     return {rank:8,tone:"none",group:"other",label:"待确认",needsHuman:false,duration:""};
   return base;
 }

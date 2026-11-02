@@ -34,17 +34,6 @@ export interface TeamMember {
 export const memberNoteFields = {responsibilities:"主要负责", quota:"额度情况", currentTask:"当前在做", notes:"其他备注"} as const;
 export type MemberNoteField = keyof typeof memberNoteFields;
 
-export const memberActivityLabels = {working:"工作中", idle:"空闲", unknown:"待确认"} as const;
-export type MemberActivity = keyof typeof memberActivityLabels;
-/** Classify only the current summary, never old details or terminal attachment. */
-export function memberActivity(member: Pick<TeamMember,"currentTask">): MemberActivity {
-  const summary=(member.currentTask??"").trim().split(/\r?\n/)[0];
-  if(/^(?:空闲|待命|idle\b)/i.test(summary))return "idle";
-  if(/^(?:未知|待确认|不确定|unknown\b)/i.test(summary))return "unknown";
-  if(/^(?:工作中|进行中|处理中|执行中|忙碌|阻塞|等待|working\b|busy\b|blocked\b|T\d+\b)/i.test(summary))return "working";
-  return "unknown";
-}
-
 /** Pick only portable location fields, never connection credentials or local IDs. */
 export function parseMember(value: unknown, project: string): TeamMember {
   const m = value as TeamMember;

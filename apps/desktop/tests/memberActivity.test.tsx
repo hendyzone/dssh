@@ -106,7 +106,7 @@ describe("team panel row",()=>{
     // 旧服务端：没有 activity，退回面板状态；没有卡显示「无卡」。
     const chipsC=rowOf("c").querySelector(".team-member-chips")!;
     expect(chipsC.textContent).toContain("无卡");
-    expect(chipsC.textContent).toContain("待确认"); // 原有面板逻辑：名单没写「空闲」
+    expect(chipsC.textContent).toContain("空闲·可派活"); // T94：名单手写不再参与判定
     expect(screen.queryByText("工作中")).toBeNull();
   });
   it("Lead rows carry no card badge",()=>{

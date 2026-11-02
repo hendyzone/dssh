@@ -41,7 +41,7 @@ it("renders the service roster and keeps navigation with service editing availab
   render(<TeamMembers sessionId="" profile={profile} navigation={{server,servers:[server],onOpen}}/>);
   fireEvent.click(await screen.findByRole("button",{name:"打开 · worker"}));
   await waitFor(()=>expect(onOpen).toHaveBeenCalledWith(member,server));
-  await expand(await screen.findByText("待确认（Lead 手写）"));
+  await expand(await screen.findByText("状态未知"));
   await expand(screen.getByRole("button",{name:"打开 · worker"}));
   for(const name of ["编辑备注 · worker","更新终端","从团队移除"])
     expect((screen.getByRole("button",{name}) as HTMLButtonElement).disabled).toBe(false);
@@ -74,7 +74,7 @@ it("retains the portable Lead guide helper without making remote writes",()=>{
 it("shows cached member notes with a service notes editor",async()=>{
   serviceRoster([{...member,responsibilities:"Backend",currentTask:"Task",notes:"Ready for review"}]);
   render(<TeamMembers sessionId="ssh" profile={profile} navigation={{server,servers:[server],onOpen:vi.fn()}}/>);
-  await expand(await screen.findByText("待确认（Lead 手写）"));
+  await expand(await screen.findByText("状态未知"));
   await expand(screen.getByRole("button",{name:"打开 · worker"}));
   expect(screen.getByLabelText("成员摘要").textContent).toContain("Task");
   fireEvent.click(screen.getByRole("button",{name:"编辑备注 · worker"}));
@@ -109,7 +109,7 @@ it("requires an explicit alias mapping when no endpoint matches and remembers it
   const onOpen = vi.fn().mockResolvedValue(undefined);
   const props = {sessionId:"lead-ssh", profile, navigation:{server:leadOnly, servers:[alias], onOpen}};
   const view = render(<TeamMembers {...props}/>);
-  await expand(await screen.findByText("待确认（Lead 手写）"));
+  await expand(await screen.findByText("状态未知"));
   const button = await screen.findByRole("button", {name:"打开 · worker"});
   await expand(button);
   expect((button as HTMLButtonElement).disabled).toBe(true);
@@ -118,7 +118,7 @@ it("requires an explicit alias mapping when no endpoint matches and remembers it
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(member, alias));
   view.unmount();
   render(<TeamMembers {...props}/>);
-  await expand(await screen.findByText("待确认（Lead 手写）"));
+  await expand(await screen.findByText("状态未知"));
   await expand(await screen.findByRole("button", {name:"打开 · worker"}));
   expect((await screen.findByLabelText("本机连接 · worker") as HTMLSelectElement).value).toBe(alias.id);
 });
@@ -126,7 +126,7 @@ it("requires an explicit alias mapping when no endpoint matches and remembers it
 it("reports stale sessions and never silently retargets a member", async () => {
   const onOpen = vi.fn().mockRejectedValue(new Error("成员会话已结束"));
   render(<TeamMembers sessionId="lead-ssh" profile={profile} navigation={{server, servers:[server], onOpen}}/>);
-  await expand(await screen.findByText("待确认（Lead 手写）"));
+  await expand(await screen.findByText("状态未知"));
   fireEvent.click(await screen.findByRole("button", {name:"打开 · worker"}));
   // 合并后打开终端走面板内的状态提示（原成员页用的是 alert，行为等价）
   expect((await screen.findByRole("status")).textContent).toContain("成员会话已结束");
@@ -278,8 +278,9 @@ it("drops the filter when the live summary disappears instead of trapping an emp
   view.rerender(ui({...live, snapshot:undefined, offline:true}));
   await waitFor(() => expect(screen.queryByRole("button", {name:"1 可派活"})).toBeNull());
   expect(screen.queryByText("没有符合的成员")).toBeNull();
-  expect(screen.getByRole("region", {name:"工作中（Lead 手写）成员"})).toBeTruthy();
-  expect(screen.getByRole("region", {name:"空闲（Lead 手写）成员"})).toBeTruthy();
+  // T94: without live data a hand-written note no longer sorts members into 工作中 / 空闲.
+  expect(screen.getByRole("region", {name:"状态未知（看板离线）成员"})).toBeTruthy();
+  expect(screen.queryByRole("region", {name:/Lead 手写/})).toBeNull();
 });
 
 it("keeps only a compact Lead navigation entry outside the roster", async () => {

@@ -7,7 +7,7 @@ import { ACTIVITY_VIEW, shownActivity } from "./memberActivity";
 /** Only no_agent delegates status to the existing collector. Missing service data stays unknown. */
 export function serviceMemberState(member: TeamMember, report: TeamLive | undefined, fallback?: AgentSession): AgentSession | undefined {
   if (report?.match === "no_agent") return fallback;
-  const target = memberTaskTarget(member, fallback);
+  const target = memberTaskTarget(fallback);
   const gone = report?.match === "gone";
   return {
     host: member.host, session: member.tmux.name, box: member.email, tool: "", project: target?.project ?? member.project,
@@ -37,17 +37,11 @@ export function serviceMemberAvatar(member: TeamMember, report: TeamLive | undef
   return {state:avatar,source:"program",label:`${label}（${report?.match === "no_agent" ? "看板状态" : "团队服务"}）`};
 }
 
-/** Roster assignments and idle intent override already bound collector cards. */
-export function memberTaskTarget(member: Pick<TeamMember,"currentTask">, session?: AgentSession): {project:string;code:string;manual:boolean}|undefined {
-  const manual=member.currentTask?.match(/^工作中\s*·\s*([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?=\s|$)/);
-  if(manual)return {project:manual[1],code:manual[2],manual:true};
-  const rosterLine=(member.currentTask??"").trim().split(/\r?\n/)[0]??"";
-  const rosterPair=rosterLine.match(/^([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\s|$)/);
-  if(rosterPair && !member.currentTask?.startsWith("空闲"))return {project:rosterPair[1],code:rosterPair[2],manual:true};
-  if(member.currentTask?.startsWith("空闲"))return;
+/** The collector's bound card of a session. The hand-written 「当前在做」 is never parsed for a card (dssh/T94). */
+export function memberTaskTarget(session?: AgentSession): {project:string;code:string}|undefined {
   const valid=(value:string)=>/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value);
   if (session && !session.stale && session.hostOk && session.state !== "gone" && valid(session.project) && valid(session.taskCode))
-    return {project:session.project,code:session.taskCode,manual:false};
+    return {project:session.project,code:session.taskCode};
 }
 /** Collector has names, not tmux incarnation IDs: require host/name and reject ambiguity. */
 export function memberTaskSession(member:TeamMember,sessions:AgentSession[]):AgentSession|undefined {
