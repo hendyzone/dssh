@@ -42,7 +42,7 @@ export default function AdventurePanel({ service, servers, sessions, onOpen, onC
       const issue = unavailable ? "团队服务离线" : machine?.online === false ? "机器离线"
         : live?.match === "replaced" ? "会话已替换" : !server ? "未找到对应连接" : undefined;
       // Offline, replaced or unreachable Leads keep their pose but lose colour.
-      const avatar = serviceMemberAvatar(member, live);
+      const avatar = serviceMemberAvatar(member, live, undefined, true);
       return { member, key, display, server, status: issue ? { ...status, tone: "offline", label: issue } : status,
         avatar: issue ? { ...avatar, state: "unknown" as const } : avatar };
     });

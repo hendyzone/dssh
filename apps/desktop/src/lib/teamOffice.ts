@@ -225,7 +225,7 @@ export function buildOfficeSnapshot(sources: OfficeTeamSource[], rosters: Record
       return {
         id: officeKey(JSON.stringify([source.id, memberKey(member)])), name: display.title,
         isLead,
-        status: source.service ? serviceMemberAvatar(member, live, context.boards?.[source.id]?.offline ? undefined : matchSession(member, context.boards?.[source.id]?.snapshot?.sessions??[])) : resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id], live, source.service),
+        status: source.service ? serviceMemberAvatar(member, live, context.boards?.[source.id]?.offline ? undefined : matchSession(member, context.boards?.[source.id]?.snapshot?.sessions??[]), isLead) : resolveTeamAvatar(member, context), ...taskText(member, context.boards?.[source.id], live, source.service),
         ...(doing ? { doing, taskText: shortText(`${doing.code} · ${doing.title}`), taskFull: `${doing.code} · ${doing.title}`, taskSource: "board" as const } : {}),
         ...(activity ? { activity: { label: activity.label, tone: activity.tone, title: activity.title, duration: activity.duration, attention: activity.needsHuman } } : {}),
         paletteKey: officeKey(memberKey(member)),

@@ -8,6 +8,7 @@ import TeamServiceAi from "../src/components/TeamServiceAi";
 import AdventurePanel from "../src/components/AdventurePanel";
 import {ACTIVITY_VIEW,CARD_IDLE_ALERT_SECONDS,activityStatus,aiIsOld,parseActivity,shownActivity,type ActivityState} from "../src/lib/memberActivity";
 import {teamPanelStatus} from "../src/lib/teamPanelStatus";
+import {serviceMemberAvatar} from "../src/lib/teamServicePresentation";
 import {buildOfficeSnapshot} from "../src/lib/teamOffice";
 import {emptyProfile} from "../src/lib/collaboration";
 import {memberKey,type TeamMember} from "../src/lib/teamMembers";
@@ -74,6 +75,15 @@ describe("three combinations that need a look",()=>{
   it("Lead shows background activity as idle",()=>{
     expect(activityStatus(act("background_running"),false,NOW,true)?.label).toBe("⏸ 空闲");
     expect(shownActivity(act("background_queued"),true)).toBe("idle");
+  });
+  it("Lead avatar idle on background; worker avatar working on background_queued",()=>{
+    const report=(activity:ReturnType<typeof act>)=>({match:"exact" as const,activity});
+    expect(serviceMemberAvatar(member("demo-lead","Lead"),report(act("background_running")),undefined,true).state).toBe("idle");
+    expect(serviceMemberAvatar(member("w"),report(act("background_queued")),undefined,false).state).toBe("working");
+  });
+  it("mutation: Lead background avatar without lead flag stays working",()=>{
+    const report=(activity:ReturnType<typeof act>)=>({match:"exact" as const,activity});
+    expect(serviceMemberAvatar(member("demo-lead","Lead"),report(act("background_running")),undefined,false).state).toBe("working");
   });
   it("card + idle lights up only after 10 minutes idle (user, T93)",()=>{
     expect(CARD_IDLE_ALERT_SECONDS).toBe(600);

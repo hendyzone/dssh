@@ -23,19 +23,23 @@ export function serviceMemberStatus(member: TeamMember, report: TeamLive | undef
   const session = serviceMemberState(member, report, fallback);
   return {session, status: liveStatus(session, now, 180, lead)};
 }
-export function serviceMemberAvatar(member: TeamMember, report: TeamLive | undefined, fallback?: AgentSession): TeamAvatarStatus {
+export function serviceMemberAvatar(member: TeamMember, report: TeamLive | undefined, fallback?: AgentSession, lead = false): TeamAvatarStatus {
   const session = serviceMemberState(member, report, fallback);
   const state = !session || session.stale || !session.hostOk ? "unknown" : session.state;
-  // The activity (plan §3.4) drives the person when the service has one; otherwise the pane state.
+  const actState = report?.activity?.state ?? "";
   const fromActivity: Record<string, TeamAvatarStatus["state"]> = {
     working:"working",idle:"idle",stalled:"error",waiting_human:"blocked",offline:"unknown",
     background_running:"working",background_queued:"working",
   };
-  const activity = !session?.stale ? fromActivity[report?.activity?.state ?? ""] : undefined;
+  let mapped = fromActivity[actState];
+  if (lead && (actState === "background_running" || actState === "background_queued")) {
+    mapped = "idle";
+  }
+  const activity = !session?.stale ? mapped : undefined;
   const avatar: TeamAvatarStatus["state"] = activity ?? (state === "running" ? "working" : state === "idle" ? "idle"
     : state === "stuck" ? "error" : state === "waiting_input" || state === "input_pending" ? "blocked" : "unknown");
   const labels = {working:"工作中",idle:"空闲",error:"卡住",blocked:"等待处理",unknown:"待确认",done:"已完成"};
-  const shown = activity && report?.activity ? shownActivity(report.activity) : undefined;
+  const shown = report?.activity ? shownActivity(report.activity, lead) : undefined;
   const label = shown ? ACTIVITY_VIEW[shown].label : labels[avatar];
   return {state:avatar,source:"program",label:`${label}（${report?.match === "no_agent" ? "看板状态" : "团队服务"}）`};
 }
