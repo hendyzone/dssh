@@ -85,6 +85,13 @@ describe("three combinations that need a look",()=>{
     const report=(activity:ReturnType<typeof act>)=>({match:"exact" as const,activity});
     expect(serviceMemberAvatar(member("demo-lead","Lead"),report(act("background_running")),undefined,false).state).toBe("working");
   });
+  it("stale session ignores activity for avatar label",()=>{
+    const report={match:"exact" as const,stale:true,activity:act("working")};
+    const avatar=serviceMemberAvatar(member("w"),report,undefined);
+    expect(avatar.state).toBe("unknown");
+    expect(avatar.label).toContain("待确认");
+    expect(avatar.label).not.toContain("干活中");
+  });
   it("card + idle lights up only after 10 minutes idle (user, T93)",()=>{
     expect(CARD_IDLE_ALERT_SECONDS).toBe(600);
     expect(teamPanelStatus(member("w"),base,undefined,card,false,act("idle","r",9))).toMatchObject({group:"available",needsHuman:false,label:"⏸ 空闲"});
