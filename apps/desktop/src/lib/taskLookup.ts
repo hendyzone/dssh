@@ -222,6 +222,14 @@ export function taskIndexProjects(memberProjects: string[], catalog: BoardProjec
   }
   return [...out].sort();
 }
+/** Team roster slug → slug used on the taskboard (dssh/T97). */
+export function rosterTaskboardProject(rosterProject: string, boardProject?: string): string {
+  return boardProject && isIdentifier(boardProject) ? boardProject : rosterProject;
+}
+/** Distinct taskboard project slugs for a roster (respecting per-team board_project). */
+export function rosterTaskIndexInputs(members: {project: string; boardProject?: string}[]): string[] {
+  return [...new Set(members.map(m => rosterTaskboardProject(m.project, m.boardProject)).filter(p => isIdentifier(p)))].sort();
+}
 /** Task belongs to the member's roster project or a descendant board project. */
 export function taskInMemberScope(taskProject: string, memberProject: string, parentBy: Record<string, string>): boolean {
   if (taskProject === memberProject) return true;

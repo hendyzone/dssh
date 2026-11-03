@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { emptyProfile, type CollaborationProfile, type CollaborationSession } from "./collaboration";
 import { briefKey, fetchAgentSessions, matchSession, taskBrief, taskLifecycle } from "./agentSessions";
-import { boardSource, buildProjectParentMap, isIdentifier, listProjects, taskIndex, taskIndexProjects, type TaskLookupSettings } from "./taskLookup";
+import { boardSource, buildProjectParentMap, isIdentifier, listProjects, taskIndex, taskIndexProjects, rosterTaskIndexInputs, type TaskLookupSettings } from "./taskLookup";
 import { useTeamService } from "./teamService";
 import { buildOfficeMailDirectory, type OfficeMailDirectory, buildOfficeSnapshot, officeTeamSources, officeKey, parseForTask, type OfficeTeamSource, type OfficeBoard, type OfficeRoster, type OfficeSnapshot } from "./teamOffice";
 import type { TmuxProgramSnapshot } from "./tmuxProgramStatus";
@@ -39,7 +39,7 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
     else if(state==="offline"||team?.offline)notice=`团队服务离线 · ${team?.receivedAt ? `数据截至 ${new Date(team.receivedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false})}`:"数据时间未知"}`;
     else if(state==="error")notice="团队服务暂不可用，请检查服务配置";
     else if(!team)notice="正在读取团队服务…";
-    return [source.id,{members:team?.members??[],live:team?.live??{},ai:team?.ai??{},machines:team?.machines??{},aiEnabled:service.status.ai_enabled,availability:team?(state==="online"?"ready":"offline"):state==="error"?"error":"loading",notice} satisfies OfficeRoster];
+    return [source.id,{members:team?.members??[],live:team?.live??{},ai:team?.ai??{},machines:team?.machines??{},aiEnabled:service.status.ai_enabled,boardProject:team?.boardProject,availability:team?(state==="online"?"ready":"offline"):state==="error"?"error":"loading",notice} satisfies OfficeRoster];
   })),[sources,rosterKey,service.status.state,service.status.ai_enabled]);
   const boardKey=active?JSON.stringify([sources,lookupSettings,Object.values(rosters).map(roster=>roster.members)]):"";
   const currentBoards = boardsScope === boardKey ? boards : {};
@@ -62,7 +62,11 @@ export function useTeamOffice({ profiles, servers, sessions, lookupSettings, the
           try {
             const snapshot=await fetchAgentSessions(source).catch(()=>undefined);
             // Doing cards come from the board index, like the team panel (plan §3.4 card badge).
-            const rosterProjects=[...new Set(teams.flatMap(team=>(rosters[team.id]?.members??[]).map(member=>member.project)))];
+            const rosterMembers=teams.flatMap(team=>(rosters[team.id]?.members??[]).map(member=>{
+              const boardProject=rosters[team.id]?.boardProject;
+              return boardProject ? {...member,boardProject} : member;
+            }));
+            const rosterProjects=rosterTaskIndexInputs(rosterMembers);
             let parentBy:Record<string,string>={};let indexProjects=rosterProjects;
             try{const catalog=await listProjects(source);parentBy=buildProjectParentMap(catalog);indexProjects=taskIndexProjects(rosterProjects,catalog);}catch{/* roster projects only */}
             const tasks:NonNullable<OfficeBoard["tasks"]>=[];

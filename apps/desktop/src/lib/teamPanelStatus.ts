@@ -1,5 +1,5 @@
 import {liveSnapshot, rankMembers, type AgentSession, type LiveSessions, type LiveStatus} from "./agentSessions";
-import {taskInMemberScope} from "./taskLookup";
+import {taskInMemberScope, rosterTaskboardProject} from "./taskLookup";
 import {memberKey, type TeamMember} from "./teamMembers";
 import type {TeamLive} from "./teamService";
 import {serviceMemberStatus} from "./teamServicePresentation";
@@ -14,8 +14,9 @@ function memberAssigneeKeys(member: TeamMember): Set<string> {
 export function memberDoingTasks(member: TeamMember, live: Pick<LiveSessions, "tasks" | "parentBy">): (IndexTask & {project:string})[] {
   const identities = memberAssigneeKeys(member);
   const parentBy = live.parentBy ?? {};
+  const scope = rosterTaskboardProject(member.project, member.boardProject);
   return (live.tasks ?? []).filter(entry => entry.status_key === "doing" && identities.has(entry.assignee.trim().toLowerCase())
-    && taskInMemberScope(entry.project, member.project, parentBy));
+    && taskInMemberScope(entry.project, scope, parentBy));
 }
 /** First doing card from the board index. */
 export function memberDoingTaskFromIndex(member: TeamMember, live: Pick<LiveSessions, "tasks" | "parentBy">): {project:string;code:string}|undefined {
@@ -43,8 +44,9 @@ export function teamPanelStatus(member:TeamMember, base:LiveStatus, collector:Ag
       title:"有进行中的卡，但会话空闲：交付后忘了移卡，或卡住了没表现出来"};
   const parentBy = live.parentBy ?? {};
   const projects = live.taskProjects ?? [];
-  const indexReady = projects.length > 0 && (projects.includes(member.project)
-    || Object.keys(parentBy).some(child => parentBy[child] === member.project && projects.includes(child)));
+  const scope = rosterTaskboardProject(member.project, member.boardProject);
+  const indexReady = projects.length > 0 && (projects.includes(scope)
+    || Object.keys(parentBy).some(child => parentBy[child] === scope && projects.includes(child)));
   // Only an unknown board index makes availability uncertain; a hand-written note never does (dssh/T94).
   if(base.group==="available" && !indexReady)
     return {rank:8,tone:"none",group:"other",label:"待确认",needsHuman:false,duration:""};

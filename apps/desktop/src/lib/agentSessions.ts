@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BoardError, cached, formatAge, get, isIdentifier, listProjects, listStatuses, taskIndex, taskIndexProjects, buildProjectParentMap, type IndexTask, type BoardSource } from "./taskLookup";
+import { BoardError, cached, formatAge, get, isIdentifier, listProjects, listStatuses, taskIndex, taskIndexProjects, buildProjectParentMap, rosterTaskIndexInputs, type IndexTask, type BoardSource } from "./taskLookup";
 import type { TeamMember } from "./teamMembers";
 import { isTeamLead, type LeadPanelSelf } from "./teamLead";
 
@@ -273,12 +273,14 @@ const empty = (): LiveSessions => ({ briefs: {}, statusNames: {}, offline: false
  * Poll the collector every minute while mounted (skipped while the window is hidden); the timer
  * dies with the component. Briefs and status names are fetched for the given members' cards only.
  */
-export function useAgentSessions(source: BoardSource | undefined, members: (Pick<TeamMember, "host" | "workdir" | "email" | "tmux"> & {project?:string})[], interval = SESSION_REFRESH_MS): LiveSessions {
+export function useAgentSessions(source: BoardSource | undefined, members: (Pick<TeamMember, "host" | "workdir" | "email" | "tmux"> & {project?:string; boardProject?: string})[], interval = SESSION_REFRESH_MS): LiveSessions {
   const [state, setState] = useState<LiveSessions>(empty);
   const sourceRef = useRef(source);
   sourceRef.current = source;
   const key = source?.key ?? "";
-  const projectsKey = JSON.stringify([...new Set(members.map(m=>m.project).filter((p):p is string=>!!p && isIdentifier(p)))].sort());
+  const projectsKey = JSON.stringify(rosterTaskIndexInputs(
+    members.flatMap(m => m.project && isIdentifier(m.project) ? [{ project: m.project, boardProject: m.boardProject }] : []),
+  ));
   useEffect(() => {
     setState(empty());
     if (!key) return;

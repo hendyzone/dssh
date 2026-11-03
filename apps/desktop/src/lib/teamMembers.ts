@@ -30,6 +30,8 @@ export interface TeamMember {
   tenure?: "resident" | "temporary";
   /** 临时成员为哪张卡而开：`<项目>/<编号>`。 */
   for_task?: string;
+  /** 看板项目 slug；来自团队服务 `board_project`，仅 dssh 侧注入，不在 roster JSON 里。 */
+  boardProject?: string;
 }
 export const memberNoteFields = {responsibilities:"主要负责", quota:"额度情况", currentTask:"当前在做", notes:"其他备注"} as const;
 export type MemberNoteField = keyof typeof memberNoteFields;

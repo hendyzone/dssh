@@ -44,6 +44,8 @@ export interface TeamServiceProject {
   identity: string;
   /** Human-readable project title when the team service provides one. */
   title?: string;
+  /** Taskboard slug when it differs from the team project (team service board_project). */
+  boardProject?: string;
 }
 export interface ProjectCatalog { state: "unknown" | "ready" | "error"; projects: string[]; message?: string }
 export interface TeamServiceState {
@@ -110,6 +112,7 @@ function persist() {
     localStorage.setItem(TEAM_SERVICE_CACHE, JSON.stringify({ url: current.url,
       snapshots: Object.fromEntries(Object.entries(current.snapshots).map(([key, p]) => [key, {
         project: p.project, seq: p.seq, members: p.members, ai: p.ai, receivedAt: p.receivedAt,
+        ...(p.boardProject ? { board_project: p.boardProject } : {}),
       }])) }));
   } catch { /* State remains available in memory when local persistence is unavailable. */ }
 }
@@ -146,10 +149,11 @@ function snapshotOf(value: unknown, url: string, status: TeamServiceStatus, hist
     const offline = status.state !== 'online';
     const title = typeof value.title === "string" && value.title.trim() ? value.title.trim()
       : typeof value.display_name === "string" && value.display_name.trim() ? value.display_name.trim() : undefined;
+    const boardProject = typeof value.board_project === "string" && projectPattern.test(value.board_project) ? value.board_project : undefined;
     return { project: value.project, seq: value.seq, lseq: sequence(value.lseq) ? value.lseq : 0,
       members, ai: value.ai, live: liveMap(value.live), machines: object(value.machines) ? value.machines : {},
       receivedAt: savedAt ?? (cached || offline ? cachedTime : Date.now()), offline, status: status.state,
-      identity: serviceProjectIdentity(url, value.project), ...(title ? { title } : {}) };
+      identity: serviceProjectIdentity(url, value.project), ...(title ? { title } : {}), ...(boardProject ? { boardProject } : {}) };
   } catch { return; }
 }
 function loadCache() {
