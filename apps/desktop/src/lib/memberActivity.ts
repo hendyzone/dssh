@@ -1,7 +1,16 @@
 import { ago, type LiveStatus, type LiveTone } from "./agentSessions";
 
 /** Team service live `activity` (protocol §6.4): the agent's own assessment or a service-derived state. */
-export type ActivityState = "working" | "stalled" | "waiting_human" | "idle" | "unattached" | "offline" | "unknown";
+export type ActivityState =
+  | "working"
+  | "stalled"
+  | "waiting_human"
+  | "idle"
+  | "unattached"
+  | "offline"
+  | "unknown"
+  | "background_running"
+  | "background_queued";
 export interface ServiceActivity {
   state: ActivityState;
   reason?: string;
@@ -10,7 +19,10 @@ export interface ServiceActivity {
   last_event?: string | null;
   open_tool?: string | null;
 }
-const STATES = new Set<ActivityState>(["working", "stalled", "waiting_human", "idle", "unattached", "offline", "unknown"]);
+const STATES = new Set<ActivityState>([
+  "working", "stalled", "waiting_human", "idle", "unattached", "offline", "unknown",
+  "background_running", "background_queued",
+]);
 
 /** Untrusted wire value → activity, or undefined when absent / malformed (older services send none). */
 export function parseActivity(value: unknown): ServiceActivity | undefined {
@@ -29,19 +41,29 @@ export function parseActivity(value: unknown): ServiceActivity | undefined {
   };
 }
 
+type ShownWorkerActivity = keyof typeof ACTIVITY_VIEW;
+
 /** Icon + word for every state the panel shows itself; colour is never the only cue. */
-export const ACTIVITY_VIEW: Record<"working" | "stalled" | "waiting_human" | "idle" | "offline", { icon: string; label: string; tone: LiveTone }> = {
+export const ACTIVITY_VIEW: Record<
+  "working" | "stalled" | "waiting_human" | "idle" | "offline" | "background_running" | "background_queued",
+  { icon: string; label: string; tone: LiveTone }
+> = {
   working: { icon: "▶", label: "干活中", tone: "run" },
   waiting_human: { icon: "✋", label: "等人", tone: "wait" },
   stalled: { icon: "⚠", label: "疑似卡住", tone: "bad" },
   idle: { icon: "⏸", label: "空闲", tone: "idle" },
   offline: { icon: "⊘", label: "离线", tone: "offline" },
+  background_running: { icon: "◐", label: "后台任务中", tone: "run" },
+  background_queued: { icon: "◷", label: "排队中", tone: "run" },
 };
-export type ShownActivity = keyof typeof ACTIVITY_VIEW;
+export type ShownActivity = ShownWorkerActivity;
 
 /** unknown / unattached / missing fall back to the existing pane status (old services, boxes without hooks). */
-export function shownActivity(activity: ServiceActivity | undefined): ShownActivity | undefined {
+export function shownActivity(activity: ServiceActivity | undefined, lead = false): ShownActivity | undefined {
   const state = activity?.state;
+  if (state === "background_running" || state === "background_queued") {
+    return lead ? "idle" : state;
+  }
   return state && state in ACTIVITY_VIEW ? state as ShownActivity : undefined;
 }
 
@@ -57,7 +79,7 @@ export const CARD_IDLE_ALERT_SECONDS = 10 * 60;
  * session, and a card whose session sits idle (delivered but not moved, or quietly stuck).
  */
 export function activityStatus(activity: ServiceActivity, hasCard: boolean, now: number, lead = false): LiveStatus | undefined {
-  const shown = shownActivity(activity);
+  const shown = shownActivity(activity, lead);
   if (!shown) return undefined;
   const view = ACTIVITY_VIEW[shown];
   const since = activity.since ? Date.parse(activity.since) / 1000 : 0;
@@ -70,6 +92,9 @@ export function activityStatus(activity: ServiceActivity, hasCard: boolean, now:
       return { rank: 1, tone: view.tone, group: "attention", label, needsHuman: true, duration, title };
     case "stalled":
       return { rank: hasCard ? 0 : 2, tone: view.tone, group: "attention", label, needsHuman: true, duration, title };
+    case "background_running":
+    case "background_queued":
+      return { rank: 5, tone: view.tone, group: "running", label, needsHuman: false, duration, title };
     case "idle":
       return hasCard && since > 0 && now - since >= CARD_IDLE_ALERT_SECONDS
         ? { rank: 3, tone: "warn", group: "attention", label: `${label} · 有卡未动`, needsHuman: true, duration, title: [title, "有进行中的卡，但会话空闲：交付后忘了移卡，或卡住了没表现出来"].filter(Boolean).join(" · ") }

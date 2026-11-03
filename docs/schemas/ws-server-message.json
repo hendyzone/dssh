@@ -921,6 +921,8 @@
             "waiting_human",
             "idle",
             "unattached",
+            "background_running",
+            "background_queued",
             "offline",
             "unknown"
           ]

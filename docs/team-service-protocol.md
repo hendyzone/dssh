@@ -572,7 +572,7 @@ Live item fields ([`team-snapshot.json#/$defs/liveItem`](schemas/team-snapshot.j
 | `tool` | Optional agent-observed process tool: `claude`, `codex`, `pi`, `dsh`, `cursor`, or `agy`. Omitted when unknown; never inferred from member roles or mailbox names. |
 | `at` | time of the agent observation this item reflects |
 | `stale` | `true` when the machine's agent has not reported for 30 s; values are the last known ones |
-| `activity` | Activity state ([`liveActivity`](schemas/team-snapshot.json)). From an agent that sends the §7.1 object it is that object unchanged (`working`, `stalled`, `waiting_human`, `idle`, `unattached`). The service derives `{"state": "unknown"}` when the agent sent no object (older agent, or no session matched yet / `no_agent`) and `offline` when `match` is `gone` or the item is `stale` (a stale item keeps the last assessment's other fields). Only `state` is guaranteed; an older service omits the field, which clients treat as `unknown` |
+| `activity` | Activity state ([`liveActivity`](schemas/team-snapshot.json)). From an agent that sends the §7.1 object it is that object unchanged (`working`, `stalled`, `waiting_human`, `idle`, `unattached`, `background_running`, `background_queued`). The service derives `{"state": "unknown"}` when the agent sent no object (older agent, or no session matched yet / `no_agent`) and `offline` when `match` is `gone` or the item is `stale` (a stale item keeps the last assessment's other fields). Only `state` is guaranteed; an older service omits the field, which clients treat as `unknown` |
 
 ### 6.5 AI push
 
@@ -686,7 +686,7 @@ seconds of the last observed activity (see the second example above):
 
 | Field | Type | Meaning |
 |---|---|---|
-| `state` | enum | `working`, `stalled`, `waiting_human`, `idle`, or `unattached` (the box has never written an activity file — §7.6 — so the state comes from the pane classifier and process evidence only). The agent never sends `offline`; the service derives it (no report for 30 s, or the session is gone) |
+| `state` | enum | `working`, `stalled`, `waiting_human`, `idle`, `unattached`, `background_running`, or `background_queued` (post-turn background work — dssh/T98). The agent never sends `offline`; the service derives it (no report for 30 s, or the session is gone) |
 | `reason` | string ≤ 200 | free text shown next to the state, empty/absent if none |
 | `since` | RFC 3339 UTC | when the state was entered |
 | `last_event_ts` | RFC 3339 UTC or `null` | timestamp of the latest activity event (§7.6), `null` if none |

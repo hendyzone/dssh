@@ -27,7 +27,10 @@ export function serviceMemberAvatar(member: TeamMember, report: TeamLive | undef
   const session = serviceMemberState(member, report, fallback);
   const state = !session || session.stale || !session.hostOk ? "unknown" : session.state;
   // The activity (plan §3.4) drives the person when the service has one; otherwise the pane state.
-  const fromActivity: Record<string, TeamAvatarStatus["state"]> = {working:"working",idle:"idle",stalled:"error",waiting_human:"blocked",offline:"unknown"};
+  const fromActivity: Record<string, TeamAvatarStatus["state"]> = {
+    working:"working",idle:"idle",stalled:"error",waiting_human:"blocked",offline:"unknown",
+    background_running:"working",background_queued:"working",
+  };
   const activity = !session?.stale ? fromActivity[report?.activity?.state ?? ""] : undefined;
   const avatar: TeamAvatarStatus["state"] = activity ?? (state === "running" ? "working" : state === "idle" ? "idle"
     : state === "stuck" ? "error" : state === "waiting_input" || state === "input_pending" ? "blocked" : "unknown");

@@ -333,7 +333,9 @@
         "stalled",
         "waiting_human",
         "idle",
-        "unattached"
+        "unattached",
+        "background_running",
+        "background_queued"
       ]
     },
     "activityEventName": {

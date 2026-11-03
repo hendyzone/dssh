@@ -24,12 +24,12 @@ const live=(tasks:ReturnType<typeof task>[]=[]):LiveSessions=>({tasks,taskProjec
 const base:LiveStatus={rank:6,tone:"run",group:"running",label:"运行中",needsHuman:false,duration:""};
 const act=(state:ActivityState,reason="r",since=5)=>({state,reason,since:iso(since),source:"events" as const});
 
-describe("seven activity states",()=>{
-  it("the five shown states carry an icon and a word, each different (readable in greyscale)",()=>{
+describe("activity states on the panel",()=>{
+  it("shown worker states carry an icon and a word, each different (readable in greyscale)",()=>{
     const labels=Object.values(ACTIVITY_VIEW).map(v=>`${v.icon} ${v.label}`);
-    expect(new Set(labels).size).toBe(5);
-    expect(new Set(Object.values(ACTIVITY_VIEW).map(v=>v.icon)).size).toBe(5);
-    for(const state of ["working","stalled","waiting_human","idle","offline"] as const){
+    expect(new Set(labels).size).toBe(7);
+    expect(new Set(Object.values(ACTIVITY_VIEW).map(v=>v.icon)).size).toBe(7);
+    for(const state of ["working","stalled","waiting_human","idle","offline","background_running","background_queued"] as const){
       const status=teamPanelStatus(member("w"),base,undefined,live(),false,act(state));
       expect(status.label.startsWith(ACTIVITY_VIEW[state].icon+" "+ACTIVITY_VIEW[state].label)).toBe(true);
       expect(status.duration).toBe("5 分钟");
@@ -64,6 +64,16 @@ describe("three combinations that need a look",()=>{
     expect(working).toMatchObject({group:"running",needsHuman:false});
     const order=[plainIdle,working,cardIdle,waiting,cardStalled].sort((a,b)=>a.rank-b.rank).map(s=>s.label);
     expect(order.slice(0,3)).toEqual([cardStalled.label,waiting.label,cardIdle.label]);
+  });
+  it("card + background states stay in running and do not need a human",()=>{
+    const card=live([task("T1","w")]);
+    for(const state of ["background_running","background_queued"] as const){
+      expect(teamPanelStatus(member("w"),base,undefined,card,false,act(state))).toMatchObject({group:"running",needsHuman:false});
+    }
+  });
+  it("Lead shows background activity as idle",()=>{
+    expect(activityStatus(act("background_running"),false,NOW,true)?.label).toBe("⏸ 空闲");
+    expect(shownActivity(act("background_queued"),true)).toBe("idle");
   });
   it("card + idle lights up only after 10 minutes idle (user, T93)",()=>{
     expect(CARD_IDLE_ALERT_SECONDS).toBe(600);
