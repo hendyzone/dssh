@@ -103,7 +103,6 @@ export interface OfficeTeamSource {
 export interface OfficeRoster {
   availability: OfficeSource["availability"]; notice: string; members: TeamMember[]; live?: Record<string,TeamLive>; ai?: Record<string,unknown>; aiEnabled?: boolean | null;
   machines?: Record<string, unknown>;
-  boardProject?: string;
 }
 export interface OfficeBoard {
   snapshot?: SessionsSnapshot; briefs: Record<string, TaskBrief>; offline: boolean;

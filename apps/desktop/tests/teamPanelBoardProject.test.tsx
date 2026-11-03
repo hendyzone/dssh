@@ -5,6 +5,8 @@ import { briefKey, parseAgentSessions, type LiveSessions } from "../src/lib/agen
 import { memberDoingTaskFromIndex } from "../src/lib/teamPanelStatus";
 import { emptyProfile } from "../src/lib/collaboration";
 import type { TeamMember } from "../src/lib/teamMembers";
+import { buildOfficeSnapshot } from "../src/lib/teamOffice";
+import { membersWithBoardProject } from "../src/lib/teamService";
 import type { ServerEntry } from "../src/types";
 
 const server: ServerEntry = { id: "s", name: "Server", host: "example.test", port: 22, username: "dev", authMethod: "password" };
@@ -35,7 +37,7 @@ const props = (members: TeamMember[], live: LiveSessions) => ({
 });
 
 it("T97 shows a doing card when team roster and board project slugs differ", () => {
-  const member = worker("demo-worker", "team-alpha", "board-alpha");
+  const member = membersWithBoardProject([worker("demo-worker", "team-alpha")], "board-alpha")[0];
   const live = liveFor(member, "board-alpha", "T97");
   render(<TeamDynamics {...props([member], live)} />);
   expect(screen.getByRole("button", { name: /T97/ })).toBeTruthy();
@@ -56,4 +58,26 @@ it("T97 without mapping misses cards on the board project slug", () => {
   render(<TeamDynamics {...props([member], live)} />);
   expect(screen.queryByRole("button", { name: /T97/ })).toBeNull();
   expect(memberDoingTaskFromIndex(member, live)).toBeUndefined();
+});
+
+it("T97 membersWithBoardProject matches snapshotOf member injection", () => {
+  const base = worker("demo-worker", "team-alpha");
+  expect(membersWithBoardProject([base], "board-alpha")[0].boardProject).toBe("board-alpha");
+  expect(membersWithBoardProject([base], "team-alpha")[0].boardProject).toBeUndefined();
+});
+
+it("T97 buildOfficeSnapshot shows doing card when member carries boardProject", () => {
+  const member = membersWithBoardProject([worker("demo-worker", "team-alpha")], "board-alpha")[0];
+  const board = {
+    offline: false,
+    briefs: {},
+    tasks: [{ project: "board-alpha", code: "T97", title: "Card", status_key: "doing", assignee: "demo-worker", updated_at: "" }],
+    parentBy: {},
+  };
+  const snap = buildOfficeSnapshot(
+    [{ id: "svc", project: "team-alpha", label: "team", profile: { ...emptyProfile(), project: "team-alpha" }, service: true }],
+    { svc: { availability: "ready", notice: "", members: [member] } },
+    { servers: [server], sessions: [], themeId: "one-light", animationEnabled: false, boards: { svc: board } },
+  );
+  expect(snap.projects[0].sources[0].members[0].doing).toMatchObject({ code: "T97", title: "Card" });
 });

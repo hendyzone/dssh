@@ -134,24 +134,33 @@ function liveMap(value: unknown): Record<string, ServiceLive> {
       return [key, parsed ? { ...rest, activity: parsed } : rest];
     })) as unknown as Record<string, ServiceLive>;
 }
+function attachBoardProject(member: TeamMember, boardProject?: string): TeamMember {
+  if (boardProject && boardProject !== member.project) return { ...member, boardProject };
+  return member;
+}
+export function membersWithBoardProject(members: TeamMember[], boardProject?: string): TeamMember[] {
+  return members.map(member => attachBoardProject(member, boardProject));
+}
 function snapshotOf(value: unknown, url: string, status: TeamServiceStatus, historical = false): TeamServiceProject | undefined {
   if (!object(value) || typeof value.project !== 'string' || !projectPattern.test(value.project) ||
       !sequence(value.seq) || !Array.isArray(value.members) || value.members.length > 100 || !object(value.ai)) return;
   try {
-    const members = value.members.map(member => parseMember(member, value.project as string));
-    if (new Set(members.map(memberKey)).size !== members.length) return;
+    const boardProject = typeof value.board_project === "string" && projectPattern.test(value.board_project) ? value.board_project : undefined;
+    const roster = membersWithBoardProject(
+      value.members.map(member => parseMember(member, value.project as string)),
+      boardProject,
+    );
+    if (new Set(roster.map(memberKey)).size !== roster.length) return;
     const old = current.url === url ? current.snapshots[value.project] : undefined;
-    // Legacy cached snapshots have no timestamp. Never invent one for cached data.
-    const savedAt = typeof value.savedAt === 'number' && Number.isFinite(value.savedAt) ? value.savedAt : null;
-    const cachedTime = savedAt ?? (typeof value.receivedAt === 'number' && Number.isFinite(value.receivedAt) ? value.receivedAt :
+    const savedAt = typeof value.savedAt === "number" && Number.isFinite(value.savedAt) ? value.savedAt : null;
+    const cachedTime = savedAt ?? (typeof value.receivedAt === "number" && Number.isFinite(value.receivedAt) ? value.receivedAt :
       old?.seq === value.seq ? old.receivedAt : null);
     const cached = historical || value.offline === true;
-    const offline = status.state !== 'online';
+    const offline = status.state !== "online";
     const title = typeof value.title === "string" && value.title.trim() ? value.title.trim()
       : typeof value.display_name === "string" && value.display_name.trim() ? value.display_name.trim() : undefined;
-    const boardProject = typeof value.board_project === "string" && projectPattern.test(value.board_project) ? value.board_project : undefined;
     return { project: value.project, seq: value.seq, lseq: sequence(value.lseq) ? value.lseq : 0,
-      members, ai: value.ai, live: liveMap(value.live), machines: object(value.machines) ? value.machines : {},
+      members: roster, ai: value.ai, live: liveMap(value.live), machines: object(value.machines) ? value.machines : {},
       receivedAt: savedAt ?? (cached || offline ? cachedTime : Date.now()), offline, status: status.state,
       identity: serviceProjectIdentity(url, value.project), ...(title ? { title } : {}), ...(boardProject ? { boardProject } : {}) };
   } catch { return; }
@@ -203,7 +212,8 @@ function eventReceived(event: unknown) {
       for (const operation of event.ops) {
         if (!object(operation)) throw Error();
         if (operation.op === 'upsert') {
-          const member = parseMember(operation.member, project); members.set(memberKey(member), member);
+          const member = attachBoardProject(parseMember(operation.member, project), old.boardProject);
+          members.set(memberKey(member), member);
         } else if (operation.op === 'remove' && typeof operation.key === 'string') {
           members.delete(operation.key); delete ai[operation.key]; delete live[operation.key];
         } else if (operation.op === 'ai' && typeof operation.key === 'string') {

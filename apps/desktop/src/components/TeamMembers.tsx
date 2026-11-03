@@ -46,10 +46,7 @@ export default function TeamMembers({ sessionId, profile, navigation, board, off
   const service = useTeamService();
   const projectIssue = teamProjectIssue(service, profile.project);
   const team = service.snapshots[profile.project];
-  const rosterMembers = team?.members ?? [];
-  const members = team?.boardProject
-    ? rosterMembers.map(member => ({ ...member, boardProject: team.boardProject }))
-    : rosterMembers;
+  const members = team?.members ?? [];
   const serviceIdentity = JSON.stringify([service.url, profile.project]);
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState("");
